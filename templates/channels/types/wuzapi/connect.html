@@ -1,0 +1,47 @@
+{% extends "smartmin/form.html" %}
+{% load smartmin i18n %}
+
+{% block fields %}
+<div class="row">
+  <div class="col-md-12">
+    {% if status == 'connected' %}
+      <div class="alert alert-success">
+        {% trans "Wuzapi is connected!" %}
+      </div>
+    {% else %}
+      {% if qr_code %}
+        <div class="text-center">
+            <p>{% trans "Scan this QR Code with WhatsApp on your phone:" %}</p>
+            <img src="{{ qr_code }}" class="img-thumbnail" style="max-width: 300px;"/>
+        </div>
+      {% endif %}
+
+      {% if pairing_code %}
+        <div class="text-center mt-3">
+            <p>{% trans "Or use this Pairing Code:" %}</p>
+            <h3><code>{{ pairing_code }}</code></h3>
+        </div>
+      {% endif %}
+      
+      {% if not qr_code and not pairing_code %}
+        <div class="alert alert-warning">
+            {% trans "Waiting for Wuzapi session... The page will refresh shortly." %}
+        </div>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+{# Hidden refresh logic via meta refresh or JS could be added, but standard form submission works for now #}
+
+{{ block.super }}
+{% endblock %}
+
+{% block form-buttons %}
+<div class="form-actions">
+  <button type="submit" class="btn btn-primary">{% trans "Refresh Status" %}</button>
+  {% if status == 'connected' %}
+    <a href="{% url 'channels.channel_read' channel.uuid %}" class="btn btn-default">{% trans "Continue" %}</a>
+  {% endif %}
+</div>
+{% endblock %}

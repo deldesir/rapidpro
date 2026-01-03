@@ -1,0 +1,14 @@
+{% extends "channels/channel_claim_form.html" %}
+{% load i18n %}
+
+{% block pre-form %}
+{% blocktrans trimmed with "Wuzapi" as brand %}
+You can connect your WhatsApp Business account using {{ brand }}.
+Please provide the URL and Access Token for your Wuzapi instance, along with the associated phone number.
+{% endblocktrans %}
+<div class="mt-4">
+  <div class="code">
+    {% trans "Make sure your Wuzapi instance is running and reachable by this server." %}
+  </div>
+</div>
+{% endblock pre-form %}

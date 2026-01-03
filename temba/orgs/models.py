@@ -1594,11 +1594,14 @@ class Export(TembaUUIDMixin, models.Model):
         """
 
         filename = self._get_download_filename()
-        url = default_storage.url(
-            self.path,
-            parameters=dict(ResponseContentDisposition=f"attachment;filename={filename}"),
-            http_method="GET",
-        )
+        try:
+            url = default_storage.url(
+                self.path,
+                parameters=dict(ResponseContentDisposition=f"attachment;filename={filename}"),
+                http_method="GET",
+            )
+        except TypeError:
+            url = default_storage.url(self.path)
 
         return url
 

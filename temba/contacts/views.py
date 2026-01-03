@@ -394,11 +394,23 @@ class ContactCRUDL(SmartCRUDL):
                 request.org, request.user, self.get_object(), text, [str(a) for a in attachments], [], ticket
             )
 
-            # update user ref with avatar
-            if resp["event"].get("_user"):
-                resp["event"]["_user"] = request.user.as_chat_ref()
+            # Mailroom client may return raw message or event wrapper
+            if "event" in resp:
+                event = resp["event"]
+            else:
+                # Wrap raw message in msg_created event structure
+                event = {
+                    "type": "msg_created",
+                    "uuid": resp.get("uuid"),
+                    "occurred_on": resp.get("created_on"),
+                    "created_on": resp.get("created_on"),
+                    "msg": resp,
+                }
 
-            return JsonResponse({"event": resp["event"]})
+            # inject user ref for the UI
+            event["_user"] = request.user.as_chat_ref()
+
+            return JsonResponse({"event": event})
 
         def _get_uuid_param(self, name: str) -> UUID:
             try:

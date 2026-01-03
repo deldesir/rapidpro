@@ -100,6 +100,9 @@ class ClaimView(ClaimViewMixin, SmartFormView):
         claim_channel(org, self.object, self.form.cleaned_data["phone_number"])
 
         # trigger a sync
-        mailroom.get_client().android_sync(self.object)
+        try:
+            mailroom.get_client().android_sync(self.object)
+        except Exception:
+            pass
 
         return super().form_valid(form)

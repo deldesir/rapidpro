@@ -33,7 +33,7 @@
       margin-bottom: 0;
     }
 
-    form[action="/accounts/login/"] button[type="submit"],
+    form[action="{% url 'account_login' %}"] button[type="submit"],
     form[action="/accounts/2fa/authenticate/"] button[type="submit"] {
       display: block;
       width: 100%;

@@ -109,7 +109,7 @@
       event.preventDefault();
       event.stopPropagation();
       var modal = document.querySelector("#update-trigger");
-      modal.endpoint = '/trigger/update/' + id + '/';
+      modal.endpoint = window.URLS.root + 'trigger/update/' + id + '/';
       modal.header = '{{ _("Update Trigger")|escapejs }}';
       modal.open = true;
     }

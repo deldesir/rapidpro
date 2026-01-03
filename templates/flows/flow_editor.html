@@ -1,5 +1,5 @@
 {% extends "smartmin/base.html" %}
-{% load temba i18n %}
+{% load temba i18n url_tags %}
 
 {% block title %}
   <div class="flex">
@@ -20,6 +20,9 @@
 {% endblock title %}
 {% block extra-style %}
   {{ block.super }}
+  <script>
+    window.URLS = {% get_urls %};
+  </script>
   <style type="text/css">
     .mobile-notice {
       padding: 1em;
@@ -131,10 +134,13 @@
 {% endblock extra-style %}
 {% block extra-script %}
   {{ block.super }}
+  <script>
+    window.URLS = {% get_urls %};
+  </script>
   <script type="text/javascript">
-    var base = '/flow/assets/{{object.org.id}}/' + new Date().getTime() + '/';
-    var api = '/api/v2/';
-    var internal = '/api/internal/';
+    var base = window.URLS.root + 'flow/assets/{{object.org.id}}/' + new Date().getTime() + '/';
+    var api = window.URLS.root + 'api/v2/';
+    var internal = window.URLS.root + 'api/internal/';
     var flowType = '{{ object.engine_type }}';
 
     function handleEditorLoaded() {
@@ -165,8 +171,8 @@
     var simulateResume = null;
 
     if (canSimulate) {
-      simulateStart = '/flow/simulate/{{object.uuid}}/';
-      simulateResume = '/flow/simulate/{{object.uuid}}/';
+      simulateStart = window.URLS.root + 'flow/simulate/{{object.uuid}}/';
+      simulateResume = window.URLS.root + 'flow/simulate/{{object.uuid}}/';
     }
 
     var config = {
@@ -199,16 +205,16 @@
         globals: api + 'globals.json',
         users: api + 'users.json',
         topics: api + 'topics.json',
-        llms: '/api/internal/llms.json',
-        editor: '/flow/editor',
-        revisions: '/flow/revisions/{{object.uuid}}/',
-        recents: '/flow/recent_contacts/{{object.uuid}}/',
+        llms: window.URLS.root + 'api/internal/llms.json',
+        editor: window.URLS.root + 'flow/editor',
+        revisions: window.URLS.root + 'flow/revisions/{{object.uuid}}/',
+        recents: window.URLS.root + 'flow/recent_contacts/{{object.uuid}}/',
         attachments: '{% url "msgs.media_upload" %}',
         languages: base + 'language',
-        activity: '/flow/activity/{{object.uuid}}/',
-        recipients: '/contact/omnibox?v=2&types=gc',
-        contacts: '/contact/omnibox?v=2&types=c',
-        contact: '/contact/read/',
+        activity: window.URLS.root + 'flow/activity/{{object.uuid}}/',
+        recipients: window.URLS.root + 'contact/omnibox?v=2&types=gc',
+        contacts: window.URLS.root + 'contact/omnibox?v=2&types=c',
+        contact: window.URLS.root + 'contact/read/',
         simulateStart: simulateStart,
         simulateResume: simulateResume,
       }
@@ -247,6 +253,9 @@
     </temba-start-progress>
   {% endif %}
   {{ block.super }}
+  <script>
+    window.URLS = {% get_urls %};
+  </script>
 {% endblock page-header %}
 {% block content %}
   <temba-modax header="Send Message" id="send-message-modal">

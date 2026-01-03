@@ -23,7 +23,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db.models import F, Prefetch, Q
 from django.db.models.functions import Lower
-from django.http import HttpResponseRedirect, JsonResponse
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
@@ -604,7 +604,7 @@ class OrgCRUDL(SmartCRUDL):
                                 menu_id="logout",
                                 name=_("Sign Out"),
                                 icon="logout",
-                                href="/accounts/logout/",
+                                href=f"{(settings.FORCE_SCRIPT_NAME or '').rstrip('/')}/accounts/logout/",
                                 posterize=True,
                             ),
                             self.create_space(),
@@ -1408,7 +1408,7 @@ class OrgCRUDL(SmartCRUDL):
 
     class Workspace(SpaMixin, FormaxMixin, ContextMenuMixin, InferOrgMixin, OrgPermsMixin, SmartReadView):
         title = _("Workspace")
-        menu_path = "/settings/workspace"
+        menu_path = "/org/workspace"
 
         def derive_formax_sections(self, formax, context):
             if self.has_org_perm("orgs.org_edit"):
@@ -1743,14 +1743,24 @@ class ExportCRUDL(SmartCRUDL):
 
     class Download(SpaMixin, ContextMenuMixin, OrgObjPermsMixin, SmartReadView):
         slug_url_kwarg = "uuid"
-        menu_path = "/settings/workspace"
+        menu_path = "/org/workspace"
         title = _("Export")
 
         def get(self, request, *args, **kwargs):
             if str_to_bool(request.GET.get("raw", 0)):
                 export = self.get_object()
 
-                return HttpResponseRedirect(export.get_raw_url())
+                url = export.get_raw_url()
+
+                # if our URL doesn't have the content disposition set (local storage), we can set it ourselves
+                # using X-Accel-Redirect
+                if "ResponseContentDisposition" not in url:
+                    response = HttpResponse()
+                    response["X-Accel-Redirect"] = url
+                    response["Content-Disposition"] = f'attachment; filename="{export._get_download_filename()}"'
+                    return response
+
+                return HttpResponseRedirect(url)
 
             return super().get(request, *args, **kwargs)
 

@@ -247,7 +247,7 @@
       }
 
       // if we have auto selecting, dont clear the chat
-      var ticketsEndpoint = `/ticket/folder/${folder}/${status}/${initialTicket || ''}`;
+      var ticketsEndpoint = `/rp/ticket/folder/${folder}/${status}/${initialTicket || ''}`;
       if (ticketsEndpoint != tickets.endpoint) {
         if (!tickets.nextSelection) {
           chat.contact = null;
@@ -364,7 +364,7 @@
       updateTicketList();
 
       var path = `${folder}/${status}/${ticketUUID || ''}`;
-      var show = `/ticket/${path}`;
+      var show = `/rp/ticket/${path}`;
 
       if (!show.endsWith("/")) {
         show += "/";
@@ -390,7 +390,7 @@
     function handleNameClicked() {
       var chat = document.querySelector("temba-contact-chat");
       if (chat.contact) {
-        var url = "/contact/read/" + chat.contact + "/";
+        var url = window.URLS.root + "contact/read/" + chat.contact + "/";
         if (typeof spaGet !== 'undefined') {
           spaGet(url);
         } else {
@@ -400,7 +400,7 @@
     }
 
     function handleFieldSearch(evt) {
-      var url = "/contact/?search=" + encodeURIComponent(evt.detail.key) + "+%3D+" + encodeURIComponent("\"" + evt.detail.value + "\"")
+      var url = window.URLS.root + "contact/?search=" + encodeURIComponent(evt.detail.key) + "+%3D+" + encodeURIComponent("\"" + evt.detail.value + "\"")
       if (typeof spaGet !== 'undefined') {
         spaGet(url)
       } else {
@@ -448,7 +448,7 @@
             if (folder == 'unassigned') {
               focusNext = ticket.uuid;
               folder = 'mine';
-              menu.setFocusedItem('ticket/mine');
+              menu.setFocusedItem('/rp/ticket/mine');
               updateTicketList();
             }
             messageSent = false;
@@ -485,7 +485,7 @@
       const options = {
         onSubmit: "contactUpdated()"
       }
-      showModax("{{_('Interrupt Contact')|escapejs}}", "/contact/interrupt/" + event.detail.contact.uuid + "/", options);
+      showModax("{{_('Interrupt Contact')|escapejs}}", window.URLS.root + "contact/interrupt/" + event.detail.contact.uuid + "/", options);
     }
 
     function contactUpdated() {

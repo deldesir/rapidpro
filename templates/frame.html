@@ -1,5 +1,5 @@
 <!DOCTYPE HTML>
-{% load humanize i18n smartmin sms compress static %}
+{% load humanize i18n smartmin sms compress static url_tags %}
 
 {% block html-tag %}
   <html lang="{{ LANGUAGE_CODE }}">
@@ -32,6 +32,9 @@
     {% compress js %}
       <script src="{{ STATIC_URL }}js/utils.js"></script>
     {% endcompress %}
+    <script>
+      window.URLS = {% get_urls %};
+    </script>
     <script type="text/javascript">
       function isMobile() {
         return window.innerWidth < 600;
@@ -109,7 +112,7 @@
       });
 
       document.addEventListener("temba-workspace-settings", function(event) {
-        spaGet('/org/workspace');
+        spaGet(window.URLS.orgs_org_workspace);
         var menu = document.querySelector('temba-menu');
         if (menu) {
           menu.click();
@@ -133,7 +136,7 @@
     {% for script in flow_editor_scripts %}<script type="text/javascript" src="{{script}}"></script>{% endfor %}
     {% for style in flow_editor_styles %}<link rel="stylesheet" href="{{ style }}" type="text/css">{% endfor %}
     {% block favico %}
-      <link type="image/ico" rel="shortcut icon" href="{{ STATIC_URL }}images/favicon.ico">
+      <link type="image/ico" rel="shortcut icon" href="{{ STATIC_URL }}favicon.ico">
     {% endblock favico %}
     {% block styles %}
       <link rel="stylesheet"
@@ -161,22 +164,25 @@
     <body class="bg-gradient" id="pageBody">
       {% if COMPONENTS_DEV_MODE %}
         <script type="module">
-          import '/out-tsc/temba-modules.js';
+          import '{{ STATIC_URL }}out-tsc/temba-modules.js';
         </script>
       {% else %}
         {% compress js %}
           <script src="{% static '@nyaruka/temba-components/dist/temba-components.js' %}"></script>
         {% endcompress %}
+    <script>
+      window.URLS = {% get_urls %};
+    </script>
       {% endif %}
       {% if user_org %}
-        <temba-store {% if org_perms.globals.global_list %}globals="/api/v2/globals.json"{% endif %}
-                     completion="/mr/docs/{{ LANGUAGE_CODE }}/editor.json"
-                     languages="/org/languages/"
-                     fields="/api/v2/fields.json"
-                     groups="/api/v2/groups.json"
-                     workspace="/api/v2/workspace.json"
-                     shortcuts="/api/internal/shortcuts.json"
-                     users="/api/v2/users.json">
+        <temba-store {% if org_perms.globals.global_list %}globals="{% url 'api.v2.globals' %}"{% endif %}
+                     completion="{% static 'mr/docs/' %}{{ LANGUAGE_CODE }}/editor.json"
+                     languages="{% url 'orgs.org_languages' %}"
+                     fields="{% url 'api.v2.fields' %}"
+                     groups="{% url 'api.v2.groups' %}"
+                     workspace="{% url 'api.v2.workspace' %}"
+                     shortcuts="{% url 'api.internal.shortcuts' %}"
+                     users="{% url 'api.v2.users' %}">
         </temba-store>
       {% else %}
         <temba-store>

@@ -9,7 +9,9 @@ from rest_framework.response import Response
 from rest_framework.reverse import reverse
 from smartmin.views import SmartTemplateView
 
+from django.conf import settings
 from django.db.models import OuterRef, Prefetch, Q
+from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 
 from temba.archives.models import Archive
@@ -146,6 +148,18 @@ class ExplorerView(OrgPermsMixin, SmartTemplateView):
             UsersEndpoint.get_read_explorer(),
             WorkspaceEndpoint.get_read_explorer(),
         ]
+
+        # Ensure all endpoints have the correct script prefix
+        prefix = getattr(settings, "FORCE_SCRIPT_NAME", None)
+        if prefix:
+             prefix = prefix.rstrip("/")
+             for endpoint in context["endpoints"]:
+                 if endpoint.get("url") and not endpoint["url"].startswith(prefix):
+                     if endpoint["url"].startswith("/"):
+                         endpoint["url"] = f"{prefix}{endpoint['url']}"
+                     else:
+                         endpoint["url"] = f"{prefix}/{endpoint['url']}"
+
         return context
 
 
@@ -269,6 +283,19 @@ class RootView(BaseEndpoint):
     """
 
     permission_classes = (SSLPermission,)
+
+    def get_view_description(self, html=False):
+        description = super().get_view_description(html)
+        prefix = getattr(settings, "FORCE_SCRIPT_NAME", None)
+        if prefix:
+             clean_prefix = prefix.rstrip('/')
+             description = description.replace('href="/api/v2/', f'href="{clean_prefix}/api/v2/')
+             description = description.replace('>/api/v2/', f'>{clean_prefix}/api/v2/')
+             description = description.replace('"/api/v2/', f'"{clean_prefix}/api/v2/')
+        
+        if html:
+            return mark_safe(description)
+        return description
 
     def get_view_name(self):
         return self.request.branding["name"] + " API v2"
