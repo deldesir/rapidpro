@@ -9,7 +9,7 @@ jobs:
 
     env:
       node-version: '20'
-      mailroom-version: '10.2.0'
+      mailroom-version: '1.0.0'
 
     services:
       valkey:
@@ -61,9 +61,9 @@ jobs:
           poetry run python manage.py migrate
           poetry run python manage.py migrate_dynamo --testing
           poetry run python manage.py create_buckets --testing
-          # fetch, extract and start mailroom
-          wget https://github.com/${{ github.repository_owner }}/mailroom/releases/download/v${{ env.mailroom-version }}/mailroom_${{ env.mailroom-version }}_linux_amd64.tar.gz
-          tar -xvf mailroom_${{ env.mailroom-version }}_linux_amd64.tar.gz mailroom
+          # fetch mailroom binary
+          wget -O mailroom https://github.com/${{ github.repository_owner }}/mailroom/releases/download/v${{ env.mailroom-version }}/mailroom-linux-amd64
+          chmod +x mailroom
           # start mailroom but use different valkey db so that it doesn't actually handle tasks
           ./mailroom -db=postgres://temba:temba@postgres:5432/temba?sslmode=disable -valkey=valkey://valkey:6379/15 -log-level=info > mailroom.log &
 
