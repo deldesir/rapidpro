@@ -408,7 +408,8 @@ class ContactCRUDL(SmartCRUDL):
                 }
 
             # inject user ref for the UI
-            event["_user"] = request.user.as_chat_ref()
+            if isinstance(event, dict):
+                event["_user"] = request.user.as_chat_ref()
 
             return JsonResponse({"event": event})
 
