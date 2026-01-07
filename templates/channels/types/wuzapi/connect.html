@@ -190,4 +190,76 @@
 
 {% block form-buttons %}
 {# Handled in layout #}
+const elConnecting = document.getElementById('state-connecting');
+const elScan = document.getElementById('state-scan');
+const elSuccess = document.getElementById('state-success');
+
+const imgQr = document.getElementById('qr-image');
+const elPairingSection = document.getElementById('pairing-section');
+const elPairingCode = document.getElementById('pairing-code');
+
+function showState(state) {
+elConnecting.classList.add('d-none');
+elScan.classList.add('d-none');
+elSuccess.classList.add('d-none');
+
+if (state === 'connecting' || state === 'unknown') elConnecting.classList.remove('d-none');
+if (state === 'scancode') elScan.classList.remove('d-none');
+if (state === 'connected') elSuccess.classList.remove('d-none');
+}
+
+let pollCount = 0;
+
+function checkStatus() {
+fetch(statusUrl)
+.then(response => response.json())
+.then(data => {
+if (data.error) {
+console.error("Status check error:", data.error);
+return;
+}
+
+if (data.status === 'connected') {
+showState('connected');
+setTimeout(() => { window.location.href = successUrl; }, 1500);
+return; // Stop polling
+} else if (data.status === 'scancode') {
+showState('scancode');
+if (data.qr_code) {
+imgQr.src = data.qr_code;
+}
+if (data.pairing_code) {
+elPairingSection.classList.remove('d-none');
+elPairingCode.innerText = data.pairing_code;
+}
+} else {
+showState('connecting');
+}
+})
+.catch(e => console.error("Poll failed", e))
+.finally(() => {
+// Poll every 3 seconds
+setTimeout(checkStatus, 3000);
+});
+}
+
+// Initial state
+showState('connecting');
+checkStatus();
+});
+</script>
+
+{# Hidden refresh logic via meta refresh or JS could be added, but standard form submission works for now #}
+
+{{ block.super }}
 {% endblock %}
+
+{% block form-buttons %}
+<div class="form-actions">
+  <button type="submit" class="btn btn-primary">{% trans "Refresh Status" %}</button>
+  {% if status == 'connected' %}
+  <a href="{% url 'channels.channel_read' channel.uuid %}" class="btn btn-default">{% trans "Continue" %}</a>
+  {% endif %}
+</div>
+{% endblock %}
+>>>>>>> deldesir/main

@@ -405,6 +405,8 @@ class WuzapiStatusView(OrgPermsMixin, View):
                 )
                 if status_resp.status_code == 200:
                     data = status_resp.json().get('data', {})
+                if status_resp.status_code == 200:
+                    data = status_resp.json().get('data', {})
                     
                     # Robust boolean check
                     def is_true(val):
