@@ -1,3 +1,17 @@
+v26.1.1 (2026-01-06)
+-------------------------
+ * Data migration to clear uploads for empty archives
+
+v26.1.0 (2026-01-06)
+-------------------------
+ * Test against PostgreSQL 17
+ * Don't show Export option for invalid contact queries
+ * Rework more views to use base views from orgs app
+
+v26.0.0 (2026-01-05)
+-------------------------
+ * Update to a recent FB graph API version
+
 v10.3.121 (2025-12-18)
 -------------------------
  * Make import uuid fields non-null and use for read views
