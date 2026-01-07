@@ -15,6 +15,7 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.http import HttpResponse, HttpResponseRedirect
+from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils.crypto import get_random_string
 from django.utils.decorators import method_decorator
@@ -27,7 +28,6 @@ from temba.channels.views import ClaimViewMixin
 from temba.contacts.models import Contact, URN
 from temba.msgs.models import Msg
 from temba.orgs.views.mixins import OrgPermsMixin
-from temba import mailroom
 from smartmin.views import SmartFormView
 
 def get_server_ip():
@@ -209,29 +209,30 @@ class ConnectWuzapiView(OrgPermsMixin, SmartFormView):
     permission = "channels.channel_claim"
 
     def get_context_data(self, **kwargs):
-        try:
-            context = super().get_context_data(**kwargs)
-            channel = Channel.objects.get(uuid=self.kwargs['uuid'], org=self.request.org)
-            config = channel.config
-            
-            wuzapi_url = config.get("wuzapi_url")
-            token = config.get("wuzapi_token")
-            hmac_key = config.get("hmac_key")
-            
-            qr_code = None
-            pairing_code = None
-            status = "unknown"
-            
-            if wuzapi_url and token:
+        context = super().get_context_data(**kwargs)
+        channel = get_object_or_404(Channel, uuid=self.kwargs['uuid'], org=self.request.org)
+        config = channel.config
+        
+        wuzapi_url = config.get("wuzapi_url")
+        token = config.get("wuzapi_token")
+        hmac_key = config.get("hmac_key")
+        
+        qr_code = None
+        pairing_code = None
+        status = "unknown"
+        
+        if wuzapi_url and token:
+            try:
+                # Point to Courier: /c/wz/{uuid}/receive
+                # Use localhost since user is running natively on the same machine.
+                # This avoids firewall/DNS issues with interface IPs.
+                scheme = getattr(settings, 'ACCOUNT_DEFAULT_HTTP_PROTOCOL', 'http')
+                server_ip = '127.0.0.1'
+                
+                webhook_url = f"{scheme}://{server_ip}:8080/c/wz/{channel.uuid}/receive"
+                
+                # Update Webhook (non-blocking ideally, but short timeout)
                 try:
-                    # Point to Courier: /c/wz/{uuid}/receive
-                    # Use localhost since user is running natively on the same machine.
-                    # This avoids firewall/DNS issues with interface IPs.
-                    scheme = getattr(settings, 'ACCOUNT_DEFAULT_HTTP_PROTOCOL', 'http')
-                    server_ip = '127.0.0.1'
-                    
-                    webhook_url = f"{scheme}://{server_ip}:8080/c/wz/{channel.uuid}/receive"
-                    
                     requests.post(
                         f"{wuzapi_url}/webhook",
                         json={
@@ -239,82 +240,84 @@ class ConnectWuzapiView(OrgPermsMixin, SmartFormView):
                             "events": ["Message", "ReadReceipt"]
                         },
                         headers={"Authorization": token, "Content-Type": "application/json"},
-                        timeout=5
+                        timeout=2
                     )
-                    
-                    # Self-Heal HMAC Key if missing
-                    if not hmac_key:
-                        hmac_key = get_random_string(32)
-                        channel.config["hmac_key"] = hmac_key
-                        channel.save(update_fields=["config"])
-                        logger.info(f"Generated missing HMAC key for channel {channel.uuid}")
+                except Exception:
+                     pass # Webhook update is best-effort
 
-                    if hmac_key:
+                # Self-Heal HMAC Key if missing
+                if not hmac_key:
+                    hmac_key = get_random_string(32)
+                    channel.config["hmac_key"] = hmac_key
+                    channel.save(update_fields=["config"])
+                    logger.info(f"Generated missing HMAC key for channel {channel.uuid}")
+
+                if hmac_key:
+                    try:
                         requests.post(
                              f"{wuzapi_url}/session/hmac/config",
                              json={"hmac_key": hmac_key},
                              headers={"Authorization": token, "Content-Type": "application/json"},
-                             timeout=5
+                             timeout=2
                         )
-                except Exception as e:
-                    logger.warning(f"Failed to auto-repair Wuzapi webhook: {e}")
+                    except Exception:
+                        pass # HMAC config is best-effort
+            except Exception as e:
+                logger.warning(f"Failed to auto-repair Wuzapi webhook: {e}")
 
-                 # Check status
+             # Check status
+            try:
+                status_resp = requests.get(
+                    f"{wuzapi_url}/session/status",
+                    headers={"Authorization": token},
+                    timeout=2
+                )
+                if status_resp.status_code == 200:
+                    data = status_resp.json().get('data', {})
+                    
+                    if data.get("loggedIn"):
+                        status = "connected"
+                    elif data.get("connected"):
+                        status = "scancode"
+                    else:
+                        status = "connecting"
+            except Exception as e:
+                logger.debug(f"Wuzapi status check failed: {e}")
+
+            # Fetch QR if not connected
+            if status != "connected":
                 try:
-                    status_resp = requests.get(
-                        f"{wuzapi_url}/session/status",
+                    # Ensure session is connected first
+                    requests.post(f"{wuzapi_url}/session/connect", headers={"Authorization": token}, json={}, timeout=2)
+                    
+                    qr_resp = requests.get(
+                        f"{wuzapi_url}/session/qr",
                         headers={"Authorization": token},
-                        timeout=5
+                        timeout=2
                     )
-                    if status_resp.status_code == 200:
-                        data = status_resp.json().get('data', {})
-                        
-                        if data.get("loggedIn"):
-                            status = "connected"
-                        elif data.get("connected"):
-                            status = "scancode"
-                        else:
-                            status = "connecting"
+                    if qr_resp.status_code == 200:
+                        qr_data = qr_resp.json().get('data', {})
+                        qr_code = qr_data.get("QRCode")
+
+                    # Also try to get pairing code
+                    pair_resp = requests.post(
+                        f"{wuzapi_url}/session/pairphone",
+                        headers={"Authorization": token},
+                        json={"phone": channel.address},
+                        timeout=2
+                    )
+                    if pair_resp.status_code == 200:
+                        pair_json = pair_resp.json()
+                        pairing_code = pair_json.get("LinkingCode") or pair_json.get("data", {}).get("LinkingCode")
+
                 except Exception as e:
-                    logger.debug(f"Wuzapi status check failed: {e}")
-    
-                # Fetch QR if not connected
-                if status != "connected":
-                    try:
-                        # Ensure session is connected first
-                        requests.post(f"{wuzapi_url}/session/connect", headers={"Authorization": token}, json={}, timeout=5)
-                        
-                        qr_resp = requests.get(
-                            f"{wuzapi_url}/session/qr",
-                            headers={"Authorization": token},
-                            timeout=5
-                        )
-                        if qr_resp.status_code == 200:
-                            qr_data = qr_resp.json().get('data', {})
-                            qr_code = qr_data.get("QRCode")
+                    logger.debug(f"Wuzapi QR/Price check failed: {e}")
 
-                        # Also try to get pairing code
-                        pair_resp = requests.post(
-                            f"{wuzapi_url}/session/pairphone",
-                            headers={"Authorization": token},
-                            json={"phone": channel.address},
-                            timeout=5
-                        )
-                        if pair_resp.status_code == 200:
-                            pair_json = pair_resp.json()
-                            pairing_code = pair_json.get("LinkingCode") or pair_json.get("data", {}).get("LinkingCode")
-
-                    except Exception as e:
-                        logger.debug(f"Wuzapi QR/Price check failed: {e}")
-    
-            context['channel'] = channel
-            context['qr_code'] = qr_code
-            context['pairing_code'] = pairing_code
-            context['status'] = status
-            return context
-        except Exception as e:
-            logger.exception(f"Error in ConnectWuzapiView: {e}")
-            raise e
+        context['channel'] = channel
+        context['qr_code'] = qr_code
+        context['pairing_code'] = pairing_code
+        context['status'] = status
+        return context
 
     def form_valid(self, form):
         return HttpResponseRedirect(self.get_success_url())
@@ -329,7 +332,7 @@ class DashboardWuzapiView(OrgPermsMixin, View):
     permission = "channels.channel_read"
     
     def get(self, request, *args, **kwargs):
-        channel = Channel.objects.get(uuid=kwargs['uuid'], org=request.org)
+        channel = get_object_or_404(Channel, uuid=kwargs['uuid'], org=request.org)
         config = channel.config
         wuzapi_url = config.get("wuzapi_url")
         
@@ -349,7 +352,7 @@ class LogoutWuzapiView(OrgPermsMixin, SmartFormView):
     permission = "channels.channel_update"
     
     def form_valid(self, form):
-        channel = Channel.objects.get(uuid=self.kwargs['uuid'], org=self.request.org)
+        channel = get_object_or_404(Channel, uuid=self.kwargs['uuid'], org=self.request.org)
         config = channel.config
         wuzapi_url = config.get("wuzapi_url")
         token = config.get("wuzapi_token")
@@ -369,7 +372,7 @@ class LogoutWuzapiView(OrgPermsMixin, SmartFormView):
         return HttpResponseRedirect(self.get_success_url())
 
     def get_success_url(self):
-        channel = Channel.objects.get(uuid=self.kwargs['uuid'])
+        channel = get_object_or_404(Channel, uuid=self.kwargs['uuid'], org=self.request.org)
         slug = Channel.get_type_from_code(channel.channel_type).slug
         return reverse(f"channels.types.{slug}.connect", args=[self.kwargs['uuid']])
 
@@ -383,7 +386,7 @@ class WuzapiStatusView(OrgPermsMixin, View):
 
     def get(self, request, *args, **kwargs):
         try:
-            channel = Channel.objects.get(uuid=kwargs['uuid'], org=request.org)
+            channel = get_object_or_404(Channel, uuid=kwargs['uuid'], org=request.org)
             config = channel.config
             wuzapi_url = config.get("wuzapi_url")
             token = config.get("wuzapi_token")
