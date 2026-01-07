@@ -7,6 +7,7 @@ import mimetypes
 import os
 import requests
 import sys
+import socket
 import time
 from uuid import uuid4
 
