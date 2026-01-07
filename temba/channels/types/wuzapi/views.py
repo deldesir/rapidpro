@@ -210,29 +210,31 @@ class ConnectWuzapiView(OrgPermsMixin, SmartFormView):
     permission = "channels.channel_claim"
 
     def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        channel = get_object_or_404(Channel, uuid=self.kwargs['uuid'], org=self.request.org)
-        config = channel.config
-        
-        wuzapi_url = config.get("wuzapi_url")
-        token = config.get("wuzapi_token")
-        hmac_key = config.get("hmac_key")
-        
-        qr_code = None
-        pairing_code = None
-        status = "unknown"
-        
-        if wuzapi_url and token:
-            try:
-                # Point to Courier: /c/wz/{uuid}/receive
-                # Use localhost since user is running natively on the same machine.
-                # This avoids firewall/DNS issues with interface IPs.
-                scheme = getattr(settings, 'ACCOUNT_DEFAULT_HTTP_PROTOCOL', 'http')
-                server_ip = '127.0.0.1'
-                
-                webhook_url = f"{scheme}://{server_ip}:8080/c/wz/{channel.uuid}/receive"
-                
-                # Update Webhook (non-blocking ideally, but short timeout)
+    def get_context_data(self, **kwargs):
+        try:
+            # Ensure self.object is set via kwargs BEFORE super() calls derive_breadcrumbs
+            if 'uuid' in self.kwargs:
+                 self.object = Channel.objects.get(uuid=self.kwargs['uuid'], org=self.request.org)
+            
+            context = super().get_context_data(**kwargs)
+            
+            # Additional context logic
+            channel = self.object
+            config = channel.config
+            
+            wuzapi_url = config.get("wuzapi_url")
+            token = config.get("wuzapi_token")
+            hmac_key = config.get("hmac_key")
+            
+            qr_code = None
+            pairing_code = None
+            status = "unknown"
+            
+            # Robust boolean check helper
+            def is_true(val):
+                 return str(val).lower() in ("true", "1", "yes", "on")
+
+            if wuzapi_url and token:
                 try:
                     requests.post(
                         f"{wuzapi_url}/webhook",
@@ -263,62 +265,64 @@ class ConnectWuzapiView(OrgPermsMixin, SmartFormView):
                         )
                     except Exception:
                         pass # HMAC config is best-effort
-            except Exception as e:
-                logger.warning(f"Failed to auto-repair Wuzapi webhook: {e}")
-
-             # Check status
-            try:
-                status_resp = requests.get(
-                    f"{wuzapi_url}/session/status",
-                    headers={"Authorization": token},
-                    timeout=2
-                )
-                if status_resp.status_code == 200:
-                    data = status_resp.json().get('data', {})
+            
                     
-                    if data.get("loggedIn"):
-                        status = "connected"
-                    elif data.get("connected"):
-                        status = "scancode"
-                    else:
-                        status = "connecting"
-            except Exception as e:
-                logger.debug(f"Wuzapi status check failed: {e}")
-
-            # Fetch QR if not connected
-            if status != "connected":
+                # Check status
                 try:
-                    # Ensure session is connected first
-                    requests.post(f"{wuzapi_url}/session/connect", headers={"Authorization": token}, json={}, timeout=2)
-                    
-                    qr_resp = requests.get(
-                        f"{wuzapi_url}/session/qr",
+                    status_resp = requests.get(
+                        f"{wuzapi_url}/session/status",
                         headers={"Authorization": token},
                         timeout=2
                     )
-                    if qr_resp.status_code == 200:
-                        qr_data = qr_resp.json().get('data', {})
-                        qr_code = qr_data.get("QRCode")
-
-                    # Also try to get pairing code
-                    pair_resp = requests.post(
-                        f"{wuzapi_url}/session/pairphone",
-                        headers={"Authorization": token},
-                        json={"phone": channel.address},
-                        timeout=2
-                    )
-                    if pair_resp.status_code == 200:
-                        pair_json = pair_resp.json()
-                        pairing_code = pair_json.get("LinkingCode") or pair_json.get("data", {}).get("LinkingCode")
-
+                    if status_resp.status_code == 200:
+                        data = status_resp.json().get('data', {})
+                        
+                        if is_true(data.get("loggedIn")):
+                            status = "connected"
+                        elif is_true(data.get("connected")):
+                            status = "scancode"
+                        else:
+                            status = "connecting"
                 except Exception as e:
-                    logger.debug(f"Wuzapi QR/Price check failed: {e}")
+                    logger.debug(f"Wuzapi status check failed: {e}")
 
-        context['channel'] = channel
-        context['qr_code'] = qr_code
-        context['pairing_code'] = pairing_code
-        context['status'] = status
-        return context
+                # Fetch QR if not connected
+                if status != "connected":
+                    try:
+                        # Ensure session is connected first
+                        requests.post(f"{wuzapi_url}/session/connect", headers={"Authorization": token}, json={}, timeout=2)
+                        
+                        qr_resp = requests.get(
+                            f"{wuzapi_url}/session/qr",
+                            headers={"Authorization": token},
+                            timeout=2
+                        )
+                        if qr_resp.status_code == 200:
+                            qr_data = qr_resp.json().get('data', {})
+                            qr_code = qr_data.get("QRCode")
+
+                        # Also try to get pairing code
+                        pair_resp = requests.post(
+                            f"{wuzapi_url}/session/pairphone",
+                            headers={"Authorization": token},
+                            json={"phone": channel.address},
+                            timeout=2
+                        )
+                        if pair_resp.status_code == 200:
+                            pair_json = pair_resp.json()
+                            pairing_code = pair_json.get("LinkingCode") or pair_json.get("data", {}).get("LinkingCode")
+
+                    except Exception as e:
+                        logger.debug(f"Wuzapi QR/Price check failed: {e}")
+    
+            context['channel'] = channel
+            context['qr_code'] = qr_code
+            context['pairing_code'] = pairing_code
+            context['status'] = status
+            return context
+        except Exception as e:
+            logger.exception(f"Error in ConnectWuzapiView: {e}")
+            raise e
 
     def form_valid(self, form):
         return HttpResponseRedirect(self.get_success_url())
@@ -329,21 +333,6 @@ class ConnectWuzapiView(OrgPermsMixin, SmartFormView):
          # Note: 'channels.channel_read' is the standard view name for seeing channel details
          return reverse("channels.channel_read", args=[self.kwargs['uuid']])
 
-class DashboardWuzapiView(OrgPermsMixin, View):
-    permission = "channels.channel_read"
-    
-    def get(self, request, *args, **kwargs):
-        channel = get_object_or_404(Channel, uuid=kwargs['uuid'], org=request.org)
-        config = channel.config
-        wuzapi_url = config.get("wuzapi_url")
-        
-        if not wuzapi_url:
-             return HttpResponse("Wuzapi URL not configured", status=400)
-             
-        # Construct dashboard URL (assuming /wuzapi/dashboard/ standard path)
-        dashboard_url = f"{wuzapi_url}/dashboard/"
-        return HttpResponseRedirect(dashboard_url)
-
 class LogoutWuzapiView(OrgPermsMixin, SmartFormView):
     class LogoutForm(forms.Form):
         pass # Confirmation button
@@ -351,6 +340,14 @@ class LogoutWuzapiView(OrgPermsMixin, SmartFormView):
     title = _("Disconnect Session")
     form_class = LogoutForm
     permission = "channels.channel_update"
+    submit_button_name = _("Disconnect")
+
+    def get_context_data(self, **kwargs):
+        # Ensure object is available for breadcrumbs
+        if 'uuid' in self.kwargs:
+            self.object = Channel.objects.get(uuid=self.kwargs['uuid'], org=self.request.org)
+        return super().get_context_data(**kwargs)
+
     
     def form_valid(self, form):
         channel = get_object_or_404(Channel, uuid=self.kwargs['uuid'], org=self.request.org)
@@ -408,9 +405,14 @@ class WuzapiStatusView(OrgPermsMixin, View):
                 )
                 if status_resp.status_code == 200:
                     data = status_resp.json().get('data', {})
-                    if data.get("loggedIn"):
+                    
+                    # Robust boolean check
+                    def is_true(val):
+                         return str(val).lower() in ("true", "1", "yes", "on")
+
+                    if is_true(data.get("loggedIn")):
                         status = "connected"
-                    elif data.get("connected"):
+                    elif is_true(data.get("connected")):
                         status = "scancode"
                     else:
                         status = "connecting"
@@ -420,7 +422,9 @@ class WuzapiStatusView(OrgPermsMixin, View):
             # 2. Get QR/Code if needed
             if status == "scancode":
                 try:
-                    # Refresh QR
+                    # Refresh QR - Only if specifically requested or maybe just rely on session/qr being idempotent-ish
+                    # Actually, Wuzapi seems to rotate QR on read. 
+                    # Let's throttle it? Or just let it be for now but REMOVE PAIRING CODE.
                     qr_resp = requests.get(
                         f"{wuzapi_url}/session/qr",
                         headers={"Authorization": token},
@@ -430,18 +434,36 @@ class WuzapiStatusView(OrgPermsMixin, View):
                         qr_data = qr_resp.json().get('data', {})
                         qr_code = qr_data.get("QRCode")
 
-                    # Refresh Pairing Code
-                    pair_resp = requests.post(
-                        f"{wuzapi_url}/session/pairphone",
-                        headers={"Authorization": token},
-                        json={"phone": channel.address},
-                        timeout=3
-                    )
-                    if pair_resp.status_code == 200:
-                        pair_json = pair_resp.json()
-                        pairing_code = pair_json.get("LinkingCode") or pair_json.get("data", {}).get("LinkingCode")
-                except Exception:
-                    pass
+                    if request.GET.get("gen_code"):
+                         logger.info(f"Generating pairing code for channel {channel.uuid}")
+                         try:
+                             # Ensure session exists first
+                             requests.post(
+                                 f"{wuzapi_url}/session/connect", 
+                                 headers={"Authorization": token}, 
+                                 json={}, 
+                                 timeout=30
+                             )
+                             
+                             pair_resp = requests.post(
+                                  f"{wuzapi_url}/session/pairphone",
+                                  headers={"Authorization": token},
+                                  json={"phone": channel.address},
+                                  timeout=30
+                             )
+                             logger.info(f"Pairing code response: {pair_resp.status_code} {pair_resp.text}")
+                             if pair_resp.status_code == 200:
+                                  pair_json = pair_resp.json()
+                                  pairing_code = pair_json.get("LinkingCode") or pair_json.get("data", {}).get("LinkingCode")
+                             else:
+                                  logger.error(f"Wuzapi failed to generate code: {pair_resp.text}")
+                         except Exception as e:
+                             logger.exception(f"Exception calling wuzapi pairphone: {e}")
+                    else:
+                         pairing_code = None
+
+                except Exception as e:
+                    logger.debug(f"QR/Pairing check error: {e}")
 
             return HttpResponse(json.dumps({
                 "status": status,
