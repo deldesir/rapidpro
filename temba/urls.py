@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.conf.urls import include
+from django.http import HttpResponseRedirect
 from django.conf.urls.static import static
 from django.urls import re_path
 from django.views.i18n import JavaScriptCatalog
@@ -35,6 +36,8 @@ urlpatterns += [
     re_path(r"^", include("temba.tickets.urls")),
     re_path(r"^", include("temba.triggers.urls")),
     re_path(r"^", include("temba.orgs.urls")),
+    # Dummy list view to satisfy SmartMIN expectations
+    re_path(r"^channels/$", lambda r: HttpResponseRedirect("/"), name="channels.channel_list"),
     re_path(r"^", include("temba.users.urls")),
     re_path(r"^staff/", include("temba.staff.urls")),
     re_path(r"^jsi18n/$", JavaScriptCatalog.as_view(), js_info_dict, name="django.views.i18n.javascript_catalog"),
