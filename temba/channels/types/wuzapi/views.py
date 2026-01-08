@@ -243,7 +243,7 @@ class ConnectWuzapiView(OrgPermsMixin, SmartFormView):
                 webhook_url = f"{scheme}://{server_ip}:8080/c/wz/{channel.uuid}/receive"
                 
                 # Update Webhook (non-blocking ideally, but short timeout)
->>>>>>> a2a2f4b9c (fix(wuzapi): polish UI and fix indentation error)
+                # Update Webhook (non-blocking ideally, but short timeout)
                 try:
                     requests.post(
                         f"{wuzapi_url}/webhook",
@@ -342,8 +342,6 @@ class ConnectWuzapiView(OrgPermsMixin, SmartFormView):
          # Note: 'channels.channel_read' is the standard view name for seeing channel details
          return reverse("channels.channel_read", args=[self.kwargs['uuid']])
 
-<<<<<<< HEAD
-=======
     def get_cancel_url(self):
         from django.urls import reverse
         return reverse("channels.channel_read", args=[self.kwargs['uuid']])
@@ -377,7 +375,6 @@ class DashboardWuzapiView(OrgPermsMixin, View):
         dashboard_url = f"{wuzapi_url}/dashboard/"
         return HttpResponseRedirect(dashboard_url)
 
->>>>>>> a2a2f4b9c (fix(wuzapi): polish UI and fix indentation error)
 class LogoutWuzapiView(OrgPermsMixin, SmartFormView):
     class LogoutForm(forms.Form):
         pass # Confirmation button
