@@ -16,7 +16,6 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.http import HttpResponse, HttpResponseRedirect
-from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils.crypto import get_random_string
 from django.utils.decorators import method_decorator
@@ -27,6 +26,7 @@ from django.views.generic import View
 from temba.channels.models import Channel
 from temba.channels.views import ClaimViewMixin
 from temba.contacts.models import Contact, URN
+from temba import mailroom
 from temba.msgs.models import Msg
 from temba.orgs.views.mixins import OrgPermsMixin
 from smartmin.views import SmartFormView
@@ -210,23 +210,18 @@ class ConnectWuzapiView(OrgPermsMixin, SmartFormView):
     permission = "channels.channel_claim"
 
     def get_context_data(self, **kwargs):
-    def get_context_data(self, **kwargs):
-        try:
-            # Ensure self.object is set via kwargs BEFORE super() calls derive_breadcrumbs
-            if 'uuid' in self.kwargs:
-                 self.object = Channel.objects.get(uuid=self.kwargs['uuid'], org=self.request.org)
-            
-            context = super().get_context_data(**kwargs)
-            
-            # Additional context logic
-            channel = self.object
-            config = channel.config
-            
-            wuzapi_url = config.get("wuzapi_url")
-            token = config.get("wuzapi_token")
-            hmac_key = config.get("hmac_key")
-            
-            qr_code = None
+        # Ensure self.object is set for SmartView methods
+        self.object = Channel.objects.get(uuid=self.kwargs['uuid'], org=self.request.org)
+        
+        context = super().get_context_data(**kwargs)
+        channel = self.object
+        config = channel.config
+        
+        wuzapi_url = config.get("wuzapi_url")
+        token = config.get("wuzapi_token")
+        hmac_key = config.get("hmac_key")
+        
+        qr_code = None
             pairing_code = None
             status = "unknown"
             
@@ -235,6 +230,36 @@ class ConnectWuzapiView(OrgPermsMixin, SmartFormView):
                  return str(val).lower() in ("true", "1", "yes", "on")
 
             if wuzapi_url and token:
+=======
+        # Ensure self.object is set for SmartView methods
+        self.object = Channel.objects.get(uuid=self.kwargs['uuid'], org=self.request.org)
+        
+        context = super().get_context_data(**kwargs)
+        channel = self.object
+        config = channel.config
+
+        
+        wuzapi_url = config.get("wuzapi_url")
+        token = config.get("wuzapi_token")
+        hmac_key = config.get("hmac_key")
+        
+        qr_code = None
+        pairing_code = None
+        status = "unknown"
+        
+        if wuzapi_url and token:
+            try:
+                # Point to Courier: /c/wz/{uuid}/receive
+                # Use localhost since user is running natively on the same machine.
+                # This avoids firewall/DNS issues with interface IPs.
+                # Use local IP detection
+                scheme = getattr(settings, 'ACCOUNT_DEFAULT_HTTP_PROTOCOL', 'http')
+                server_ip = get_server_ip()
+                
+                webhook_url = f"{scheme}://{server_ip}:8080/c/wz/{channel.uuid}/receive"
+                
+                # Update Webhook (non-blocking ideally, but short timeout)
+>>>>>>> a2a2f4b9c (fix(wuzapi): polish UI and fix indentation error)
                 try:
                     requests.post(
                         f"{wuzapi_url}/webhook",
@@ -333,6 +358,42 @@ class ConnectWuzapiView(OrgPermsMixin, SmartFormView):
          # Note: 'channels.channel_read' is the standard view name for seeing channel details
          return reverse("channels.channel_read", args=[self.kwargs['uuid']])
 
+<<<<<<< HEAD
+=======
+    def get_cancel_url(self):
+        from django.urls import reverse
+        return reverse("channels.channel_read", args=[self.kwargs['uuid']])
+
+    def derive_breadcrumbs(self):
+        from django.urls import reverse
+        # Avoid SmartView auto-generating breadcrumbs for non-existent 'list' view
+        return (
+            (reverse("orgs.org_home"), _("Home")),
+            (reverse("channels.channel_read", args=[self.kwargs['uuid']]), self.object.name),
+            (None, _("Connect")),
+        )
+
+    def derive_list_url(self):
+        from django.urls import reverse
+        # Fallback to org home since no channel list exists
+        return reverse("orgs.org_home")
+
+class DashboardWuzapiView(OrgPermsMixin, View):
+    permission = "channels.channel_read"
+    
+    def get(self, request, *args, **kwargs):
+        channel = Channel.objects.get(uuid=kwargs['uuid'], org=request.org)
+        config = channel.config
+        wuzapi_url = config.get("wuzapi_url")
+        
+        if not wuzapi_url:
+             return HttpResponse("Wuzapi URL not configured", status=400)
+             
+        # Construct dashboard URL (assuming /wuzapi/dashboard/ standard path)
+        dashboard_url = f"{wuzapi_url}/dashboard/"
+        return HttpResponseRedirect(dashboard_url)
+
+>>>>>>> a2a2f4b9c (fix(wuzapi): polish UI and fix indentation error)
 class LogoutWuzapiView(OrgPermsMixin, SmartFormView):
     class LogoutForm(forms.Form):
         pass # Confirmation button
@@ -350,7 +411,7 @@ class LogoutWuzapiView(OrgPermsMixin, SmartFormView):
 
     
     def form_valid(self, form):
-        channel = get_object_or_404(Channel, uuid=self.kwargs['uuid'], org=self.request.org)
+        channel = Channel.objects.get(uuid=self.kwargs['uuid'], org=self.request.org)
         config = channel.config
         wuzapi_url = config.get("wuzapi_url")
         token = config.get("wuzapi_token")
@@ -370,7 +431,7 @@ class LogoutWuzapiView(OrgPermsMixin, SmartFormView):
         return HttpResponseRedirect(self.get_success_url())
 
     def get_success_url(self):
-        channel = get_object_or_404(Channel, uuid=self.kwargs['uuid'], org=self.request.org)
+        channel = Channel.objects.get(uuid=self.kwargs['uuid'], org=self.request.org)
         slug = Channel.get_type_from_code(channel.channel_type).slug
         return reverse(f"channels.types.{slug}.connect", args=[self.kwargs['uuid']])
 
@@ -384,7 +445,7 @@ class WuzapiStatusView(OrgPermsMixin, View):
 
     def get(self, request, *args, **kwargs):
         try:
-            channel = get_object_or_404(Channel, uuid=kwargs['uuid'], org=request.org)
+            channel = Channel.objects.get(uuid=kwargs['uuid'], org=request.org)
             config = channel.config
             wuzapi_url = config.get("wuzapi_url")
             token = config.get("wuzapi_token")
