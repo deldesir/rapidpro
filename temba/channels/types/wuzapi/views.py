@@ -324,14 +324,14 @@ class ConnectWuzapiView(OrgPermsMixin, SmartFormView):
                     except Exception as e:
                         logger.debug(f"Wuzapi QR/Price check failed: {e}")
     
+            except Exception as e:
+                logger.error(f"Error updating Wuzapi status: {e}")
+
             context['channel'] = channel
             context['qr_code'] = qr_code
             context['pairing_code'] = pairing_code
             context['status'] = status
             return context
-        except Exception as e:
-            logger.exception(f"Error in ConnectWuzapiView: {e}")
-            raise e
 
     def form_valid(self, form):
         return HttpResponseRedirect(self.get_success_url())
