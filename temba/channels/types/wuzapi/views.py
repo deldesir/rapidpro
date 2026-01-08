@@ -222,17 +222,14 @@ class ConnectWuzapiView(OrgPermsMixin, SmartFormView):
         hmac_key = config.get("hmac_key")
         
         qr_code = None
-            pairing_code = None
-            status = "unknown"
-            
-            # Robust boolean check helper
-            def is_true(val):
-                 return str(val).lower() in ("true", "1", "yes", "on")
+        pairing_code = None
+        status = "unknown"
+        
+        # Robust boolean check helper
+        def is_true(val):
+             return str(val).lower() in ("true", "1", "yes", "on")
 
-            if wuzapi_url and token:
-=======
-        # Ensure self.object is set for SmartView methods
-        self.object = Channel.objects.get(uuid=self.kwargs['uuid'], org=self.request.org)
+        if wuzapi_url and token:
         
         context = super().get_context_data(**kwargs)
         channel = self.object
