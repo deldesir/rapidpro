@@ -9,7 +9,11 @@ from django.db import migrations
 
 def clear_empty_archive_uploads(apps, schema_editor):
     Archive = apps.get_model("archives", "Archive")
-    s3_client = storages["archives"].connection.meta.client
+    try:
+        s3_client = storages["archives"].connection.meta.client
+    except AttributeError:
+        print("Skipping empty archive upload deletion (not on S3)")
+        return
     num_updated = 0
 
     for batch in itertools.batched(Archive.objects.filter(record_count=0, location__isnull=False).order_by("id"), 100):
