@@ -210,7 +210,6 @@ class ConnectWuzapiView(OrgPermsMixin, SmartFormView):
     permission = "channels.channel_claim"
 
     def get_context_data(self, **kwargs):
-    def get_context_data(self, **kwargs):
         try:
             # Ensure self.object is set via kwargs BEFORE super() calls derive_breadcrumbs
             if 'uuid' in self.kwargs:
