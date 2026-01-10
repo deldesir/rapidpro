@@ -13,6 +13,7 @@
     "@nyaruka/temba-components": "0.135.9",
     "codemirror": "5.58.2",
     "colorette": "1.2.2",
+    "dynalite": "4.0.0",
     "fa-icons": "0.2.0",
     "intercooler": "1.2.3",
     "is-core-module": "2.4.0",
