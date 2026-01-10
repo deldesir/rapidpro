@@ -1,0 +1,37 @@
+name: Build and Release Assets
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  build-assets:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: |
+           yarn install
+           yarn add dynalite
+
+      - name: Build Tailwind CSS
+        run: yarn tw-build
+
+      - name: Create Asset Bundle
+        run: |
+          tar -czf rapidpro-assets-${{ github.ref_name }}.tar.gz node_modules static
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: rapidpro-assets-${{ github.ref_name }}.tar.gz
