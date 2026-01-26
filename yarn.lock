@@ -85,10 +85,10 @@
     "@nodelib/fs.scandir" "2.1.5"
     fastq "^1.6.0"
 
-"@nyaruka/flow-editor@1.45.1":
-  version "1.45.1"
-  resolved "https://registry.yarnpkg.com/@nyaruka/flow-editor/-/flow-editor-1.45.1.tgz#3efb21a60e717282091954a3c3e9a6fc562cb62c"
-  integrity sha512-7WTgX61FG564TaXXVcsTLElspotPBObjnLnyu9mGGWq7ds80WksqDC8MFVB64vEE0RP0vklJ7ASxQcA6f6uMBQ==
+"@nyaruka/flow-editor@1.45.3":
+  version "1.45.3"
+  resolved "https://registry.yarnpkg.com/@nyaruka/flow-editor/-/flow-editor-1.45.3.tgz#8c93c37e9f50a1cf58771e2f34bfda8653e317e8"
+  integrity sha512-ZeBXedXWDrCuZWzcd51YBwQ86UfWyFgBZxUuDYzyz+OAe1sUOUQmOi2xK9lZqOLII7Bpz8ZQxJ8bPQcxt2BVsA==
   dependencies:
     "@nyaruka/temba-components" "0.130.1"
     react "^16.8.6"
@@ -120,10 +120,10 @@
     uuid "^11.1.0"
     zustand "^5.0.3"
 
-"@nyaruka/temba-components@0.135.9":
-  version "0.135.9"
-  resolved "https://registry.yarnpkg.com/@nyaruka/temba-components/-/temba-components-0.135.9.tgz#c38da12a6540d6f4c4470b89e41fba5342e2588f"
-  integrity sha512-3OERfIl1afomo7PXtPxhfvEawxPUADpg2UdB8BbXPiY2Vr6FHSF9HK3lwmXy9eP+UubzL8GuAkIbv+vqnyaHUw==
+"@nyaruka/temba-components@0.137.0":
+  version "0.137.0"
+  resolved "https://registry.yarnpkg.com/@nyaruka/temba-components/-/temba-components-0.137.0.tgz#91f0c20b64b32be27c65c5575db41e632dc378ce"
+  integrity sha512-+b/unvkJWTsTwFFBJSvj1HD0v05N23LJ6Mlch0+T7LLn9C/7HHtnklV42RGX1otfCC87ELU+8ewtOB7xGBDxGA==
   dependencies:
     "@jsplumb/browser-ui" "^6.2.10"
     "@lit/localize" "^0.12.1"
@@ -862,9 +862,9 @@ lit@3.1.2, "lit@^2.0.0 || ^3.0.0":
     lit-html "^3.1.2"
 
 lodash@^4.17.21:
-  version "4.17.21"
-  resolved "https://registry.npmjs.org/lodash/-/lodash-4.17.21.tgz#679591c564c3bffaae8454cf0b3df370c3d6911c"
-  integrity sha512-v2kDEe57lecTulaDIuNTPy3Ry4gLGJ6Z1O3vE1krgXZNrsQ+LFTGHVxVjcXPs17LhbZVGedAJv8XZ1tvj5FvSg==
+  version "4.17.23"
+  resolved "https://registry.yarnpkg.com/lodash/-/lodash-4.17.23.tgz#f113b0378386103be4f6893388c73d0bde7f2c5a"
+  integrity sha512-LgVTMpQtIopCi79SJeDiP0TfWi5CNEc/L/aRdTh3yIvmZXTnheWpKjSZhnvMl8iXbC1tFg9gdHHDMLoV7CnG+w==
 
 loose-envify@^1.1.0, loose-envify@^1.4.0:
   version "1.4.0"

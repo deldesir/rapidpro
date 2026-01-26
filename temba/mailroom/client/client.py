@@ -83,8 +83,10 @@ class MailroomClient:
     def channel_interrupt(self, org, channel):
         self._request("channel/interrupt", {"org_id": org.id, "channel_id": channel.id})
 
-    def contact_create(self, org, user, contact: ContactSpec) -> Contact:
-        resp = self._request("contact/create", {"org_id": org.id, "user_id": user.id, "contact": asdict(contact)})
+    def contact_create(self, org, user, contact: ContactSpec, via: str) -> Contact:
+        resp = self._request(
+            "contact/create", {"org_id": org.id, "user_id": user.id, "contact": asdict(contact), "via": via}
+        )
 
         return Contact.objects.get(id=resp["contact"]["id"])
 
@@ -116,7 +118,7 @@ class MailroomClient:
             "contact/interrupt", {"org_id": org.id, "user_id": user.id, "contact_ids": [c.id for c in contacts]}
         )
 
-    def contact_modify(self, org, user, contacts, modifiers: list[Modifier]):
+    def contact_modify(self, org, user, contacts, modifiers: list[Modifier], via: str):
         return self._request(
             "contact/modify",
             {
@@ -124,6 +126,7 @@ class MailroomClient:
                 "user_id": user.id,
                 "contact_ids": [c.id for c in contacts],
                 "modifiers": [asdict(m) for m in modifiers],
+                "via": via,
             },
         )
 
@@ -355,7 +358,7 @@ class MailroomClient:
     def sim_resume(self, payload: dict):
         return self._request("sim/resume", payload, encode_json=True)
 
-    def ticket_add_note(self, org, user, tickets, note: str):
+    def ticket_add_note(self, org, user, tickets, note: str, via: str):
         return self._request(
             "ticket/add_note",
             {
@@ -363,10 +366,11 @@ class MailroomClient:
                 "user_id": user.id,
                 "ticket_uuids": [str(t.uuid) for t in tickets],
                 "note": note,
+                "via": via,
             },
         )
 
-    def ticket_change_assignee(self, org, user, tickets, assignee):
+    def ticket_change_assignee(self, org, user, tickets, assignee, via: str):
         return self._request(
             "ticket/change_assignee",
             {
@@ -374,10 +378,11 @@ class MailroomClient:
                 "user_id": user.id,
                 "ticket_uuids": [str(t.uuid) for t in tickets],
                 "assignee_id": assignee.id if assignee else None,
+                "via": via,
             },
         )
 
-    def ticket_change_topic(self, org, user, tickets, topic):
+    def ticket_change_topic(self, org, user, tickets, topic, via: str):
         return self._request(
             "ticket/change_topic",
             {
@@ -385,26 +390,29 @@ class MailroomClient:
                 "user_id": user.id,
                 "ticket_uuids": [str(t.uuid) for t in tickets],
                 "topic_uuid": str(topic.uuid),
+                "via": via,
             },
         )
 
-    def ticket_close(self, org, user, tickets):
+    def ticket_close(self, org, user, tickets, via: str):
         return self._request(
             "ticket/close",
             {
                 "org_id": org.id,
                 "user_id": user.id,
                 "ticket_uuids": [str(t.uuid) for t in tickets],
+                "via": via,
             },
         )
 
-    def ticket_reopen(self, org, user, tickets):
+    def ticket_reopen(self, org, user, tickets, via: str):
         return self._request(
             "ticket/reopen",
             {
                 "org_id": org.id,
                 "user_id": user.id,
                 "ticket_uuids": [str(t.uuid) for t in tickets],
+                "via": via,
             },
         )
 

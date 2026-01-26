@@ -147,7 +147,7 @@ class MailroomClientTest(TembaTest):
 
         # try with empty contact spec
         result = self.client.contact_create(
-            self.org, self.admin, ContactSpec(name="", language="", status="", urns=[], fields={}, groups=[])
+            self.org, self.admin, ContactSpec(name="", language="", status="", urns=[], fields={}, groups=[]), "ui"
         )
 
         self.assertEqual(ann, result)
@@ -158,6 +158,7 @@ class MailroomClientTest(TembaTest):
                 "org_id": self.org.id,
                 "user_id": self.admin.id,
                 "contact": {"name": "", "language": "", "status": "", "urns": [], "fields": {}, "groups": []},
+                "via": "ui",
             },
         )
 
@@ -175,6 +176,7 @@ class MailroomClientTest(TembaTest):
                 fields={"age": "39", "gender": "M"},
                 groups=["d5b1770f-0fb6-423b-86a0-b4d51096b99a"],
             ),
+            "api",
         )
 
         self.assertEqual(bob, result)
@@ -192,6 +194,7 @@ class MailroomClientTest(TembaTest):
                     "fields": {"age": "39", "gender": "M"},
                     "groups": ["d5b1770f-0fb6-423b-86a0-b4d51096b99a"],
                 },
+                "via": "api",
             },
         )
 
@@ -320,6 +323,7 @@ class MailroomClientTest(TembaTest):
                 ),
                 modifiers.URNs(urns=["+tel+1234567890"], modification="append"),
             ],
+            "ui",
         )
         self.assertEqual(str(ann.uuid), response[str(ann.id)]["contact"]["uuid"])
         mock_post.assert_called_once_with(
@@ -341,6 +345,7 @@ class MailroomClientTest(TembaTest):
                     },
                     {"type": "urns", "urns": ["+tel+1234567890"], "modification": "append"},
                 ],
+                "via": "ui",
             },
         )
 
@@ -819,7 +824,7 @@ class MailroomClientTest(TembaTest):
         ticket2 = self.create_ticket(bob)
 
         mock_post.return_value = MockJsonResponse(200, {"changed_uuids": [str(ticket1.uuid)]})
-        response = self.client.ticket_add_note(self.org, self.admin, [ticket1, ticket2], "please handle")
+        response = self.client.ticket_add_note(self.org, self.admin, [ticket1, ticket2], "please handle", "ui")
 
         self.assertEqual({"changed_uuids": [str(ticket1.uuid)]}, response)
         mock_post.assert_called_once_with(
@@ -830,6 +835,7 @@ class MailroomClientTest(TembaTest):
                 "user_id": self.admin.id,
                 "ticket_uuids": [str(ticket1.uuid), str(ticket2.uuid)],
                 "note": "please handle",
+                "via": "ui",
             },
         )
 
@@ -841,7 +847,7 @@ class MailroomClientTest(TembaTest):
         ticket2 = self.create_ticket(bob)
 
         mock_post.return_value = MockJsonResponse(200, {"changed_uuids": [str(ticket1.uuid)]})
-        response = self.client.ticket_change_assignee(self.org, self.admin, [ticket1, ticket2], self.agent)
+        response = self.client.ticket_change_assignee(self.org, self.admin, [ticket1, ticket2], self.agent, "ui")
 
         self.assertEqual({"changed_uuids": [str(ticket1.uuid)]}, response)
         mock_post.assert_called_once_with(
@@ -852,6 +858,7 @@ class MailroomClientTest(TembaTest):
                 "user_id": self.admin.id,
                 "ticket_uuids": [str(ticket1.uuid), str(ticket2.uuid)],
                 "assignee_id": self.agent.id,
+                "via": "ui",
             },
         )
 
@@ -864,7 +871,7 @@ class MailroomClientTest(TembaTest):
         topic = Topic.create(self.org, self.admin, "Support")
 
         mock_post.return_value = MockJsonResponse(200, {"changed_uuids": [str(ticket1.uuid)]})
-        response = self.client.ticket_change_topic(self.org, self.admin, [ticket1, ticket2], topic)
+        response = self.client.ticket_change_topic(self.org, self.admin, [ticket1, ticket2], topic, "ui")
 
         self.assertEqual({"changed_uuids": [str(ticket1.uuid)]}, response)
         mock_post.assert_called_once_with(
@@ -875,6 +882,7 @@ class MailroomClientTest(TembaTest):
                 "user_id": self.admin.id,
                 "ticket_uuids": [str(ticket1.uuid), str(ticket2.uuid)],
                 "topic_uuid": str(topic.uuid),
+                "via": "ui",
             },
         )
 
@@ -886,7 +894,7 @@ class MailroomClientTest(TembaTest):
         ticket2 = self.create_ticket(bob)
 
         mock_post.return_value = MockJsonResponse(200, {"changed_uuids": [str(ticket1.uuid)]})
-        response = self.client.ticket_close(self.org, self.admin, [ticket1, ticket2])
+        response = self.client.ticket_close(self.org, self.admin, [ticket1, ticket2], "ui")
 
         self.assertEqual({"changed_uuids": [str(ticket1.uuid)]}, response)
         mock_post.assert_called_once_with(
@@ -896,6 +904,7 @@ class MailroomClientTest(TembaTest):
                 "org_id": self.org.id,
                 "user_id": self.admin.id,
                 "ticket_uuids": [str(ticket1.uuid), str(ticket2.uuid)],
+                "via": "ui",
             },
         )
 
@@ -907,7 +916,7 @@ class MailroomClientTest(TembaTest):
         ticket2 = self.create_ticket(bob)
 
         mock_post.return_value = MockJsonResponse(200, {"changed_uuids": [str(ticket1.uuid)]})
-        response = self.client.ticket_reopen(self.org, self.admin, [ticket1, ticket2])
+        response = self.client.ticket_reopen(self.org, self.admin, [ticket1, ticket2], "ui")
 
         self.assertEqual({"changed_uuids": [str(ticket1.uuid)]}, response)
         mock_post.assert_called_once_with(
@@ -917,6 +926,7 @@ class MailroomClientTest(TembaTest):
                 "org_id": self.org.id,
                 "user_id": self.admin.id,
                 "ticket_uuids": [str(ticket1.uuid), str(ticket2.uuid)],
+                "via": "ui",
             },
         )
 
@@ -953,6 +963,7 @@ class MailroomClientTest(TembaTest):
                 self.org,
                 self.admin,
                 ContactSpec(name="Bob", language="eng", status="active", urns=["tel:+123456789"], fields={}, groups=[]),
+                "ui",
             )
 
         self.assertEqual("URN 1 is taken", e.exception.error)

@@ -768,7 +768,7 @@ class ContactWriteSerializer(WriteSerializer):
                 mods += self.instance.update_static_groups(groups)
 
             if mods:
-                self.instance.modify(self.context["user"], mods)
+                self.instance.modify(self.context["user"], mods, via_api=True)
 
             if note is not None:
                 self.instance.set_note(self.context["user"], note)
@@ -784,6 +784,7 @@ class ContactWriteSerializer(WriteSerializer):
                 urns=urns or [],
                 fields=custom_fields or {},
                 groups=groups or [],
+                via_api=True,
             )
 
         return self.instance
@@ -1005,17 +1006,17 @@ class ContactBulkActionSerializer(WriteSerializer):
         group = self.validated_data.get("group")
 
         if action == self.ADD:
-            Contact.bulk_change_group(user, contacts, group, add=True)
+            Contact.bulk_change_group(user, contacts, group, add=True, via_api=True)
         elif action == self.REMOVE:
-            Contact.bulk_change_group(user, contacts, group, add=False)
+            Contact.bulk_change_group(user, contacts, group, add=False, via_api=True)
         elif action == self.INTERRUPT:
             Contact.bulk_interrupt(user, contacts)
         elif action == self.ARCHIVE_MESSAGES or action == self.ARCHIVE:
             Msg.archive_all_for_contacts(contacts)
         elif action == self.BLOCK:
-            Contact.bulk_change_status(user, contacts, modifiers.Status.BLOCKED)
+            Contact.bulk_change_status(user, contacts, modifiers.Status.BLOCKED, via_api=True)
         elif action == self.UNBLOCK:
-            Contact.bulk_change_status(user, contacts, modifiers.Status.ACTIVE)
+            Contact.bulk_change_status(user, contacts, modifiers.Status.ACTIVE, via_api=True)
         elif action == self.DELETE:
             for contact in contacts:
                 contact.release(user)
@@ -1759,16 +1760,19 @@ class TicketBulkActionSerializer(WriteSerializer):
         note = self.validated_data.get("note")
         topic = self.validated_data.get("topic")
 
+        # the UI uses the API but with session auth, so we don't count those calls as actually being via the API
+        via_api = self.context["by_token"]
+
         if action == self.ACTION_ASSIGN:
-            changed_uuids = Ticket.bulk_assign(org, user, tickets, assignee=assignee)
+            changed_uuids = Ticket.bulk_assign(org, user, tickets, assignee=assignee, via_api=via_api)
         elif action == self.ACTION_ADD_NOTE:
-            changed_uuids = Ticket.bulk_add_note(org, user, tickets, note=note)
+            changed_uuids = Ticket.bulk_add_note(org, user, tickets, note=note, via_api=via_api)
         elif action == self.ACTION_CHANGE_TOPIC:
-            changed_uuids = Ticket.bulk_change_topic(org, user, tickets, topic=topic)
+            changed_uuids = Ticket.bulk_change_topic(org, user, tickets, topic=topic, via_api=via_api)
         elif action == self.ACTION_CLOSE:
-            changed_uuids = Ticket.bulk_close(org, user, tickets)
+            changed_uuids = Ticket.bulk_close(org, user, tickets, via_api=via_api)
         elif action == self.ACTION_REOPEN:
-            changed_uuids = Ticket.bulk_reopen(org, user, tickets)
+            changed_uuids = Ticket.bulk_reopen(org, user, tickets, via_api=via_api)
 
         failed = [str(t.uuid) for t in tickets if str(t.uuid) not in changed_uuids]
         return BulkActionFailure(failed) if failed else None

@@ -1,3 +1,60 @@
+v26.1.12 (2026-01-22)
+-------------------------
+ * Update to latest editor, fix context menu.
+ * Use new format from contact/modify endpoint
+ * Bump lodash from 4.17.21 to 4.17.23
+
+v26.1.11 (2026-01-22)
+-------------------------
+ * Exclude AI models not suitable, show all other available models
+
+v26.1.10 (2026-01-20)
+-------------------------
+ * Remove Msg.external_id and ticket_id
+ * Add data migration to backfill Msg.external_identifier
+ * Add banner for toggling editor
+
+v26.1.9 (2026-01-19)
+-------------------------
+ * Pass via param to mailroom ticket endpoints
+ * Bump pyasn1 from 0.6.1 to 0.6.2
+
+v26.1.8 (2026-01-15)
+-------------------------
+ * Update floweditor
+ * Fix updating shortcuts
+ * Call contact/create and modify with via parameter
+
+v26.1.7 (2026-01-14)
+-------------------------
+ * Fix API explorer, to show results in the correct container
+ * No longer expect flows in the simulation payload
+ * Update to latest simulator
+
+v26.1.6 (2026-01-13)
+-------------------------
+ * Update previously added data migration to bump modified_on values
+
+v26.1.5 (2026-01-13)
+-------------------------
+ * Data migration to fix zero last_seen_on values
+ * Revert to testing on PG15
+
+v26.1.4 (2026-01-08)
+-------------------------
+ * Make FlowSession.contact_uuid and output non-null
+
+v26.1.3 (2026-01-08)
+-------------------------
+ * Update dependencies
+ * Add external_identifier with unique constraint per channel
+
+v26.1.2 (2026-01-07)
+-------------------------
+ * Monkey patch boto3 number deserialization issue
+ * Bump aiohttp from 3.12.14 to 3.13.3
+ * Drop FlowSession.output_url field
+
 v26.1.1 (2026-01-06)
 -------------------------
  * Data migration to clear uploads for empty archives

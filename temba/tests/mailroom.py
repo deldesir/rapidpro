@@ -205,7 +205,7 @@ class TestClient(MailroomClient):
         pass
 
     @_client_method
-    def contact_create(self, org, user, contact: mailroom.ContactSpec):
+    def contact_create(self, org, user, contact: mailroom.ContactSpec, via: str):
         status = {v: k for k, v in Contact.ENGINE_STATUSES.items()}[contact.status]
         return create_contact_locally(
             org,
@@ -241,10 +241,10 @@ class TestClient(MailroomClient):
         return imp.batches.count()
 
     @_client_method
-    def contact_modify(self, org, user, contacts, modifiers: list[Modifier]):
+    def contact_modify(self, org, user, contacts, modifiers: list[Modifier], via: str) -> dict:
         apply_modifiers(org, user, contacts, modifiers)
 
-        return {str(c.id): {"contact": {}, "events": []} for c in contacts}
+        return {"events": {str(c.uuid): [] for c in contacts}, "skipped": []}
 
     @_client_method
     def contact_inspect(self, org, contacts) -> dict:
@@ -450,7 +450,7 @@ class TestClient(MailroomClient):
         return {}
 
     @_client_method
-    def ticket_add_note(self, org, user, tickets, note: str):
+    def ticket_add_note(self, org, user, tickets, note: str, via: str):
         now = timezone.now()
         tickets = list(Ticket.objects.filter(org=org, id__in=[t.id for t in tickets]))
 
@@ -462,7 +462,7 @@ class TestClient(MailroomClient):
         return {"changed_uuids": [str(t.uuid) for t in tickets]}
 
     @_client_method
-    def ticket_change_assignee(self, org, user, tickets, assignee):
+    def ticket_change_assignee(self, org, user, tickets, assignee, via: str):
         now = timezone.now()
         tickets = list(Ticket.objects.filter(org=org, id__in=[t.id for t in tickets]).exclude(assignee=assignee))
 
@@ -475,7 +475,7 @@ class TestClient(MailroomClient):
         return {"changed_uuids": [str(t.uuid) for t in tickets]}
 
     @_client_method
-    def ticket_change_topic(self, org, user, tickets, topic):
+    def ticket_change_topic(self, org, user, tickets, topic, via: str):
         now = timezone.now()
         tickets = list(Ticket.objects.filter(org=org, id__in=[t.id for t in tickets]).exclude(topic=topic))
 
@@ -488,7 +488,7 @@ class TestClient(MailroomClient):
         return {"changed_uuids": [str(t.uuid) for t in tickets]}
 
     @_client_method
-    def ticket_close(self, org, user, tickets):
+    def ticket_close(self, org, user, tickets, via: str):
         tickets = list(Ticket.objects.filter(org=org, id__in=[t.id for t in tickets], status=Ticket.STATUS_OPEN))
 
         for ticket in tickets:
@@ -499,7 +499,7 @@ class TestClient(MailroomClient):
         return {"changed_uuids": [str(t.uuid) for t in tickets]}
 
     @_client_method
-    def ticket_reopen(self, org, user, tickets):
+    def ticket_reopen(self, org, user, tickets, via: str):
         tickets = list(Ticket.objects.filter(org=org, id__in=[t.id for t in tickets], status=Ticket.STATUS_CLOSED))
 
         for ticket in tickets:

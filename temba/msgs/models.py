@@ -578,14 +578,9 @@ class Msg(models.Model):
     failed_reason = models.CharField(null=True, max_length=1, choices=FAILED_CHOICES)  # why we've failed
 
     # the id of this message on the other side of its channel
-    external_id = models.CharField(max_length=255, null=True)
+    external_identifier = models.CharField(max_length=255, null=True)
 
     log_uuids = ArrayField(models.UUIDField(), null=True)
-
-    # TODO remove
-    ticket = models.ForeignKey(
-        "tickets.Ticket", on_delete=models.DO_NOTHING, null=True, db_index=False, db_constraint=False
-    )
 
     def as_archive_json(self):
         """
@@ -749,12 +744,6 @@ class Msg(models.Model):
                 fields=["created_on"],
                 condition=Q(direction="O", is_android=True, status__in=("I", "Q", "E")),
             ),
-            # used by courier to lookup messages by external id
-            models.Index(
-                name="msgs_by_external_id",
-                fields=["channel_id", "external_id"],
-                condition=Q(external_id__isnull=False),
-            ),
             # used for Inbox view and API folder
             models.Index(
                 name="msgs_inbox",
@@ -787,14 +776,20 @@ class Msg(models.Model):
             ),
         ]
         constraints = [
-            models.CheckConstraint(name="direction_is_in_or_out", check=Q(direction="I") | Q(direction="O")),
+            models.CheckConstraint(name="direction_is_in_or_out", condition=Q(direction="I") | Q(direction="O")),
             models.CheckConstraint(
                 name="incoming_has_channel_and_urn",
-                check=Q(direction="O") | Q(channel__isnull=False, contact_urn__isnull=False),
+                condition=Q(direction="O") | Q(channel__isnull=False, contact_urn__isnull=False),
             ),
             models.CheckConstraint(
                 name="no_sent_status_without_sent_on",
-                check=(~Q(status__in=("W", "S", "D", "R"), sent_on__isnull=True)),
+                condition=(~Q(status__in=("W", "S", "D", "R"), sent_on__isnull=True)),
+            ),
+            # used by courier to lookup messages for status updates and prevent duplicate incoming messages
+            models.UniqueConstraint(
+                name="unique_msgs_external_identifiers",
+                fields=["channel", "external_identifier"],
+                condition=Q(external_identifier__isnull=False),
             ),
         ]
 
