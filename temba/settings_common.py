@@ -42,7 +42,7 @@ if TESTING:
     PASSWORD_HASHERS = ("django.contrib.auth.hashers.MD5PasswordHasher",)
     DEBUG = False
 
-_db_host = "postgres"
+_db_host = "localhost"
 _valkey_host = "localhost"
 _localstack_host = "localhost"
 
@@ -877,48 +877,22 @@ CHANNEL_TYPES = [
 
 # Large Language Model (LLM) providers for AI features
 LLM_TYPES = {
-    "temba.ai.types.anthropic.type.AnthropicType": {"exclusions": []},
-    "temba.ai.types.deepseek.type.DeepSeekType": {"exclusions": []},
+    "temba.ai.types.anthropic.type.AnthropicType": {
+        "models": [
+            "claude-3-7-sonnet-20250219",
+            "claude-3-5-sonnet-20241022",
+            "claude-3-5-haiku-20241022",
+            "claude-3-opus-20240229",
+        ],
+    },
+    "temba.ai.types.deepseek.type.DeepSeekType": {
+        "models": ["deepseek-chat"],
+    },
     "temba.ai.types.google.type.GoogleType": {
-        "exclusions": [
-            # audio models
-            "tts",
-            "audio",
-            "lyria",
-            "realtime",
-            # image models
-            "imagen",
-            # video models
-            "veo",
-            # experimental / preview models
-            "exp",
-            "preview",
-            # other non-LLM models
-            "robotics",
-            "aqa",
-            # deprecated models
-            "gemini-1.0",
-        ]
+        "models": ["gemini-2.0-flash", "gemini-1.5-flash"],
     },
     "temba.ai.types.openai.type.OpenAIType": {
-        "exclusions": [
-            # audio models
-            "tts",
-            "whisper",
-            "audio",
-            "transcribe",
-            "realtime",
-            # image models
-            "dall-e",
-            "image",
-            # video models
-            "sora",
-            # preview / experimental models
-            "preview",
-            # deprecated models
-            "davinci",
-            "babbage",
-        ]
+        "models": ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"],
     },
 }
 if TESTING:
