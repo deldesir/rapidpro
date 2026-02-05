@@ -25,9 +25,9 @@ class CredentialsForm(BaseConnectWizard.Form):
         except anthropic.AuthenticationError:
             raise forms.ValidationError(_("Invalid API Key."))
 
-        exclusions = self.llm_type.settings.get("exclusions", [])
+        whitelist = self.llm_type.settings.get("models", [])
 
-        model_choices = [(m.id, m.display_name) for m in available_models if not any(sub in m.id for sub in exclusions)]
+        model_choices = [(m.id, m.display_name) for m in available_models if not whitelist or m.id in whitelist]
 
         self.extra_data = {"model_choices": model_choices}
 
