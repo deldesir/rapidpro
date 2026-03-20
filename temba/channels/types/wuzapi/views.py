@@ -146,13 +146,7 @@ class ClaimView(ClaimViewMixin, SmartFormView):
             )
             logger.info(f"Wuzapi Channel created (Native): {self.object.uuid}")
             
-            # Auto-configure Wuzapi webhook
-            # Point to Courier: /c/wz/{uuid}/receive
-            # Use localhost for native same-machine setup
-            scheme = getattr(settings, 'ACCOUNT_DEFAULT_HTTP_PROTOCOL', 'http')
-            server_ip = '127.0.0.1'
-            
-            webhook_url = f"{scheme}://{server_ip}:8080/c/wz/{self.object.uuid}/receive"
+            webhook_url = f"http://localhost:8080/c/wz/{self.object.uuid}/receive"
             wuzapi_endpoint = f"{wuzapi_url}/webhook"
 
             try:
@@ -233,14 +227,8 @@ class ConnectWuzapiView(OrgPermsMixin, SmartFormView):
         
         if wuzapi_url and token:
             try:
-                # Point to Courier: /c/wz/{uuid}/receive
-                # Use localhost since user is running natively on the same machine.
-                # This avoids firewall/DNS issues with interface IPs.
-                # Use local IP detection
-                scheme = getattr(settings, 'ACCOUNT_DEFAULT_HTTP_PROTOCOL', 'http')
-                server_ip = get_server_ip()
-                
-                webhook_url = f"{scheme}://{server_ip}:8080/c/wz/{channel.uuid}/receive"
+                # Courier always runs locally over plain HTTP — never use public IP or https
+                webhook_url = f"http://localhost:8080/c/wz/{channel.uuid}/receive"
                 
                 # Update Webhook (non-blocking ideally, but short timeout)
                 # Update Webhook (non-blocking ideally, but short timeout)
