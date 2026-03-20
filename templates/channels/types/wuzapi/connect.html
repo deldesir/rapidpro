@@ -100,94 +100,109 @@
 {{ block.super }}
 <script>
   document.addEventListener("DOMContentLoaded", function () {
-    const statusUrl = "{% url 'channels.types.wuzapi.status' channel.uuid %}";
+    const statusUrl  = "{% url 'channels.types.wuzapi.status' channel.uuid %}";
 
-    const elConnecting = document.getElementById('state-connecting');
-    const elScan = document.getElementById('state-scan');
-    const elSuccess = document.getElementById('state-success');
+    const elConnecting  = document.getElementById('state-connecting');
+    const elScan        = document.getElementById('state-scan');
+    const elSuccess     = document.getElementById('state-success');
+    const imgQr         = document.getElementById('qr-image');
+    const elPairingSec  = document.getElementById('pairing-section');
+    const elCodeArea    = document.getElementById('code-display-area');
+    const elCode        = document.getElementById('pairing-code');
+    const btnGen        = document.getElementById('btn-gen-code');
 
-    const imgQr = document.getElementById('qr-image');
-    const elPairingSection = document.getElementById('pairing-section');
-    const elCodeDisplay = document.getElementById('code-display-area');
-    const elPairingCode = document.getElementById('pairing-code');
-    const btnGenCode = document.getElementById('btn-gen-code');
+    // Values injected server-side by Django — no extra network call needed.
+    const serverCode    = "{{ pairing_code|default:''|escapejs }}";
+    const initialState  = "{{ status|default:'connecting'|escapejs }}";
 
-    let firstPoll = true;  // Request pairing code automatically on first poll only
+    let stopped   = false;   // true once connected — halts polling
+    let isPolling = false;   // prevents overlapping fetch calls
 
     function showState(state) {
       elConnecting.classList.add('d-none');
       elScan.classList.add('d-none');
       elSuccess.classList.add('d-none');
-
       if (state === 'connecting' || state === 'unknown') elConnecting.classList.remove('d-none');
-      if (state === 'scancode') elScan.classList.remove('d-none');
+      if (state === 'scancode')  elScan.classList.remove('d-none');
       if (state === 'connected') elSuccess.classList.remove('d-none');
     }
 
-    function checkStatus(genCode) {
-      let url = statusUrl;
-      if (genCode) {
-        url += (url.includes('?') ? '&' : '?') + 'gen_code=1';
-      }
+    function showCode(code) {
+      elPairingSec.classList.remove('d-none');
+      elCodeArea.classList.remove('d-none');
+      elCode.innerText = code;
+      btnGen.classList.add('d-none');   // code visible — no button needed
+    }
 
-      return fetch(url)
-        .then(response => response.json())
+    // Render the pairing code from server context or show the fallback button.
+    // Called once on page load and again each time poll returns 'scancode'.
+    function applyCode() {
+      if (elCode.innerText) return;     // already shown — do nothing
+      if (serverCode) {
+        showCode(serverCode);
+      } else {
+        elPairingSec.classList.remove('d-none');
+        btnGen.classList.remove('d-none');
+      }
+    }
+
+    // Status-only polling — never calls /session/pairphone.
+    // Uses isPolling guard so concurrent requests cannot overlap.
+    function poll() {
+      if (stopped || isPolling) return;
+      isPolling = true;
+
+      fetch(statusUrl)
+        .then(r => r.json())
         .then(data => {
-          if (data.error) {
-            console.error("Status check error:", data.error);
+          if (data.status === 'connected') {
+            stopped = true;
+            showState('connected');
             return;
           }
-
-          if (data.status === 'connected') {
-            showState('connected');
-            return; // Stop polling
-          } else if (data.status === 'scancode') {
+          if (data.status === 'scancode') {
             showState('scancode');
-            if (data.qr_code) {
-              imgQr.src = data.qr_code;
-            }
-            elPairingSection.classList.remove('d-none');
-
-            if (data.pairing_code) {
-              elCodeDisplay.classList.remove('d-none');
-              elPairingCode.innerText = data.pairing_code;
-              // Code is visible — change button to "Refresh Code"
-              btnGenCode.innerText = "{% trans 'Refresh Code' %}";
-              btnGenCode.disabled = false;
-            } else if (genCode) {
-              // gen_code was requested but no code returned yet — re-enable button
-              btnGenCode.innerText = "{% trans 'Get Pairing Code instead' %}";
-              btnGenCode.disabled = false;
-            }
+            if (data.qr_code) imgQr.src = data.qr_code;
+            applyCode();
           } else {
             showState('connecting');
-            // Keep polling until session is ready
-            setTimeout(() => checkStatus(false), 3000);
-            return;
           }
-
-          // Schedule next status-only poll (no gen_code) to detect connection
-          setTimeout(() => checkStatus(false), 5000);
         })
-        .catch(e => {
-          console.error("Poll failed", e);
-          setTimeout(() => checkStatus(false), 5000);
+        .catch(e => console.error("Poll error:", e))
+        .finally(() => {
+          isPolling = false;
+          if (!stopped) setTimeout(poll, 5000);
         });
     }
 
-    function generateCode() {
-      btnGenCode.disabled = true;
-      btnGenCode.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> {% trans "Generating..." %}';
-      checkStatus(true);
-    }
+    // Fallback button — only visible when server returned no pairing code.
+    // Makes exactly one gen_code call, then hides itself permanently.
+    btnGen.addEventListener('click', function () {
+      if (btnGen.disabled) return;
+      btnGen.disabled = true;
+      btnGen.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> {% trans "Generating..." %}';
 
-    btnGenCode.addEventListener('click', generateCode);
+      fetch(statusUrl + '?gen_code=1')
+        .then(r => r.json())
+        .then(data => {
+          if (data.pairing_code) {
+            showCode(data.pairing_code);
+          } else {
+            btnGen.innerText = "{% trans 'Try Again' %}";
+            btnGen.disabled = false;
+          }
+        })
+        .catch(() => {
+          btnGen.innerText = "{% trans 'Try Again' %}";
+          btnGen.disabled = false;
+        });
+    });
 
-    // On first load: fetch status AND request the pairing code in one shot
-    showState('connecting');
-    checkStatus(true);
+    // Boot: render from server state immediately (no network call), then start polling.
+    showState(initialState);
+    if (initialState === 'scancode') applyCode();
+    setTimeout(poll, 5000);
   });
-
 </script>
 {% endblock extra-script %}
 

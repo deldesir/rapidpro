@@ -295,8 +295,7 @@ class ConnectWuzapiView(OrgPermsMixin, SmartFormView):
                 except Exception as e:
                     logger.debug(f"Wuzapi status check failed: {e}")
 
-                # Fetch QR if not connected (no pairphone call here — the JS
-                # handles that on first poll with gen_code=1 to avoid double PIN prompts)
+                # Fetch QR and pairing code if not yet connected
                 if status != "connected":
                     try:
                         # Ensure session is started
@@ -311,8 +310,21 @@ class ConnectWuzapiView(OrgPermsMixin, SmartFormView):
                             qr_data = qr_resp.json().get('data', {})
                             qr_code = qr_data.get("QRCode")
 
+                        # Request pairing code once — WhatsApp sends the PIN prompt to the phone.
+                        # The code is passed to the template and displayed immediately so the user
+                        # never needs to click a button (which would trigger a second prompt).
+                        pair_resp = requests.post(
+                            f"{wuzapi_url}/session/pairphone",
+                            headers={"Authorization": token},
+                            json={"phone": channel.address},
+                            timeout=10
+                        )
+                        if pair_resp.status_code == 200:
+                            pair_json = pair_resp.json()
+                            pairing_code = pair_json.get("LinkingCode") or pair_json.get("data", {}).get("LinkingCode")
+
                     except Exception as e:
-                        logger.debug(f"Wuzapi QR check failed: {e}")
+                        logger.debug(f"Wuzapi QR/pairing check failed: {e}")
     
             except Exception as e:
                 logger.error(f"Error updating Wuzapi status: {e}")
