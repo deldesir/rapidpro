@@ -7,7 +7,6 @@ from array import array
 from dataclasses import dataclass
 from enum import Enum
 from fnmatch import fnmatch
-from typing import Optional
 from urllib.parse import unquote, urlparse
 
 import iso8601
@@ -417,40 +416,6 @@ class Attachment:
         return f"{self.content_type}:{self.url}"
 
 
-@dataclass
-class QuickReply:
-    """
-    Represents a message quick reply stored as text or text<extra>extra or <location>text
-    """
-
-    type: str
-    text: Optional[str]
-    extra: Optional[str]
-
-    @classmethod
-    def parse(cls, s: str):
-        if s.startswith("<location>"):
-            return cls(type="location", text=s[10:] or None, extra=None)
-
-        parts = s.split("<extra>", 1)
-        return cls(type="text", text=parts[0], extra=parts[1] if len(parts) > 1 else None)
-
-    def as_json(self) -> dict:
-        d = {"type": self.type}
-        if self.text:
-            d["text"] = self.text
-        if self.extra:
-            d["extra"] = self.extra
-        return d
-
-    def __str__(self) -> str:
-        if self.type == "location":
-            return "<location>" + (self.text or "")
-        if self.extra:
-            return self.text + "<extra>" + self.extra
-        return self.text
-
-
 class Msg(models.Model):
     """
     Messages are either inbound or outbound and can have varying statuses depending on their direction. Generally an
@@ -559,7 +524,7 @@ class Msg(models.Model):
     # message content
     text = models.TextField()
     attachments = ArrayField(models.URLField(max_length=Attachment.MAX_LEN), null=True)
-    quick_replies = ArrayField(models.CharField(max_length=64), null=True)
+    quickreplies = models.JSONField(null=True)
     optin = models.ForeignKey("msgs.OptIn", on_delete=models.DO_NOTHING, null=True, db_index=False, db_constraint=False)
     locale = models.CharField(max_length=6, null=True)  # eng, eng-US, por-BR, und etc
     templating = models.JSONField(null=True)
@@ -620,12 +585,6 @@ class Msg(models.Model):
         Gets this message's attachments parsed into objects
         """
         return Attachment.parse_all(self.attachments)
-
-    def get_quick_replies(self):
-        """
-        Gets this message's quick replies parsed into objects
-        """
-        return [QuickReply.parse(qr) for qr in self.quick_replies or []]
 
     def get_logs(self) -> list:
         return ChannelLog.get_by_uuid(self.channel, self.log_uuids or [])

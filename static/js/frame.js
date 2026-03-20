@@ -464,9 +464,14 @@ function showModax(header, endpoint, modaxOptions) {
       modax['-temba-redirected'] = refreshMenu;
     }
 
+    modax.style.setProperty('--header-bg', options.headerBg || 'var(--color-primary-dark)');
+    modax.style.setProperty('--header-text', options.headerText || '#fff');
+
     modax.headers = { 'X-Temba-Spa': 1 };
     modax.header = header;
     modax.endpoint = endpoint;
+    modax.originX = options.originX != null ? options.originX : null;
+    modax.originY = options.originY != null ? options.originY : null;
 
     // take our focus from the thing that invocked us
     if (lastElement) {

@@ -1,6 +1,5 @@
 # General
 .DS_Store
-.idea
 *~
 .envrc
 .devcontainer
@@ -10,9 +9,6 @@
 .vscode/
 .venv
 venv
-*.sublime*
-manage.sh
-
 .coverage
 coverage.xml
 celerybeat-schedule.db
@@ -24,8 +20,14 @@ screenshots
 sitestatic
 temba/settings.py
 temba/settings_common.py
+manage.sh
+rp.sh
 
+# AI
+.claude/
 CLAUDE.md
+CODEX.md
+AGENTS.md
 start.sh
 
 # Exclude media folder except files used for import testing

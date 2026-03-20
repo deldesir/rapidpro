@@ -265,6 +265,7 @@ class Org(SmartModel):
     LIMIT_TEAMS = "teams"
 
     DELETE_DELAY_DAYS = 7  # how many days after releasing that an org is deleted
+    OUTBOX_WARNING_THRESHOLD = 10_000
 
     BLOCKER_SUSPENDED = _(
         "Sorry, your workspace is currently suspended. To re-enable starting flows and sending messages, please "
@@ -854,7 +855,7 @@ class Org(SmartModel):
         """
         return self.users.filter(id=user.id).exists()
 
-    def add_user(self, user: User, role: OrgRole, *, team=None):
+    def add_user(self, user: User, role: OrgRole, *, team=None, can_assign=True, can_reply_non_own=True):
         """
         Adds the given user to this org with the given role
         """
@@ -869,7 +870,14 @@ class Org(SmartModel):
         if role == OrgRole.AGENT and not team:
             team = self.default_team
 
-        self._membership_cache[user] = OrgMembership.objects.create(org=self, user=user, role_code=role.code, team=team)
+        self._membership_cache[user] = OrgMembership.objects.create(
+            org=self,
+            user=user,
+            role_code=role.code,
+            team=team,
+            can_assign=can_assign,
+            can_reply_non_own=can_reply_non_own,
+        )
 
     def remove_user(self, user: User):
         """
@@ -1214,6 +1222,8 @@ class OrgMembership(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     role_code = models.CharField(max_length=1)
     team = models.ForeignKey("tickets.Team", on_delete=models.PROTECT, null=True)
+    can_assign = models.BooleanField(default=True)
+    can_reply_non_own = models.BooleanField(default=True)
     last_seen_on = models.DateTimeField(null=True)
 
     @property

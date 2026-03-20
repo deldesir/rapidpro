@@ -4,7 +4,14 @@ from django.urls import reverse
 
 from temba.campaigns.models import Campaign, CampaignEvent
 from temba.contacts.models import ContactField, ContactGroup
-from temba.flows.models import Flow, FlowStart, FlowStartCount, FlowUserConflictException, FlowVersionConflictException
+from temba.flows.models import (
+    Flow,
+    FlowRun,
+    FlowStart,
+    FlowStartCount,
+    FlowUserConflictException,
+    FlowVersionConflictException,
+)
 from temba.flows.tasks import squash_flow_counts
 from temba.globals.models import Global
 from temba.tests import CRUDLTestMixin, TembaTest, matchers, mock_mailroom
@@ -175,6 +182,30 @@ class FlowTest(TembaTest, CRUDLTestMixin):
         flow.refresh_from_db()
         self.assertTrue(flow.is_archived)
 
+    @mock_mailroom
+    def test_flow_archive_with_ongoing_runs(self, mr_mocks):
+        self.login(self.admin)
+        flow = self.create_flow("Test Flow")
+
+        # add ongoing runs
+        flow.counts.create(scope=f"status:{FlowRun.STATUS_WAITING}", count=10)
+
+        # do not archive if flow has ongoing runs
+        Flow.apply_action_archive(self.admin, Flow.objects.filter(pk=flow.pk))
+
+        flow.refresh_from_db()
+        self.assertFalse(flow.is_archived)
+
+        # clear the waiting runs and add only completed
+        flow.counts.all().delete()
+        flow.counts.create(scope=f"status:{FlowRun.STATUS_COMPLETED}", count=10)
+
+        # can archive if no ongoing runs
+        Flow.apply_action_archive(self.admin, Flow.objects.filter(pk=flow.pk))
+
+        flow.refresh_from_db()
+        self.assertTrue(flow.is_archived)
+
     def test_editor(self):
         flow = self.create_flow("Test")
 
@@ -183,37 +214,32 @@ class FlowTest(TembaTest, CRUDLTestMixin):
         flow_editor_url = reverse("flows.flow_editor", args=[flow.uuid])
         flow_next_url = reverse("flows.flow_next", args=[flow.uuid])
 
+        # by default, editor redirects to new editor
         response = self.client.get(flow_editor_url)
+        self.assertRedirects(response, flow_next_url, fetch_redirect_response=False)
 
+        # test new editor view
+        response = self.client.get(flow_next_url, follow=True)
+        self.assertEqual(response.status_code, 200)
+
+        # opting out keeps user on classic editor
+        self.client.cookies["use-new-editor"] = "false"
+        response = self.client.get(flow_editor_url)
+        self.assertEqual(response.status_code, 200)
         self.assertTrue(response.context["mutable"])
         self.assertTrue(response.context["can_start"])
         self.assertTrue(response.context["can_simulate"])
         self.assertContains(response, reverse("flows.flow_simulate", args=[flow.uuid]))
         self.assertContains(response, 'id="rp-flow-editor"')
 
-        # test with banner=1 to show new editor banner
-        response = self.client.get(flow_editor_url + "?banner=1")
-        self.assertTrue(response.context["show_new_editor_banner"])
-
-        # test redirect to new editor when cookie is set
-        self.client.cookies["use_new_editor"] = "true"
+        # removing the cookie goes back to new editor default
+        del self.client.cookies["use-new-editor"]
         response = self.client.get(flow_editor_url)
         self.assertRedirects(response, flow_next_url, fetch_redirect_response=False)
 
-        # test new editor view with banner=1
-        response = self.client.get(flow_next_url + "?banner=1", follow=True)
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.context["show_old_editor_banner"])
-        self.assertFalse(response.context["show_new_editor_banner"])
-
-        # remove cookie and verify we get the old editor
-        del self.client.cookies["use_new_editor"]
-        response = self.client.get(flow_editor_url + "?banner=1")
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.context["show_new_editor_banner"])
-
         # flows that are archived can't be edited, started or simulated
         self.login(self.admin)
+        self.client.cookies["use-new-editor"] = "false"
 
         flow.is_archived = True
         flow.save(update_fields=("is_archived",))
@@ -311,7 +337,7 @@ class FlowTest(TembaTest, CRUDLTestMixin):
         flow.info = {
             "results": [
                 {"key": "color", "name": "Color", "categories": ["Red", "Blue", "Green", "Other"]},
-                {"key": "beer", "name": "Beer", "categories": ["Primus" "Mutzig", "Turbo King", "Skol", "Other"]},
+                {"key": "beer", "name": "Beer", "categories": ["Primus", "Mutzig", "Turbo King", "Skol", "Other"]},
                 {"key": "name", "name": "Name", "categories": ["All Responses"]},
             ]
         }

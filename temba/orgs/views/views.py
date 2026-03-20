@@ -21,6 +21,7 @@ from django.contrib import messages
 from django.contrib.auth import logout
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import F, Prefetch, Q
 from django.db.models.functions import Lower
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
@@ -215,6 +216,14 @@ class UserCRUDL(SmartCRUDL):
         class Form(forms.ModelForm):
             role = forms.ChoiceField(choices=OrgRole.choices(), required=True, label=_("Role"), widget=SelectWidget())
             team = forms.ModelChoiceField(queryset=Team.objects.none(), required=False, widget=SelectWidget())
+            can_assign = forms.BooleanField(
+                required=False, label=_("Can assign tickets"), widget=CheckboxWidget(attrs={"widget_only": True})
+            )
+            can_reply_non_own = forms.BooleanField(
+                required=False,
+                label=_("Can reply to tickets not assigned to them"),
+                widget=CheckboxWidget(attrs={"widget_only": True}),
+            )
 
             def __init__(self, org, *args, **kwargs):
                 self.org = org
@@ -225,7 +234,7 @@ class UserCRUDL(SmartCRUDL):
 
             class Meta:
                 model = User
-                fields = ("role", "team")
+                fields = ("role", "team", "can_assign", "can_reply_non_own")
 
         form_class = Form
         require_feature = Org.FEATURE_USERS
@@ -237,11 +246,23 @@ class UserCRUDL(SmartCRUDL):
             return self.request.org.get_users().exclude(is_system=True)
 
         def derive_exclude(self):
-            return [] if Org.FEATURE_TEAMS in self.request.org.features else ["team"]
+            exclude = [] if Org.FEATURE_TEAMS in self.request.org.features else ["team"]
+
+            # only show agent-specific fields if the current user being edited is an agent
+            membership = self.request.org.get_membership(self.object)
+            if membership.role != OrgRole.AGENT:
+                exclude.extend(["can_assign", "can_reply_non_own"])
+
+            return exclude
 
         def derive_initial(self):
             membership = self.request.org.get_membership(self.object)
-            return {"role": membership.role.code, "team": membership.team}
+            return {
+                "role": membership.role.code,
+                "team": membership.team,
+                "can_assign": membership.can_assign,
+                "can_reply_non_own": membership.can_reply_non_own,
+            }
 
         def get_form_kwargs(self):
             kwargs = super().get_form_kwargs()
@@ -253,12 +274,20 @@ class UserCRUDL(SmartCRUDL):
             team = self.form.cleaned_data.get("team")
             team = (team or self.request.org.default_team) if role == OrgRole.AGENT else None
 
+            can_assign = self.form.cleaned_data.get("can_assign", True)
+            can_reply_non_own = self.form.cleaned_data.get("can_reply_non_own", True)
+
+            # non-agent roles always have full permissions
+            if role != OrgRole.AGENT:
+                can_assign = True
+                can_reply_non_own = True
+
             # don't update if user is the last administrator and role is being changed to something else
             has_other_admins = self.request.org.get_admins().exclude(id=obj.id).exists()
             if role != OrgRole.ADMINISTRATOR and not has_other_admins:
                 return obj
 
-            self.request.org.add_user(obj, role, team=team)
+            self.request.org.add_user(obj, role, team=team, can_assign=can_assign, can_reply_non_own=can_reply_non_own)
             return obj
 
         def get_success_url(self):
@@ -299,7 +328,6 @@ class UserCRUDL(SmartCRUDL):
             return reverse("orgs.user_list") if still_in_org else reverse("orgs.org_choose")
 
     class Edit(ComponentFormMixin, InferUserMixin, SmartUpdateView):
-
         class Form(forms.ModelForm):
             first_name = forms.CharField(
                 label=_("First Name"), widget=InputWidget(attrs={"placeholder": _("Required")})
@@ -1284,17 +1312,31 @@ class OrgCRUDL(SmartCRUDL):
         form_class = SignupForm
         permission = None
 
+        @staticmethod
+        def get_current_user_org(user) -> Org | None:
+            membership = (
+                OrgMembership.objects.filter(user=user, org__is_active=True)
+                .select_related("org")
+                .order_by(F("last_seen_on").desc(nulls_last=True), "-id")
+                .first()
+            )
+            return membership.org if membership else None
+
         def get_success_url(self):
             return "%s?start" % reverse("public.public_welcome")
 
         def pre_process(self, request, *args, **kwargs):
-
             # only authenticated users can come here
             if not request.user.is_authenticated:
                 return HttpResponseRedirect(reverse("account_signup"))
 
             # if we already have an org, just go there
             if request.org:
+                return HttpResponseRedirect(reverse("orgs.org_start"))
+
+            # if user has memberships but no org in session, switch to their most recent org
+            if user_org := self.get_current_user_org(request.user):
+                switch_to_org(self.request, user_org)
                 return HttpResponseRedirect(reverse("orgs.org_start"))
 
             # if our brand doesn't allow signups, then redirect to the account page
@@ -1308,12 +1350,16 @@ class OrgCRUDL(SmartCRUDL):
             return initial
 
         def save(self, obj):
-            user = self.request.user
-            self.object = Org.create(user, self.form.cleaned_data["name"], self.form.cleaned_data["timezone"])
+            # Lock the user row so concurrent signup submissions can't create multiple orgs.
+            with transaction.atomic():
+                user = User.objects.select_for_update().get(pk=self.request.user.pk)
+                self.object = self.get_current_user_org(user)
+                if not self.object:
+                    self.object = Org.create(user, self.form.cleaned_data["name"], self.form.cleaned_data["timezone"])
 
-            switch_to_org(self.request, obj)
+            switch_to_org(self.request, self.object)
 
-            return obj
+            return self.object
 
     class Resthooks(SpaMixin, ComponentFormMixin, InferOrgMixin, OrgPermsMixin, SmartUpdateView):
         class ResthookForm(forms.ModelForm):

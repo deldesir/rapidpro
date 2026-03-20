@@ -100,7 +100,7 @@ class Flow(LegacyUUIDMixin, TembaModel, DependencyMixin):
 
     FINAL_LEGACY_VERSION = legacy.VERSIONS[-1]
     INITIAL_GOFLOW_VERSION = "13.0.0"  # initial version of flow spec to use new engine
-    CURRENT_SPEC_VERSION = "14.3.0"  # current flow spec version
+    CURRENT_SPEC_VERSION = "14.4.0"  # current flow spec version
 
     EXPIRES_CHOICES = {
         TYPE_MESSAGE: (
@@ -345,14 +345,24 @@ class Flow(LegacyUUIDMixin, TembaModel, DependencyMixin):
     def apply_action_archive(cls, user, flows):
         from temba.campaigns.models import CampaignEvent
 
-        for flow in flows:
-            # don't archive flows that belong to campaigns
-            has_events = CampaignEvent.objects.filter(
-                is_active=True, flow=flow, campaign__org=flow.org, campaign__is_archived=False
-            ).exists()
+        # single query to get IDs of all flows used by active campaigns
+        campaign_flow_ids = set(
+            CampaignEvent.objects.filter(is_active=True, flow__in=flows, campaign__is_archived=False).values_list(
+                "flow_id", flat=True
+            )
+        )
 
-            if not has_events:
-                flow.archive(user)
+        non_campaign_flows = [f for f in flows if f.id not in campaign_flow_ids]
+
+        # single prefetch for run counts
+        cls.prefetch_run_counts(non_campaign_flows)
+
+        for flow in non_campaign_flows:
+            counts = flow.get_run_counts()
+            if counts[FlowRun.STATUS_ACTIVE] + counts[FlowRun.STATUS_WAITING] > 0:
+                continue
+
+            flow.archive(user)
 
     @classmethod
     def apply_action_restore(cls, user, flows):
@@ -366,7 +376,6 @@ class Flow(LegacyUUIDMixin, TembaModel, DependencyMixin):
         return {"icon": self.TYPE_ICONS.get(self.flow_type, "flow"), "type": self.flow_type, "uuid": self.uuid}
 
     def get_category_counts(self, result_key=None):
-
         # get the possible results from the flow metadata
         results_by_key = {r["key"]: r for r in self.info["results"]}
 
@@ -825,7 +834,6 @@ class Flow(LegacyUUIDMixin, TembaModel, DependencyMixin):
         return datetime.fromisoformat(first.scope[12:]).replace(tzinfo=utc_timezone).date() if first else None
 
     def get_engagement_timeline(self, since, until) -> dict:
-
         rollup_by = "day"
 
         # bucket dates into months or weeks depending on the range
@@ -1764,7 +1772,7 @@ class FlowLabel(TembaModel):
         changed = []
 
         for flow in flows:
-            # if we are adding the flow label and this flow doesnt have it, add it
+            # if we are adding the flow label and this flow doesn't have it, add it
             if add:
                 if not flow.labels.filter(pk=self.id):
                     flow.labels.add(self)

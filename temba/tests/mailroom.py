@@ -18,7 +18,7 @@ from temba.flows.models import FlowRun, FlowSession, FlowStart
 from temba.locations.models import AdminBoundary
 from temba.mailroom.client.client import MailroomClient
 from temba.mailroom.modifiers import Modifier
-from temba.msgs.models import Broadcast, Msg, QuickReply
+from temba.msgs.models import Broadcast, Msg
 from temba.schedules.models import Schedule
 from temba.tests.dates import parse_datetime
 from temba.tickets.models import Ticket
@@ -63,6 +63,7 @@ class Mocks:
         self._flow_start_preview = []
         self._llm_translate = []
         self._msg_broadcast_preview = []
+        self._msg_search = []
         self._exceptions = []
 
     def contact_parse_query(self, query, *, cleaned=None, fields=None):
@@ -118,6 +119,9 @@ class Mocks:
             return mailroom.RecipientsPreview(query=query, total=total)
 
         self._msg_broadcast_preview.append(mock)
+
+    def msg_search(self, results: list):
+        self._msg_search.append(results)
 
     def exception(self, exp: Exception):
         """
@@ -223,6 +227,10 @@ class TestClient(MailroomClient):
         return {"deindexed": len(contacts)}
 
     @_client_method
+    def contact_reindex(self, org, contacts):
+        return {"indexed": len(contacts)}
+
+    @_client_method
     def contact_export(self, org, group, query: str) -> list[int]:
         if self.mocks._contact_export:
             return self.mocks._contact_export.pop(0)
@@ -248,7 +256,6 @@ class TestClient(MailroomClient):
 
     @_client_method
     def contact_inspect(self, org, contacts) -> dict:
-
         def inspect(c) -> dict:
             sendable = []
             unsendable = []
@@ -299,7 +306,7 @@ class TestClient(MailroomClient):
         pass
 
     @_client_method
-    def contact_search(self, org, group, query: str, sort: str, offset=0, limit=50, exclude_ids=()):
+    def contact_search(self, org, group, query: str, sort: str, offset=0, limit=50, exclude=()):
         mock = self.mocks._contact_search.get(query or "")
 
         assert mock, f"missing contact_search mock for query '{query}'"
@@ -410,11 +417,17 @@ class TestClient(MailroomClient):
         return {}
 
     @_client_method
+    def msg_search(self, org, text: str, contact=None, in_ticket=False) -> list[tuple[Contact, dict]]:
+        assert self.mocks._msg_search, "missing msg_search mock"
+
+        return self.mocks._msg_search.pop(0)
+
+    @_client_method
     def msg_resend(self, org, user, msgs):
         return {"msg_uuids": [str(m.uuid) for m in msgs]}
 
     @_client_method
-    def msg_send(self, org, user, contact, text: str, attachments: list[str], quick_replies: list[QuickReply], ticket):
+    def msg_send(self, org, user, contact, text: str, attachments: list[str], quick_replies: list[dict], ticket=None):
         msg = send_to_contact(org, contact, text, attachments, quick_replies)
         msg_json = {
             "channel": {"uuid": str(msg.channel.uuid), "name": msg.channel.name} if msg.channel else None,
@@ -423,8 +436,8 @@ class TestClient(MailroomClient):
         }
         if msg.attachments:
             msg_json["attachments"] = msg.attachments
-        if msg.quick_replies:
-            msg_json["quick_replies"] = [qr.as_json() for qr in msg.get_quick_replies()]
+        if msg.quickreplies:
+            msg_json["quick_replies"] = msg.quickreplies
 
         event_json = {
             "uuid": str(msg.uuid),
@@ -508,6 +521,9 @@ class TestClient(MailroomClient):
             ticket.save(update_fields=("status", "closed_on"))
 
         return {"changed_uuids": [str(t.uuid) for t in tickets]}
+
+    def system_latency(self) -> list:
+        return []
 
     def system_queues(self) -> dict:
         return {
@@ -914,7 +930,7 @@ def resolve_destination(org, contact, channel=None) -> tuple:
     return None, None
 
 
-def send_to_contact(org, contact, text: str, attachments: list[str], quick_replies: list[QuickReply]) -> Msg:
+def send_to_contact(org, contact, text: str, attachments: list[str], quick_replies: list[dict]) -> Msg:
     channel, contact_urn = resolve_destination(org, contact)
 
     if contact_urn and channel:
@@ -937,7 +953,7 @@ def send_to_contact(org, contact, text: str, attachments: list[str], quick_repli
         failed_reason=failed_reason,
         text=text or "",
         attachments=attachments or [],
-        quick_replies=[str(qr) for qr in quick_replies],
+        quickreplies=quick_replies,
         msg_type=Msg.TYPE_TEXT,
         is_android=False,
         created_on=timezone.now(),
@@ -962,7 +978,6 @@ def create_broadcast(
     template_variables: list,
     schedule,
 ) -> Broadcast:
-
     if schedule and isinstance(schedule, mailroom.ScheduleSpec):
         schedule = Schedule.objects.create(
             org=org,

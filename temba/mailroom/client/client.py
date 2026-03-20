@@ -7,7 +7,7 @@ from django.conf import settings
 
 from temba.contacts.models import Contact
 from temba.flows.models import FlowStart
-from temba.msgs.models import Broadcast, QuickReply
+from temba.msgs.models import Broadcast
 from temba.utils import json
 
 from ..modifiers import Modifier
@@ -91,7 +91,23 @@ class MailroomClient:
         return Contact.objects.get(id=resp["contact"]["id"])
 
     def contact_deindex(self, org, contacts):
-        return self._request("contact/deindex", {"org_id": org.id, "contact_ids": [c.id for c in contacts]})
+        return self._request(
+            "contact/deindex",
+            {
+                "org_id": org.id,
+                "contact_ids": [c.id for c in contacts],
+                "contact_uuids": [str(c.uuid) for c in contacts],
+            },
+        )
+
+    def contact_reindex(self, org, contacts):
+        return self._request(
+            "contact/reindex",
+            {
+                "org_id": org.id,
+                "contact_ids": [c.id for c in contacts],
+            },
+        )
 
     def contact_export(self, org, group, query: str) -> list[int]:
         resp = self._request("contact/export", {"org_id": org.id, "group_id": group.id, "query": query})
@@ -138,13 +154,14 @@ class MailroomClient:
     def contact_populate_group(self, org, group):
         self._request("contact/populate_group", {"org_id": org.id, "group_id": group.id})
 
-    def contact_search(self, org, group, query: str, sort: str, offset=0, limit=50, exclude_ids=()) -> SearchResults:
+    def contact_search(self, org, group, query: str, sort: str, offset=0, limit=50, exclude=()) -> SearchResults:
         resp = self._request(
             "contact/search",
             {
                 "org_id": org.id,
                 "group_id": group.id,
-                "exclude_ids": exclude_ids,
+                "exclude_ids": [c.id for c in exclude],  # deprecated but needed until we're done with Elastic
+                "exclude_uuids": [str(c.uuid) for c in exclude],
                 "query": query,
                 "sort": sort,
                 "offset": offset,
@@ -314,7 +331,30 @@ class MailroomClient:
             {"org_id": org.id, "user_id": user.id, "msg_uuids": [str(m.uuid) for m in msgs]},
         )
 
-    def msg_send(self, org, user, contact, text: str, attachments: list[str], quick_replies: list[QuickReply], ticket):
+    def msg_search(self, org, text: str, contact=None, in_ticket=False) -> list[tuple[Contact, dict]]:
+        resp = self._request(
+            "msg/search",
+            {
+                "org_id": org.id,
+                "text": text,
+                "contact_uuid": str(contact.uuid) if contact else None,
+                "in_ticket": in_ticket,
+            },
+        )
+
+        contact_uuids = {r["contact"]["uuid"] for r in resp["results"]}
+        contacts_by_uuid = {
+            str(c.uuid): c for c in Contact.objects.filter(org=org, uuid__in=contact_uuids, is_active=True)
+        }
+
+        results = []
+        for r in resp["results"]:
+            if contact := contacts_by_uuid.get(r["contact"]["uuid"]):
+                results.append((contact, r["event"]))
+
+        return results
+
+    def msg_send(self, org, user, contact, text: str, attachments: list[str], quick_replies: list[dict], ticket=None):
         return self._request(
             "msg/send",
             {
@@ -323,7 +363,7 @@ class MailroomClient:
                 "contact_id": contact.id,
                 "text": text,
                 "attachments": attachments,
-                "quick_replies": [qr.as_json() for qr in quick_replies],
+                "quick_replies": quick_replies,
                 "ticket_uuid": str(ticket.uuid) if ticket else None,
             },
         )
@@ -418,6 +458,9 @@ class MailroomClient:
 
     def system_errors(self, log, ret, panic):  # pragma: no cover
         return self._request("system/errors", {"log": log, "ret": ret, "panic": panic})
+
+    def system_latency(self) -> list:  # pragma: no cover
+        return self._request("system/latency", {}, post=False)
 
     def system_queues(self) -> dict:  # pragma: no cover
         return self._request("system/queues", {}, post=False)

@@ -9,7 +9,6 @@ from temba.ai.types.openai.type import OpenAIType
 from temba.campaigns.models import Campaign, CampaignEvent
 from temba.contacts.models import ContactField, ContactImport
 from temba.flows.models import Flow, FlowStart
-from temba.msgs.models import QuickReply
 from temba.schedules.models import Schedule
 from temba.tests import MockJsonResponse, MockResponse, TembaTest
 from temba.tickets.models import Topic
@@ -210,7 +209,29 @@ class MailroomClientTest(TembaTest):
         mock_post.assert_called_once_with(
             "http://localhost:8090/mr/contact/deindex",
             headers={"User-Agent": "Temba", "Authorization": "Token sesame"},
-            json={"org_id": self.org.id, "contact_ids": [ann.id, bob.id]},
+            json={
+                "org_id": self.org.id,
+                "contact_ids": [ann.id, bob.id],
+                "contact_uuids": [str(ann.uuid), str(bob.uuid)],
+            },
+        )
+
+    @patch("requests.post")
+    def test_contact_reindex(self, mock_post):
+        ann = self.create_contact("Ann", urns=["tel:+12340000001"])
+        bob = self.create_contact("Bob", urns=["tel:+12340000002"])
+        mock_post.return_value = MockJsonResponse(200, {"indexed": 2})
+        response = self.client.contact_reindex(self.org, [ann, bob])
+
+        self.assertEqual({"indexed": 2}, response)
+
+        mock_post.assert_called_once_with(
+            "http://localhost:8090/mr/contact/reindex",
+            headers={"User-Agent": "Temba", "Authorization": "Token sesame"},
+            json={
+                "org_id": self.org.id,
+                "contact_ids": [ann.id, bob.id],
+            },
         )
 
     @patch("requests.post")
@@ -384,6 +405,7 @@ class MailroomClientTest(TembaTest):
 
     @patch("requests.post")
     def test_contact_search(self, mock_post):
+        joe = self.create_contact("Joe", urns=["tel:+12340000001"])
         group = self.create_group("Doctors", contacts=[])
 
         mock_post.return_value = MockJsonResponse(
@@ -395,7 +417,7 @@ class MailroomClientTest(TembaTest):
                 "metadata": {"attributes": ["name"]},
             },
         )
-        response = self.client.contact_search(self.org, group, "frank", "-created_on")
+        response = self.client.contact_search(self.org, group, "frank", "-created_on", exclude=[joe])
 
         self.assertEqual('name ~ "frank"', response.query)
         self.assertEqual(["name"], response.metadata.attributes)
@@ -406,7 +428,8 @@ class MailroomClientTest(TembaTest):
                 "query": "frank",
                 "org_id": self.org.id,
                 "group_id": group.id,
-                "exclude_ids": (),
+                "exclude_ids": [joe.id],
+                "exclude_uuids": [str(joe.uuid)],
                 "sort": "-created_on",
                 "offset": 0,
                 "limit": 50,
@@ -746,6 +769,102 @@ class MailroomClientTest(TembaTest):
         )
 
     @patch("requests.post")
+    def test_msg_search(self, mock_post):
+        ann = self.create_contact("Ann", urns=["tel:+12340000001"])
+        bob = self.create_contact("Bob", urns=["tel:+12340000002"])
+
+        mock_post.return_value = MockJsonResponse(
+            200,
+            {
+                "results": [
+                    {
+                        "contact": {"uuid": str(bob.uuid)},
+                        "event": {
+                            "uuid": "3af672d8-b10f-4bbf-9e3b-f93955fgb95b",
+                            "type": "msg_received",
+                            "text": "hello there friend",
+                            "created_on": "2025-05-01T13:00:00Z",
+                        },
+                    },
+                    {
+                        "contact": {"uuid": str(ann.uuid)},
+                        "event": {
+                            "uuid": "2ef672d8-a10f-4aaf-8e2a-e83844efa94a",
+                            "type": "msg_received",
+                            "text": "hello world",
+                            "created_on": "2025-05-01T12:00:00Z",
+                        },
+                    },
+                ],
+            },
+        )
+
+        result = self.client.msg_search(self.org, "hello")
+
+        self.assertEqual(
+            [
+                (
+                    bob,
+                    {
+                        "uuid": "3af672d8-b10f-4bbf-9e3b-f93955fgb95b",
+                        "type": "msg_received",
+                        "text": "hello there friend",
+                        "created_on": "2025-05-01T13:00:00Z",
+                    },
+                ),
+                (
+                    ann,
+                    {
+                        "uuid": "2ef672d8-a10f-4aaf-8e2a-e83844efa94a",
+                        "type": "msg_received",
+                        "text": "hello world",
+                        "created_on": "2025-05-01T12:00:00Z",
+                    },
+                ),
+            ],
+            result,
+        )
+
+        mock_post.assert_called_once_with(
+            "http://localhost:8090/mr/msg/search",
+            headers={"User-Agent": "Temba", "Authorization": "Token sesame"},
+            json={"org_id": self.org.id, "text": "hello", "contact_uuid": None, "in_ticket": False},
+        )
+        mock_post.reset_mock()
+
+        result = self.client.msg_search(self.org, "hello", contact=bob, in_ticket=True)
+
+        self.assertEqual(
+            [
+                (
+                    bob,
+                    {
+                        "uuid": "3af672d8-b10f-4bbf-9e3b-f93955fgb95b",
+                        "type": "msg_received",
+                        "text": "hello there friend",
+                        "created_on": "2025-05-01T13:00:00Z",
+                    },
+                ),
+                (
+                    ann,
+                    {
+                        "uuid": "2ef672d8-a10f-4aaf-8e2a-e83844efa94a",
+                        "type": "msg_received",
+                        "text": "hello world",
+                        "created_on": "2025-05-01T12:00:00Z",
+                    },
+                ),
+            ],
+            result,
+        )
+
+        mock_post.assert_called_once_with(
+            "http://localhost:8090/mr/msg/search",
+            headers={"User-Agent": "Temba", "Authorization": "Token sesame"},
+            json={"org_id": self.org.id, "text": "hello", "contact_uuid": str(bob.uuid), "in_ticket": True},
+        )
+
+    @patch("requests.post")
     def test_msg_send(self, mock_post):
         ann = self.create_contact("Ann", urns=["tel:+12340000001"])
         ticket = self.create_ticket(ann)
@@ -756,7 +875,7 @@ class MailroomClientTest(TembaTest):
             ann,
             "hi",
             [],
-            [QuickReply("text", "Yes", "Let's go!"), QuickReply("text", "No", None)],
+            [{"type": "text", "text": "Yes", "extra": "Let's go!"}, {"type": "text", "text": "No"}],
             ticket,
         )
 

@@ -19,38 +19,94 @@
 </div>
 {% endblock title %}
 {% block extra-style %}
-{{ block.super }}
-<script>
-  window.URLS = {% get_urls %};
-</script>
-<style type="text/css">
-  .editor-banner {
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    margin-left: 100px;
-    z-index: 1000;
-    padding: 14px;
-    background: rgba(33, 150, 243, 0.95);
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-    max-width: calc(100vw - 280px);
-    animation: slideUp 0.3s ease-out;
-    padding-right: 40px;
-  }
-
-  @keyframes slideUp {
-    from {
-      opacity: 0;
-      transform: translateX(-50%) translateY(20px);
+  {{ block.super }}
+  <style type="text/css">
+    .editor-banner {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      margin-left: 100px;
+      z-index: 1000;
+      padding: 14px;
+      background: rgba(33, 150, 243, 0.95);
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+      max-width: calc(100vw - 280px);
+      animation: slideDown 0.3s ease-out;
+      padding-right: 40px;
     }
 
-    to {
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-20px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+
+      to {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-20px);
+      }
+    }
+
+    .editor-banner-content {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+    }
+
+    .editor-banner.hiding {
+      animation: slideUp 0.3s ease-in forwards;
+    }
+
+    .editor-banner-text {
+      color: white;
+      font-size: 14px;
+      flex: 1;
+    }
+
+    .editor-banner-link {
+      color: white;
+      text-decoration: underline;
+      cursor: pointer;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .editor-banner-link:hover {
+      opacity: 0.9;
+    }
+
+    .editor-banner-close {
+      color: white;
+      cursor: pointer;
+      font-size: 20px;
+      line-height: 1;
+      padding: 0 4px;
+      opacity: 0.8;
+      background: none;
+      border: none;
+      outline: none;
+    }
+
+    .editor-banner-close:hover {
       opacity: 1;
       transform: translateX(-50%) translateY(0);
     }
@@ -209,121 +265,29 @@
 </style>
 {% endblock extra-style %}
 {% block extra-script %}
-{{ block.super }}
-<script>
-  window.URLS = {% get_urls %};
-</script>
-<script type="text/javascript">
-  function enableNewEditor() {
-    // Set cookie to enable new editor
-    document.cookie = 'use_new_editor=true; path=/; max-age=31536000'; // 1 year
-    // Redirect to the new editor
-    window.location.href = '/flow/next/{{object.uuid}}/?banner=1';
-  }
+  {{ block.super }}
+  <script type="text/javascript">
+    function enableNewEditor() {
+      document.cookie = 'use-new-editor=; path=/; max-age=0';
+      window.location.href = '/flow/next/{{object.uuid}}/';
+    }
 
-  function closeEditorBanner() {
-    const banner = document.querySelector('.editor-banner');
-    if (banner) {
-      banner.classList.add('hidden');
+    function closeEditorBanner() {
+      const banner = document.querySelector('.editor-banner');
+      if (banner) {
+        banner.classList.add('hiding');
+        banner.addEventListener('animationend', function() {
+          banner.remove();
+        });
+      }
     }
   }
 
-  // Auto-hide banner after 10 seconds
-  document.addEventListener('DOMContentLoaded', function () {
-    const banner = document.querySelector('.editor-banner');
-    if (banner) {
-      setTimeout(closeEditorBanner, 10000);
-    }
-  });
-
-  var base = window.URLS.root + 'flow/assets/{{object.org.id}}/' + new Date().getTime() + '/';
-  var api = window.URLS.root + 'api/v2/';
-  var internal = window.URLS.root + 'api/internal/';
-  var flowType = '{{ object.engine_type }}';
-
-  function handleEditorLoaded() {
-    document.querySelector('.editor-loader').classList.add('hide');
-    document.querySelector('#rp-flow-editor').style.opacity = '1';
-  }
-
-  function handleActivityClicked(nodeUUID, count) {
-    var endpoint = '{% url "msgs.broadcast_to_node" %}';
-    var modal = document.querySelector("#send-message-modal");
-    modal.endpoint = endpoint + "?node=" + nodeUUID + "&count=" + count;
-    modal.open = true;
-  }
-
-  function handleChangeLanguage(code, name) {
-
-    var confirmation = document.getElementById("confirm-language");
-    confirmation.classList.remove("hide");
-    confirmation.dataset.code = code;
-
-    var body = confirmation.querySelector('.body');
-    body.innerHTML = body.innerHTML.replace(/%LANG%/g, name);
-    confirmation.open = true;
-  }
-
-  var canSimulate = JSON.parse("{{can_simulate|js_bool}}");
-  var simulateStart = null;
-  var simulateResume = null;
-
-  if (canSimulate) {
-    simulateStart = window.URLS.root + 'flow/simulate/{{object.uuid}}/';
-    simulateResume = window.URLS.root + 'flow/simulate/{{object.uuid}}/';
-  }
-
-  var config = {
-    flow: '{{object.uuid}}',
-    flowType: flowType,
-    localStorage: true,
-    onLoad: handleEditorLoaded,
-    onActivityClicked: handleActivityClicked,
-    onChangeLanguage: handleChangeLanguage,
-    mutable: JSON.parse("{{mutable|js_bool}}"),
-    filters: JSON.parse("{{feature_filters|escapejs}}"),
-    brand: '{{branding.name|escapejs}}',
-    defaultTopic: JSON.parse("{{default_topic|escapejs}}"),
-    help: {
-      legacy_extra: 'https://help.textit.com/',
-      missing_dependency: 'https://help.textit.com/en/article/fixing-missing-dependencies-1toe127/',
-      invalid_regex: 'https://help.textit.com/en/article/invalid-regular-expressions-814k8d/'
-    },
-
-    endpoints: {
-      groups: api + 'groups.json',
-      fields: api + 'fields.json',
-      labels: api + 'labels.json',
-      optins: api + 'optins.json',
-      channels: api + 'channels.json',
-      classifiers: api + 'classifiers.json',
-      resthooks: api + 'resthooks.json',
-      templates: internal + 'templates.json',
-      flows: api + 'flows.json?archived=false',
-      globals: api + 'globals.json',
-      users: api + 'users.json',
-      topics: api + 'topics.json',
-      llms: window.URLS.root + 'api/internal/llms.json',
-      editor: window.URLS.root + 'flow/editor',
-      revisions: window.URLS.root + 'flow/revisions/{{object.uuid}}/',
-      recents: window.URLS.root + 'flow/recent_contacts/{{object.uuid}}/',
-      attachments: '{% url "msgs.media_upload" %}',
-      languages: base + 'language',
-      activity: window.URLS.root + 'flow/activity/{{object.uuid}}/',
-      recipients: window.URLS.root + 'contact/omnibox?v=2&types=gc',
-      contacts: window.URLS.root + 'contact/omnibox?v=2&types=c',
-      contact: window.URLS.root + 'contact/read/',
-      simulateStart: simulateStart,
-      simulateResume: simulateResume,
-    }
-  };
-
-  onSpload(function () {
-    var confirmation = document.getElementById("confirm-language");
-    confirmation.addEventListener("temba-button-clicked", function (event) {
-      var code = confirmation.dataset.code;
-      if (!event.detail.button.secondary) {
-        posterize('{% url "flows.flow_change_language" object.id %}?language=' + code);
+    // Auto-hide banner after 7 seconds
+    onSpload(function() {
+      const banner = document.querySelector('.editor-banner');
+      if (banner) {
+        setTimeout(closeEditorBanner, 7000);
       }
       confirmation.open = false;
     });
@@ -354,28 +318,36 @@
 </script>
 {% endblock page-header %}
 {% block content %}
-{% if show_new_editor_banner %}
-<div class="editor-banner">
-  <div class="editor-banner-content">
-    <span class="editor-banner-text">Try our new flow editor with improved features and performance!</span>
-    <a class="editor-banner-link" onclick="enableNewEditor()">Switch to New Editor</a>
+  <div class="editor-banner">
+    <div class="editor-banner-content">
+      <span class="editor-banner-text"><a class="editor-banner-link" onclick="enableNewEditor()">Switch to the New Editor</a> for improved features and performance!</span>
+    </div>
+    <button class="editor-banner-close"
+            onclick="closeEditorBanner()"
+            aria-label="Close"
+            style="position: absolute;
+                   top: 14px;
+                   right: 14px">×</button>
   </div>
-  <button class="editor-banner-close" onclick="closeEditorBanner()" aria-label="Close" style="position: absolute;
-                     top: 14px;
-                     right: 14px">×</button>
-</div>
-{% endif %}
-<temba-modax header="Send Message" id="send-message-modal">
-</temba-modax>
-<temba-dialog header="{{ _(" Change Language") |escapejs }}" primaryButtonName="{{ _(" Update") |escapejs }}"
-  class="hide" id="confirm-language">
-  <div class="p-6 body">
-    {% blocktrans trimmed with language="%LANG%" %}
-    This will change the default language of the flow to <b>{{ language }}</b>. This means that by default the
-    flow will be appear in that language and can be translated into other languages. Also if a contact is
-    in this flow and no translation exists for their language or the default language of the workspace,
-    communication with that contact will default to <b>{{ language }}</b>.
-    {% endblocktrans %}
+  <temba-modax header="Send Message" id="send-message-modal">
+  </temba-modax>
+  <temba-dialog header="{{ _("Change Language") |escapejs }}"
+                primaryButtonName="{{ _("Update") |escapejs }}"
+                class="hide"
+                id="confirm-language">
+    <div class="p-6 body">
+      {% blocktrans trimmed with language="%LANG%" %}
+        This will change the default language of the flow to <b>{{ language }}</b>. This means that by default the
+        flow will be appear in that language and can be translated into other languages. Also if a contact is
+        in this flow and no translation exists for their language or the default language of the workspace,
+        communication with that contact will default to <b>{{ language }}</b>.
+      {% endblocktrans %}
+    </div>
+  </temba-dialog>
+  <div class="card p-0" id="grid">
+    <temba-loading class="editor-loader" units="10" size="8">
+    </temba-loading>
+    <div id="rp-flow-editor"></div>
   </div>
 </temba-dialog>
 <div class="card p-0" id="grid">

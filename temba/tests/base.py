@@ -396,7 +396,7 @@ class TembaTest(SmartminTest):
             contact_urn=contact_urn,
             text=text,
             attachments=attachments,
-            quick_replies=quick_replies,
+            quickreplies=quick_replies,
             locale=locale,
             channel=channel,
             status=status or (Msg.STATUS_PENDING if direction == Msg.DIRECTION_IN else Msg.STATUS_INITIALIZING),
@@ -840,7 +840,7 @@ class TembaTest(SmartminTest):
 
             actual.append(val)
 
-        self.assertEqual(expected, actual, f"mismatch in row {row_num+1}")
+        self.assertEqual(expected, actual, f"mismatch in row {row_num + 1}")
 
     def assertExcelSheet(self, sheet, rows, tz=None):
         """
@@ -956,9 +956,9 @@ class MigrationTest(TembaTest):
     migrate_to = None
 
     def setUp(self):
-        assert (
-            self.migrate_from and self.migrate_to
-        ), "TestCase '{}' must define migrate_from and migrate_to properties".format(type(self).__name__)
+        assert self.migrate_from and self.migrate_to, (
+            "TestCase '{}' must define migrate_from and migrate_to properties".format(type(self).__name__)
+        )
 
         # set up our temba test
         super().setUp()

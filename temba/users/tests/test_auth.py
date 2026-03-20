@@ -10,7 +10,6 @@ from temba.users.models import User
 
 
 class UserAuthTest(TembaTest):
-
     # Auth is handled by allauth, only test things we override in any way
     def test_signup(self):
         signup_url = reverse("account_signup")
@@ -47,8 +46,29 @@ class UserAuthTest(TembaTest):
         self.assertEqual("Please Confirm Your Email Address", mail.outbox[0].subject)
         self.assertEqual(["bobbyburgers@burgers.com"], mail.outbox[0].recipients())
 
-    def test_change_password(self):
+    def test_signup_honeypot(self):
+        signup_url = reverse("account_signup")
 
+        # signup should be rejected if honeypot field is filled (i.e. by a bot)
+        response = self.client.post(
+            signup_url,
+            {
+                "first_name": "Spammy",
+                "last_name": "McSpamface",
+                "workspace": "Spam Corp",
+                "password1": "arstqwfp",
+                "email": "spam@spam.com",
+                "timezone": "America/New_York",
+                "phone_number": "555-1234",
+            },
+        )
+
+        self.assertEqual(200, response.status_code)
+        form = response.context.get("form")
+        self.assertIn("phone_number", form.errors)
+        self.assertFalse(User.objects.filter(email="spam@spam.com").exists())
+
+    def test_change_password(self):
         # make sure we get the correct help text on change password page
         self.login(self.admin)
 
@@ -67,7 +87,7 @@ class UserAuthTest(TembaTest):
 
         # Reauthenticate and make sure we get the QR code
         response = self.client.post(
-            f"{reverse("account_reauthenticate")}?{urlencode({'next': mfa_url})}",
+            f"{reverse('account_reauthenticate')}?{urlencode({'next': mfa_url})}",
             {"login": self.admin.email, "password": self.default_password},
             follow=True,
         )
@@ -96,7 +116,6 @@ class UserAuthTest(TembaTest):
 
     @override_settings(BRAND={"features": []})
     def test_invite_with_closed_signups(self):
-
         signup_url = reverse("account_signup")
 
         # make sure we can't access the signup page

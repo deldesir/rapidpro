@@ -37,6 +37,7 @@ from temba.utils.models import patch_queryset_count
 from temba.utils.views.mixins import (
     ContextMenuMixin,
     ModalFormMixin,
+    ModalHeaderMixin,
     NonAtomicMixin,
     PostOnlyMixin,
     SpaMixin,
@@ -45,7 +46,7 @@ from temba.utils.views.mixins import (
 from temba.utils.views.wizard import SmartWizardUpdateView, SmartWizardView
 
 from .forms import ComposeForm, ScheduleForm, TargetForm
-from .models import Broadcast, Label, LabelCount, Media, MessageExport, Msg, MsgFolder, OptIn
+from .models import Broadcast, Label, LabelCount, Media, MessageExport, Msg, MsgFolder
 
 
 class MsgListView(ContextMenuMixin, BulkActionMixin, SpaMixin, BaseListView):
@@ -54,7 +55,6 @@ class MsgListView(ContextMenuMixin, BulkActionMixin, SpaMixin, BaseListView):
     """
 
     permission = "msgs.msg_list"
-    search_fields = ("text__icontains", "contact__name__icontains", "contact__urns__path__icontains")
     default_order = ("-created_on", "-id")
     allow_export = False
     bulk_actions = ()
@@ -82,7 +82,7 @@ class MsgListView(ContextMenuMixin, BulkActionMixin, SpaMixin, BaseListView):
         qs = super().get_queryset(**kwargs)
 
         # if we are searching, limit to last 90, and enforce distinct since we'll be joining on multiple tables
-        if "search" in self.request.GET:
+        if self.search_fields and "search" in self.request.GET:
             last_90 = timezone.now() - timedelta(days=90)
 
             # we need to find get the field names we're ordering on without direction
@@ -98,7 +98,7 @@ class MsgListView(ContextMenuMixin, BulkActionMixin, SpaMixin, BaseListView):
         folder = self.derive_folder()
 
         # if there isn't a search filtering the queryset, we can replace the count function with a pre-calculated value
-        if "search" not in self.request.GET:
+        if not self.search_fields or "search" not in self.request.GET:
             if isinstance(folder, Label):
                 patch_queryset_count(self.object_list, folder.get_visible_count)
             elif isinstance(folder, MsgFolder):
@@ -158,10 +158,9 @@ class BroadcastCRUDL(SmartCRUDL):
         def build_context_menu(self, menu):
             if self.has_org_perm("msgs.broadcast_create"):
                 menu.add_modax(
-                    _("Send"),
+                    _("New Broadcast"),
                     "new-scheduled",
                     reverse("msgs.broadcast_create"),
-                    title=_("New Broadcast"),
                     as_button=True,
                 )
 
@@ -184,23 +183,24 @@ class BroadcastCRUDL(SmartCRUDL):
         def build_context_menu(self, menu):
             if self.has_org_perm("msgs.broadcast_create"):
                 menu.add_modax(
-                    _("Send"),
+                    _("New Broadcast"),
                     "new-scheduled",
                     reverse("msgs.broadcast_create"),
-                    title=_("New Broadcast"),
                     as_button=True,
                 )
 
-    class Create(OrgPermsMixin, SmartWizardView):
+    class Create(ModalHeaderMixin, OrgPermsMixin, SmartWizardView):
         form_list = [("target", TargetForm), ("compose", ComposeForm), ("schedule", ScheduleForm)]
         success_url = "@msgs.broadcast_scheduled"
         submit_button_name = _("Create")
+        modal_header_bg = "#8e5ea7"
+        modal_header_text = "#fff"
 
         def derive_readonly_servicing(self):
             return self.request.POST.get("create-current_step") == "schedule"
 
         def get_form_kwargs(self, step):
-            return {"org": self.request.org}
+            return {"org": self.request.org, "features": self.request.branding.get("features", [])}
 
         def get_form_initial(self, step):
             initial = super().get_form_initial(step)
@@ -224,15 +224,11 @@ class BroadcastCRUDL(SmartCRUDL):
             compose = form_dict["compose"].cleaned_data["compose"]
             translations = compose_deserialize(compose)
             base_language = next(iter(translations))
-            optin = None
             template = None
             template_variables = []
 
-            # extract template and optin which are packed into the base translation
+            # extract template which is packed into the base translation
             for trans in compose.values():
-                if trans.get("optin"):
-                    optin_ref = trans.pop("optin")
-                    optin = OptIn.objects.filter(org=org, uuid=optin_ref["uuid"]).first()
                 if trans.get("template"):
                     template = Template.objects.filter(org=org, uuid=trans.pop("template")).first()
                     template_variables = trans.pop("variables", [])
@@ -271,7 +267,6 @@ class BroadcastCRUDL(SmartCRUDL):
                 contacts=contacts,
                 query=query,
                 exclude=exclude,
-                optin=optin,
                 template=template,
                 template_variables=template_variables,
                 schedule=schedule,
@@ -282,16 +277,18 @@ class BroadcastCRUDL(SmartCRUDL):
 
             return HttpResponseRedirect(self.get_success_url())
 
-    class Update(OrgObjPermsMixin, SmartWizardUpdateView):
+    class Update(ModalHeaderMixin, OrgObjPermsMixin, SmartWizardUpdateView):
         form_list = [("target", TargetForm), ("compose", ComposeForm), ("schedule", ScheduleForm)]
         success_url = "@msgs.broadcast_scheduled"
         submit_button_name = _("Save")
+        modal_header_bg = "#8e5ea7"
+        modal_header_text = "#fff"
 
         def derive_readonly_servicing(self):
             return self.request.POST.get("update-current_step") == "schedule"
 
         def get_form_kwargs(self, step):
-            return {"org": self.request.org}
+            return {"org": self.request.org, "features": self.request.branding.get("features", [])}
 
         def get_form_initial(self, step):
             org = self.request.org
@@ -311,9 +308,7 @@ class BroadcastCRUDL(SmartCRUDL):
             if step == "compose":
                 base_language = self.object.base_language
 
-                compose = compose_serialize(
-                    self.object.translations, base_language=self.object.base_language, optin=self.object.optin
-                )
+                compose = compose_serialize(self.object.translations, base_language=self.object.base_language)
 
                 # remove any languages not present on the org
                 langs = [k for k in compose.keys()]
@@ -325,7 +320,7 @@ class BroadcastCRUDL(SmartCRUDL):
                     compose[base_language]["template"] = str(self.object.template.uuid)
                     compose[base_language]["variables"] = self.object.template_variables
 
-                return {"compose": compose, "optin": self.object.optin, "base_language": base_language}
+                return {"compose": compose, "base_language": base_language}
 
             if step == "schedule":
                 schedule = self.object.schedule
@@ -342,11 +337,6 @@ class BroadcastCRUDL(SmartCRUDL):
             # update message
             compose = form_dict["compose"].cleaned_data["compose"]
             composeBase = compose[broadcast.base_language]
-
-            # extract our optin if it is set
-            optin = composeBase.pop("optin", None)
-            if optin:
-                optin = OptIn.objects.filter(org=broadcast.org, uuid=optin.get("uuid")).first()
 
             contact_search = form_dict["target"].cleaned_data["contact_search"]
 
@@ -371,7 +361,6 @@ class BroadcastCRUDL(SmartCRUDL):
             broadcast.translations = compose_deserialize(compose)
             broadcast.query = query
             broadcast.exclusions = exclusions
-            broadcast.optin = optin
             broadcast.template = template
             broadcast.template_variables = template_variables
             broadcast.save()
@@ -585,6 +574,7 @@ class MsgCRUDL(SmartCRUDL):
                     name=_("Outbox"),
                     href=reverse("msgs.msg_outbox"),
                     count=counts[MsgFolder.OUTBOX],
+                    icon="template_pending" if counts[MsgFolder.OUTBOX] >= Org.OUTBOX_WARNING_THRESHOLD else None,
                 ),
                 self.create_menu_item(
                     menu_id="sent",
@@ -704,6 +694,7 @@ class MsgCRUDL(SmartCRUDL):
     class Inbox(MsgListView):
         title = _("Inbox")
         folder = MsgFolder.INBOX
+        search_fields = ("text__icontains",)
         bulk_actions = ("archive", "label")
         allow_export = True
         menu_path = "/msg/inbox"
@@ -719,6 +710,7 @@ class MsgCRUDL(SmartCRUDL):
     class Flow(MsgListView):
         title = _("Handled")
         folder = MsgFolder.HANDLED
+        search_fields = ("text__icontains",)
         bulk_actions = ("archive", "label")
         allow_export = True
         menu_path = "/msg/handled"
@@ -730,6 +722,7 @@ class MsgCRUDL(SmartCRUDL):
     class Archived(MsgListView):
         title = _("Archived")
         folder = MsgFolder.ARCHIVED
+        search_fields = ("text__icontains",)
         bulk_actions = ("restore", "label", "delete")
         allow_export = True
 
@@ -742,6 +735,11 @@ class MsgCRUDL(SmartCRUDL):
         folder = MsgFolder.OUTBOX
         bulk_actions = ()
         allow_export = True
+
+        def get_context_data(self, **kwargs):
+            context = super().get_context_data(**kwargs)
+            context["outbox_warning"] = MsgFolder.OUTBOX.get_count(self.request.org) >= Org.OUTBOX_WARNING_THRESHOLD
+            return context
 
         def get_queryset(self, **kwargs):
             return super().get_queryset(**kwargs).select_related("contact", "channel", "flow")
@@ -769,6 +767,7 @@ class MsgCRUDL(SmartCRUDL):
             return super().get_queryset(**kwargs).select_related("contact", "channel", "flow")
 
     class Filter(MsgListView):
+        search_fields = ("text__icontains",)
         bulk_actions = ("label",)
 
         def derive_menu_path(self):

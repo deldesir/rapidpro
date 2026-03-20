@@ -1,3 +1,244 @@
+v26.1.65 (2026-03-19)
+-------------------------
+ * Bump flow spec to 14.4.0
+ * Replace black with ruff for code formatting
+ * Remove OpenSearch dependencies and code
+ * Update deps
+
+v26.1.64 (2026-03-18)
+-------------------------
+ * Update @nyaruka/temba-components to 0.151.0
+ * Pass feature_filters to temba-flow-editor component
+ * Add statistics endpoint to API for daily channel message counts
+
+v26.1.63 (2026-03-18)
+-------------------------
+ * Tweak default Elastic endpoint URL
+
+v26.1.62 (2026-03-18)
+-------------------------
+ * Add create_es_index management command for Elasticsearch
+ * Tweaks to messages index template
+
+v26.1.61 (2026-03-17)
+-------------------------
+ * Prevent duplicate org signup creation
+
+v26.1.60 (2026-03-17)
+-------------------------
+ * Update @nyaruka/temba-components to 0.150.0
+ * Hide opt-in/out in new trigger chooser
+ * Bump pyasn1 from 0.6.2 to 0.6.3
+
+v26.1.59 (2026-03-17)
+-------------------------
+ * Fix typo for broadcast exclusions
+ * Remove optin from broadcast create/update forms and cards
+ * Redesign broadcast cards and add modal header customization
+
+v26.1.58 (2026-03-17)
+-------------------------
+ * Update @nyaruka/temba-components to 0.149.0
+ * Make new editor the default, allow opt-out via cookie
+ * Bump pyjwt from 2.10.1 to 2.12.0
+
+v26.1.57 (2026-03-12)
+-------------------------
+ * Make "dynamic" "false" in contact index
+ * create_os_index should remove alias from other indexes
+
+v26.1.56 (2026-03-12)
+-------------------------
+ * Change some contact index fields to be keyword
+
+v26.1.55 (2026-03-12)
+-------------------------
+ * Set keyword trigger default to 'Message contains only the keyword'
+
+v26.1.54 (2026-03-12)
+-------------------------
+ * Add --no-alias option to create_os_index command
+ * Tweak contacts index creation
+ * Update @nyaruka/temba-components to 0.148.0
+ * Add template cost warning feature
+
+v26.1.53 (2026-03-10)
+-------------------------
+ * Update @nyaruka/temba-components to 0.147.0
+ * Tweak create_os_index
+ * Add group click handler to flow editor
+
+v26.1.52 (2026-03-09)
+-------------------------
+ * Update @nyaruka/temba-components to 0.146.1
+ * Add alias for contacts index
+ * Bump django-allauth from 65.13.1 to 65.14.1
+ * Bump minimatch from 3.1.2 to 3.1.5
+
+v26.1.51 (2026-03-09)
+-------------------------
+ * Update @nyaruka/temba-components to 0.146.0
+ * Pass exclude_uuids to contact_search endpoint
+
+v26.1.50 (2026-03-09)
+-------------------------
+ * Update black library
+ * Update @nyaruka/temba-components to 0.145.0
+
+v26.1.49 (2026-03-08)
+-------------------------
+ * Tweak field name in contacts index
+
+v26.1.48 (2026-03-05)
+-------------------------
+ * Fix validation of media field to allow for non-string keys in submissions dict
+ * Update @nyaruka/temba-components to 0.143.0
+ * Add padding below org export buttons
+ * Add contact_reindex to mailroom client
+ * Bump flow spec version to 14.3.1
+
+v26.1.47 (2026-03-04)
+-------------------------
+ * Make URN format show display only when formatted is True
+ * Fix contact import preview columns display
+
+v26.1.46 (2026-03-03)
+-------------------------
+ * Update @nyaruka/temba-components to 0.142.3
+
+v26.1.45 (2026-03-02)
+-------------------------
+ * More tweaks to contacts index
+
+v26.1.44 (2026-03-02)
+-------------------------
+ * Update @nyaruka/temba-components to 0.142.2
+
+v26.1.43 (2026-03-02)
+-------------------------
+ * Add field for legacy_id in os_contacts index
+ * Handle component links in flow editor
+ * Update @nyaruka/temba-components to 0.142.1
+
+v26.1.42 (2026-03-02)
+-------------------------
+ * Add system_latency endpoint to Mailroom client
+
+v26.1.41 (2026-03-02)
+-------------------------
+ * Update create_os_index to support creating a contacts index
+
+v26.1.40 (2026-02-27)
+-------------------------
+ * More tweaks to create_os_indexes
+
+v26.1.39 (2026-02-26)
+-------------------------
+ * Always show beta editor switching UI with improved banner
+ * Update @nyaruka/temba-components to 0.142.0
+ * Include in_ticket field in backfill_msg_search
+
+v26.1.38 (2026-02-26)
+-------------------------
+ * Tweak message index to include in_ticket boolean field
+ * Add in_ticket parameter to msg_search and remove total from response
+
+v26.1.37 (2026-02-26)
+-------------------------
+ * Exclude IVR messages from backfill_msg_search
+ * Add contact param to msg_search mailroom endpoint
+
+v26.1.36 (2026-02-25)
+-------------------------
+ * Tweak backfill_msg_search yet again
+
+v26.1.35 (2026-02-25)
+-------------------------
+ * backfill_msg_search includes all non-broadcast and non-flow messages with text of at least 2 characters and visible or archived.
+ * Update @nyaruka/temba-components to 0.141.1
+ * Update create_os_indexes command
+
+v26.1.34 (2026-02-25)
+-------------------------
+ * Update create_os_indexes command
+
+v26.1.33 (2026-02-25)
+-------------------------
+ * Remove searching on outgoing views and limit searching on other views to just the message text
+ * Update @nyaruka/temba-components to 0.141.0
+ * Add voice flow icon to new flow editor and support modal positioning
+
+v26.1.32 (2026-02-24)
+-------------------------
+ * Add management command to backfill messages into OpenSearch
+
+v26.1.31 (2026-02-24)
+-------------------------
+ * Update @nyaruka/temba-components to 0.140.0
+
+v26.1.30 (2026-02-24)
+-------------------------
+ * Tweak settings for OpenSearch collection IDs
+
+v26.1.29 (2026-02-23)
+-------------------------
+ * Add msg_search to mailroom client
+
+v26.1.28 (2026-02-23)
+-------------------------
+ * Tweak create_indexes
+
+v26.1.27 (2026-02-20)
+-------------------------
+ * Fix total ticks for HOD chart
+ * Let msg_console command read COURIERURL from env
+
+v26.1.26 (2026-02-19)
+-------------------------
+ * Tweak create_indexes
+
+v26.1.25 (2026-02-19)
+-------------------------
+ * Create index should create actual index instead of template
+ * Update @nyaruka/temba-components to 0.139.0
+ * Add outbox message queue warning
+
+v26.1.24 (2026-02-18)
+-------------------------
+ * Add create_indexes command to setup opensearch indexes
+
+v26.1.23 (2026-02-11)
+-------------------------
+ * Don't allow interrupting a flow if an interruption is already in progress
+ * Drop Msg.quick_replies
+
+v26.1.22 (2026-02-10)
+-------------------------
+ * Remove deprecated and never publicized ticket param from messages endpoint
+ * Change flow bulk archiving to also exclude flows with ongoing runs.
+ * Data migration to backfill new quick replies field
+ * Update temba-components to 0.138.6
+ * Add agent access options (can_assign / can_reply_non_own)
+
+v26.1.21 (2026-02-10)
+-------------------------
+ * Tweak flow interrupt view to include active runs in count as well
+
+v26.1.20 (2026-02-09)
+-------------------------
+ * Fix ticket filters and leaderboard layout
+ * Add view to interrupt flow runs
+
+v26.1.19 (2026-02-09)
+-------------------------
+ * Add top responders leaderboard to ticket analytics page
+ * Add user filter for All tickets folder
+
+v26.1.18 (2026-02-05)
+-------------------------
+ * Add new Msg.quickreplies field to replace Msg.quick_replies
+ * Undo last migration
+
 v26.1.17 (2026-02-04)
 -------------------------
  * Increase max_lnegth of extra on API serializer too to match engine

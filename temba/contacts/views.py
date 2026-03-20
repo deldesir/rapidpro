@@ -110,13 +110,15 @@ class ContactListView(SpaMixin, BulkActionMixin, BaseListView):
             bulk_action_ids = self.kwargs.get("bulk_action_ids", [])
             if bulk_action_ids:
                 reappearing_ids = set(self.group.contacts.filter(id__in=bulk_action_ids).values_list("id", flat=True))
-                exclude_ids = [i for i in bulk_action_ids if i not in reappearing_ids]
+                exclude = list(
+                    Contact.objects.filter(id__in=bulk_action_ids).exclude(id__in=reappearing_ids).only("id", "uuid")
+                )
             else:
-                exclude_ids = []
+                exclude = []
 
             try:
                 results = mailroom.get_client().contact_search(
-                    org, self.group, search_query, sort=sort_on, offset=offset, exclude_ids=exclude_ids
+                    org, self.group, search_query, sort=sort_on, offset=offset, exclude=exclude
                 )
                 self.parsed_query = results.query if len(results.query) > 0 else None
                 self.search_is_saveable = results.metadata.allow_as_group
@@ -390,6 +392,14 @@ class ContactCRUDL(SmartCRUDL):
             if ticket_uuid := payload.get("ticket"):
                 ticket = request.org.tickets.filter(uuid=ticket_uuid).first()
 
+            # check if user has permission to reply to tickets not assigned to them
+            if ticket and ticket.assignee != request.user:
+                membership = request.org.get_membership(request.user)
+                if membership and not membership.can_reply_non_own:
+                    return JsonResponse(
+                        {"error": "You do not have permission to reply to tickets not assigned to you."}, status=403
+                    )
+
             resp = mailroom.get_client().msg_send(
                 request.org, request.user, self.get_object(), text, [str(a) for a in attachments], [], ticket
             )
@@ -616,7 +626,7 @@ class ContactCRUDL(SmartCRUDL):
             return r"^%s/%s/(?P<uuid>[^/]+)/$" % (path, action)
 
         def derive_menu_path(self):
-            return f"/contact/group/{self.kwargs["uuid"]}"
+            return f"/contact/group/{self.kwargs['uuid']}"
 
         def get_object_org(self):
             return self.group.org
