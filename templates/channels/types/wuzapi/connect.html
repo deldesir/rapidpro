@@ -101,7 +101,6 @@
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     const statusUrl = "{% url 'channels.types.wuzapi.status' channel.uuid %}";
-    // ... URLs ...
 
     const elConnecting = document.getElementById('state-connecting');
     const elScan = document.getElementById('state-scan');
@@ -109,7 +108,11 @@
 
     const imgQr = document.getElementById('qr-image');
     const elPairingSection = document.getElementById('pairing-section');
+    const elCodeDisplay = document.getElementById('code-display-area');
     const elPairingCode = document.getElementById('pairing-code');
+    const btnGenCode = document.getElementById('btn-gen-code');
+
+    let firstPoll = true;  // Request pairing code automatically on first poll only
 
     function showState(state) {
       elConnecting.classList.add('d-none');
@@ -121,7 +124,7 @@
       if (state === 'connected') elSuccess.classList.remove('d-none');
     }
 
-    function checkStatus(genCode = false) {
+    function checkStatus(genCode) {
       let url = statusUrl;
       if (genCode) {
         url += (url.includes('?') ? '&' : '?') + 'gen_code=1';
@@ -132,9 +135,6 @@
         .then(data => {
           if (data.error) {
             console.error("Status check error:", data.error);
-            if (genCode) {
-              alert("{% trans 'Error:' %} " + data.error);
-            }
             return;
           }
 
@@ -146,45 +146,48 @@
             if (data.qr_code) {
               imgQr.src = data.qr_code;
             }
-
-            // Always show pairing section now
             elPairingSection.classList.remove('d-none');
 
             if (data.pairing_code) {
-              document.getElementById('code-display-area').classList.remove('d-none');
+              elCodeDisplay.classList.remove('d-none');
               elPairingCode.innerText = data.pairing_code;
+              // Code is visible — change button to "Refresh Code"
+              btnGenCode.innerText = "{% trans 'Refresh Code' %}";
+              btnGenCode.disabled = false;
+            } else if (genCode) {
+              // gen_code was requested but no code returned yet — re-enable button
+              btnGenCode.innerText = "{% trans 'Get Pairing Code instead' %}";
+              btnGenCode.disabled = false;
             }
           } else {
             showState('connecting');
-          }
-        })
-        .catch(e => console.error("Poll failed", e))
-        .finally(() => {
-          // Poll every 3 seconds only if not manual gen
-          if (!genCode) {
+            // Keep polling until session is ready
             setTimeout(() => checkStatus(false), 3000);
+            return;
           }
+
+          // Schedule next status-only poll (no gen_code) to detect connection
+          setTimeout(() => checkStatus(false), 5000);
+        })
+        .catch(e => {
+          console.error("Poll failed", e);
+          setTimeout(() => checkStatus(false), 5000);
         });
     }
 
     function generateCode() {
-      const btn = document.getElementById('btn-gen-code');
-      btn.disabled = true;
-      const originalText = btn.innerText;
-      btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> {% trans "Generating..." %}';
-
-      checkStatus(true).then(() => {
-        btn.innerText = "{% trans 'Refresh Code' %}";
-        btn.disabled = false;
-      });
+      btnGenCode.disabled = true;
+      btnGenCode.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> {% trans "Generating..." %}';
+      checkStatus(true);
     }
 
-    document.getElementById('btn-gen-code').addEventListener('click', generateCode);
+    btnGenCode.addEventListener('click', generateCode);
 
-    // Initial state
+    // On first load: fetch status AND request the pairing code in one shot
     showState('connecting');
-    checkStatus(false);
+    checkStatus(true);
   });
+
 </script>
 {% endblock extra-script %}
 
