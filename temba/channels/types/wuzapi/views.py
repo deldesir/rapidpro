@@ -146,13 +146,7 @@ class ClaimView(ClaimViewMixin, SmartFormView):
             )
             logger.info(f"Wuzapi Channel created (Native): {self.object.uuid}")
             
-            # Auto-configure Wuzapi webhook
-            # Point to Courier: /c/wz/{uuid}/receive
-            # Use localhost for native same-machine setup
-            scheme = getattr(settings, 'ACCOUNT_DEFAULT_HTTP_PROTOCOL', 'http')
-            server_ip = '127.0.0.1'
-            
-            webhook_url = f"{scheme}://{server_ip}:8080/c/wz/{self.object.uuid}/receive"
+            webhook_url = f"http://localhost:8080/c/wz/{self.object.uuid}/receive"
             wuzapi_endpoint = f"{wuzapi_url}/webhook"
 
             try:
@@ -233,14 +227,8 @@ class ConnectWuzapiView(OrgPermsMixin, SmartFormView):
         
         if wuzapi_url and token:
             try:
-                # Point to Courier: /c/wz/{uuid}/receive
-                # Use localhost since user is running natively on the same machine.
-                # This avoids firewall/DNS issues with interface IPs.
-                # Use local IP detection
-                scheme = getattr(settings, 'ACCOUNT_DEFAULT_HTTP_PROTOCOL', 'http')
-                server_ip = get_server_ip()
-                
-                webhook_url = f"{scheme}://{server_ip}:8080/c/wz/{channel.uuid}/receive"
+                # Courier always runs locally over plain HTTP — never use public IP or https
+                webhook_url = f"http://localhost:8080/c/wz/{channel.uuid}/receive"
                 
                 # Update Webhook (non-blocking ideally, but short timeout)
                 # Update Webhook (non-blocking ideally, but short timeout)
@@ -295,12 +283,12 @@ class ConnectWuzapiView(OrgPermsMixin, SmartFormView):
                 except Exception as e:
                     logger.debug(f"Wuzapi status check failed: {e}")
 
-                # Fetch QR if not connected
+                # Fetch QR and pairing code if not yet connected
                 if status != "connected":
                     try:
-                        # Ensure session is connected first
+                        # Ensure session is started
                         requests.post(f"{wuzapi_url}/session/connect", headers={"Authorization": token}, json={}, timeout=2)
-                        
+
                         qr_resp = requests.get(
                             f"{wuzapi_url}/session/qr",
                             headers={"Authorization": token},
@@ -310,19 +298,21 @@ class ConnectWuzapiView(OrgPermsMixin, SmartFormView):
                             qr_data = qr_resp.json().get('data', {})
                             qr_code = qr_data.get("QRCode")
 
-                        # Also try to get pairing code
+                        # Request pairing code once — WhatsApp sends the PIN prompt to the phone.
+                        # The code is passed to the template and displayed immediately so the user
+                        # never needs to click a button (which would trigger a second prompt).
                         pair_resp = requests.post(
                             f"{wuzapi_url}/session/pairphone",
                             headers={"Authorization": token},
                             json={"phone": channel.address},
-                            timeout=2
+                            timeout=10
                         )
                         if pair_resp.status_code == 200:
                             pair_json = pair_resp.json()
                             pairing_code = pair_json.get("LinkingCode") or pair_json.get("data", {}).get("LinkingCode")
 
                     except Exception as e:
-                        logger.debug(f"Wuzapi QR/Price check failed: {e}")
+                        logger.debug(f"Wuzapi QR/pairing check failed: {e}")
     
             except Exception as e:
                 logger.error(f"Error updating Wuzapi status: {e}")
