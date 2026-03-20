@@ -4,14 +4,13 @@ from temba.ai.models import LLMType
 from .views import ConnectView
 
 
-class OpenClawType(LLMType):
-    slug = "openclaw"
-    name = "OpenClaw"
-    
-    # We allow configuring the endpoint and api_key
-    # Default endpoint could be localhost for native integration
+class CustomAIType(LLMType):
+    slug = "custom_ai"
+    name = "Custom AI"
+
+    # Allows configuring any OpenAI-compatible endpoint and api_key
     settings = {
-        "models": ["openclaw"],  # Default model name
+        "models": ["custom_ai"],  # Default model name
         "exclusions": [],
     }
 
@@ -19,15 +18,15 @@ class OpenClawType(LLMType):
     form_blurb = _(
         """
         <div class="mb-4">
-            <p>Connect to a local or remote <b>OpenClaw</b> instance to use it as an AI provider.</p>
+            <p>Connect to any <b>OpenAI-compatible</b> endpoint to use it as an AI provider.</p>
             <div class="mt-3 p-3 bg-gray-100 border border-gray-300 rounded text-sm">
                 <strong>Authentication Required:</strong><br/>
-                Before connecting, ensure you have authenticated with Google Antigravity.
+                Ensure you have authenticated with your AI provider and have a valid API token.
                 <div class="mt-2">
                     <a href="http://localhost:3030/__openclaw__/canvas/" target="_blank" class="btn btn-sm btn-default">
                         Open Auth Dashboard ↗
                     </a>
-                    <span class="ml-2 text-gray-500">or run <code>openclaw models auth login</code></span>
+                    <span class="ml-2 text-gray-500">or configure your endpoint and token below</span>
                 </div>
             </div>
         </div>
