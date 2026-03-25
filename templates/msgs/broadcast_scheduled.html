@@ -5,11 +5,11 @@
   {{ block.super }}
   <script type="text/javascript">
     function editBroadcast(id) {
-      showModax("{{_('Edit Broadcast')|escapejs}}", "/broadcast/update/" + id + "/");
+      showModax("{{_('Edit Broadcast')|escapejs}}", "{% url 'msgs.broadcast_update' 'PLACEHOLDER' %}".replace('PLACEHOLDER', id));
     }
 
     function deleteBroadcast(id) {
-      showModax("{{_('Delete Broadcast')|escapejs}}", "/broadcast/scheduled_delete/" + id + "/");
+      showModax("{{_('Delete Broadcast')|escapejs}}", "{% url 'msgs.broadcast_scheduled_delete' 'PLACEHOLDER' %}".replace('PLACEHOLDER', id));
     }
 
     onSpload(function() {
