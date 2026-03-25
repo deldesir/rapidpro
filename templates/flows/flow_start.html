@@ -88,7 +88,7 @@
             queryWidget.in_a_flow = flowType !== 'B';
             queryWidget.started_previously = true;
             queryWidget.not_seen_since_days = true;
-            queryWidget.endpoint = "/flow/preview_start/" + this.value + "/";
+            queryWidget.endpoint = "{% url 'flows.flow_preview_start' 'PLACEHOLDER' %}".replace('PLACEHOLDER', this.value);
             queryWidget.flow = this.values[0];
             queryWidget.refresh();
           }

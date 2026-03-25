@@ -78,7 +78,7 @@
       const options = {
         onSubmit: "contactUpdated()"
       }
-      showModax("{{_('Interrupt Contact')|escapejs}}", "/contact/interrupt/" + event.detail.contact.uuid + "/", options);
+      showModax("{{_('Interrupt Contact')|escapejs}}", "{% url 'contacts.contact_interrupt' 'PLACEHOLDER' %}".replace('PLACEHOLDER', event.detail.contact.uuid), options);
     }
 
     function contactUpdated(evt) {
@@ -112,14 +112,14 @@
     }
 
     function handleFieldSearch(evt) {
-      spaGet("/contact/?search=" + encodeURIComponent(evt.detail.key) + "+%3D+" + encodeURIComponent("\"" + evt.detail.value + "\""))
+      spaGet("{% url 'contacts.contact_list' %}" + "?search=" + encodeURIComponent(evt.detail.key) + "+%3D+" + encodeURIComponent("\"" + evt.detail.value + "\""))
     }
 
     function handlePendingClicked(evt) {
       var pending = evt.detail;
 
       if (pending.type == "campaign_event") {
-        spaGet("/campaign/read/" + pending.campaign.uuid + "/");
+        spaGet("{% url 'campaigns.campaign_read' 'PLACEHOLDER' %}".replace('PLACEHOLDER', pending.campaign.uuid));
       } else if (pending.type == "scheduled_broadcast") {
         spaGet("{% url 'msgs.broadcast_scheduled' %}");
       } else {
