@@ -367,9 +367,9 @@ class SpaMixin:
         return context
 
     def derive_menu_path(self):
-        if hasattr(self, "menu_path"):
-            return self.menu_path
-        return self.request.path
+        path = self.menu_path if hasattr(self, "menu_path") else self.request.path
+        prefix = getattr(settings, "FORCE_SCRIPT_NAME", "") or ""
+        return path if path.startswith(prefix) else prefix + path
 
     def render_to_response(self, context, **response_kwargs):
         response = super().render_to_response(context, **response_kwargs)
