@@ -269,7 +269,7 @@
   <script type="text/javascript">
     function enableNewEditor() {
       document.cookie = 'use-new-editor=; path=/; max-age=0';
-      window.location.href = '/flow/next/{{object.uuid}}/';
+      window.location.href = '{% url "flows.flow_next" object.uuid %}';
     }
 
     function closeEditorBanner() {

@@ -121,7 +121,7 @@
     function useClassicEditor() {
       document.cookie = 'use-new-editor=false; path=/; max-age=31536000';
       document.cookie = 'new-editor-introduced=; path=/; max-age=0';
-      window.location.href = '/flow/editor/{{object.uuid}}/';
+      window.location.href = '{% url "flows.flow_editor" object.uuid %}';
     }
 
     function closeEditorBanner() {
@@ -151,15 +151,15 @@
     }
 
     function handleContactClicked(e) {
-      navigateTo("/contact/read/" + e.detail.uuid + "/", e.detail);
+      navigateTo("{% url 'contacts.contact_read' 'PLACEHOLDER' %}".replace('PLACEHOLDER', e.detail.uuid), e.detail);
     }
 
     function handleFlowClicked(e) {
-      navigateTo("/flow/next/" + e.detail.uuid + "/", e.detail);
+      navigateTo("{% url 'flows.flow_next' 'PLACEHOLDER' %}".replace('PLACEHOLDER', e.detail.uuid), e.detail);
     }
 
     function handleGroupClicked(e) {
-      navigateTo("/contact/group/" + e.detail.uuid + "/", e.detail);
+      navigateTo("{% url 'contacts.contact_group' 'PLACEHOLDER' %}".replace('PLACEHOLDER', e.detail.uuid), e.detail);
     }
 
     function handleFollow(event) {
