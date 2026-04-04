@@ -98,6 +98,9 @@ class Event:
 
     @classmethod
     def _query_history(cls, pk: str, *, after_sk: str, before_sk: str, limit: int, callback):
+        if dynamo.HISTORY is None:
+            return  # DynamoDB disabled
+
         num_fetches = 0
         next_start_sk = None
         query = dict(Limit=limit, Select="ALL_ATTRIBUTES")

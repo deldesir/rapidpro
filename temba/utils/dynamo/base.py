@@ -13,10 +13,18 @@ _client = None
 DYNAMODB_CONTEXT.traps[Rounded] = False
 
 
+def is_enabled():
+    """Returns True if DynamoDB is configured and enabled."""
+    return bool(getattr(settings, "DYNAMO_TABLE_PREFIX", ""))
+
+
 def get_client():
     """
-    Returns our shared DynamoDB resource service client
+    Returns our shared DynamoDB resource service client, or None if disabled.
     """
+
+    if not is_enabled():
+        return None
 
     global _client
 
@@ -37,5 +45,12 @@ def get_client():
     return _client
 
 
-MAIN = SimpleLazyObject(lambda: get_client().Table(settings.DYNAMO_TABLE_PREFIX + "Main"))
-HISTORY = SimpleLazyObject(lambda: get_client().Table(settings.DYNAMO_TABLE_PREFIX + "History"))
+def _get_table(suffix):
+    client = get_client()
+    if client is None:
+        return None
+    return client.Table(settings.DYNAMO_TABLE_PREFIX + suffix)
+
+
+MAIN = SimpleLazyObject(lambda: _get_table("Main"))
+HISTORY = SimpleLazyObject(lambda: _get_table("History"))

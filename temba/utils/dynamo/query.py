@@ -5,7 +5,7 @@ def batch_get(table, keys: list[tuple]) -> list:
     """
     Performs a batch get item operation on the given table for the provided keys.
     """
-    if not keys:
+    if table is None or not keys:
         return []
 
     items = []
@@ -24,6 +24,9 @@ def merged_page_query(table, pks: list, *, desc=False, limit=50, after_sk=None) 
     Performs a paginated query across multiple partition keys merging the results into a single page. Returns a tuple
     of the results for the page, the previous page's after SK (if any), and the next page's after SK (if any).
     """
+
+    if table is None:
+        return [], None, None
 
     # fetch this page +1 from all partitions
     merged = _merged_partition_query(table, pks, limit=limit + 1, desc=desc, after_sk=after_sk)
@@ -74,6 +77,8 @@ def delete_partition(table, pk: str) -> int:
     Deletes all items from the DynamoDB table with the given partition key.
     """
 
+    if table is None:
+        return 0
     num_deleted = 0
     last_sk = None
 
