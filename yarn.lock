@@ -139,10 +139,10 @@
     uuid "^11.1.0"
     zustand "^5.0.3"
 
-"@nyaruka/temba-components@0.152.0":
-  version "0.152.0"
-  resolved "https://registry.yarnpkg.com/@nyaruka/temba-components/-/temba-components-0.152.0.tgz#55e3a5ffc5b11e23dfcd5e6b7bb056afdd5d3212"
-  integrity sha512-JFTPoUMwP9jJBXgIxeI+boXit3s8kaIaCEk2PwPnrGG3KGdfCcPBSh5eStdKY94p88yVD4Bbj+K/kql6UOUUkA==
+"@nyaruka/temba-components@0.156.6":
+  version "0.156.6"
+  resolved "https://registry.yarnpkg.com/@nyaruka/temba-components/-/temba-components-0.156.6.tgz#71741651acafb89b4e0cd0c3006c2c2334637ca2"
+  integrity sha512-BHcHpRYCetTbJVExjjhqa6uP0YYmTg+hphgWh9sAQdOGR4P+qKZrKc8BGziDPYmz6OtsA9601xwHiHAXhmKktQ==
   dependencies:
     "@jsplumb/browser-ui" "^6.2.10"
     "@lit/localize" "^0.12.2"
@@ -913,9 +913,9 @@ lit@3.3.2, lit@^3.2.0:
     lit-html "^3.3.0"
 
 lodash@^4.17.21:
-  version "4.17.23"
-  resolved "https://registry.yarnpkg.com/lodash/-/lodash-4.17.23.tgz#f113b0378386103be4f6893388c73d0bde7f2c5a"
-  integrity sha512-LgVTMpQtIopCi79SJeDiP0TfWi5CNEc/L/aRdTh3yIvmZXTnheWpKjSZhnvMl8iXbC1tFg9gdHHDMLoV7CnG+w==
+  version "4.18.1"
+  resolved "https://registry.yarnpkg.com/lodash/-/lodash-4.18.1.tgz#ff2b66c1f6326d59513de2407bf881439812771c"
+  integrity sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q==
 
 loose-envify@^1.1.0, loose-envify@^1.4.0:
   version "1.4.0"
@@ -1075,9 +1075,9 @@ picocolors@^1.0.0:
   integrity sha512-1fygroTLlHu66zi26VoTDv8yRgm0Fccecssto+MhsZ0D/DGW2sm8E8AjW7NU5VVTRt5GxbeZ5qBuJr+HyLYkjQ==
 
 picomatch@^2.0.4, picomatch@^2.2.1, picomatch@^2.3.1:
-  version "2.3.1"
-  resolved "https://registry.yarnpkg.com/picomatch/-/picomatch-2.3.1.tgz#3ba3833733646d9d3e4995946c1365a67fb07a42"
-  integrity sha512-JU3teHTNjmE2VCGFzuY8EXzCDVwEqB2a8fsIvwaStHhAWJEeVd1o1QD80CU6+ZdEXXSLbSsuLwJjkCBWqRQUVA==
+  version "2.3.2"
+  resolved "https://registry.yarnpkg.com/picomatch/-/picomatch-2.3.2.tgz#5a942915e26b372dc0f0e6753149a16e6b1c5601"
+  integrity sha512-V7+vQEJ06Z+c5tSye8S+nHUfI51xoXIXjHQ99cQtKUkQqqO1kO/KCJUfZXuB47h/YBlDhah2H3hdUGXn8ie0oA==
 
 pify@^2.3.0:
   version "2.3.0"

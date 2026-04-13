@@ -5,7 +5,7 @@ from functools import cached_property
 from urllib.parse import quote_plus
 
 import magic
-from smartmin.views import SmartCreateView, SmartCRUDL, SmartDeleteView, SmartListView, SmartUpdateView
+from smartmin.views import SmartCreateView, SmartCRUDL, SmartDeleteView, SmartUpdateView
 
 from django import forms
 from django.conf import settings
@@ -493,7 +493,7 @@ class BroadcastCRUDL(SmartCRUDL):
 
             return self.render_modal_response(form)
 
-    class Status(OrgPermsMixin, SmartListView):
+    class Status(BaseListView):
         permission = "msgs.broadcast_list"
 
         def derive_queryset(self, **kwargs):
@@ -694,7 +694,7 @@ class MsgCRUDL(SmartCRUDL):
     class Inbox(MsgListView):
         title = _("Inbox")
         folder = MsgFolder.INBOX
-        search_fields = ("text__icontains",)
+        search_fields = ("text__icontains", "contact__name__icontains")
         bulk_actions = ("archive", "label")
         allow_export = True
         menu_path = "/msg/inbox"
@@ -710,7 +710,7 @@ class MsgCRUDL(SmartCRUDL):
     class Flow(MsgListView):
         title = _("Handled")
         folder = MsgFolder.HANDLED
-        search_fields = ("text__icontains",)
+        search_fields = ("text__icontains", "contact__name__icontains")
         bulk_actions = ("archive", "label")
         allow_export = True
         menu_path = "/msg/handled"
@@ -722,7 +722,7 @@ class MsgCRUDL(SmartCRUDL):
     class Archived(MsgListView):
         title = _("Archived")
         folder = MsgFolder.ARCHIVED
-        search_fields = ("text__icontains",)
+        search_fields = ("text__icontains", "contact__name__icontains")
         bulk_actions = ("restore", "label", "delete")
         allow_export = True
 
@@ -767,7 +767,7 @@ class MsgCRUDL(SmartCRUDL):
             return super().get_queryset(**kwargs).select_related("contact", "channel", "flow")
 
     class Filter(MsgListView):
-        search_fields = ("text__icontains",)
+        search_fields = ("text__icontains", "contact__name__icontains")
         bulk_actions = ("label",)
 
         def derive_menu_path(self):

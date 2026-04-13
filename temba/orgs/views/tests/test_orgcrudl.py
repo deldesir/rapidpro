@@ -144,7 +144,7 @@ class OrgCRUDLTest(TembaTest, CRUDLTestMixin):
         self.child_org = Org.objects.create(
             name="Child Org",
             timezone=ZoneInfo("Africa/Kigali"),
-            country=self.org.country,
+            root_location=self.org.root_location,
             created_by=self.admin,
             modified_by=self.admin,
             parent=self.org,
@@ -387,11 +387,9 @@ class OrgCRUDLTest(TembaTest, CRUDLTestMixin):
             signup_url,
             {
                 "email": "canbeanything@temba.io",
-                "workspace": "Ignored",
                 "password1": self.default_password,
                 "first_name": "Edwin",
                 "last_name": "Kagabo",
-                "timezone": "Africa/Kigali",
             },
             follow=True,
         )

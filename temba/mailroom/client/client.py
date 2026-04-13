@@ -95,7 +95,6 @@ class MailroomClient:
             "contact/deindex",
             {
                 "org_id": org.id,
-                "contact_ids": [c.id for c in contacts],
                 "contact_uuids": [str(c.uuid) for c in contacts],
             },
         )
@@ -105,14 +104,14 @@ class MailroomClient:
             "contact/reindex",
             {
                 "org_id": org.id,
-                "contact_ids": [c.id for c in contacts],
+                "contact_uuids": [str(c.uuid) for c in contacts],
             },
         )
 
-    def contact_export(self, org, group, query: str) -> list[int]:
+    def contact_export(self, org, group, query: str) -> list[str]:
         resp = self._request("contact/export", {"org_id": org.id, "group_id": group.id, "query": query})
 
-        return resp["contact_ids"]
+        return resp["contact_uuids"]
 
     def contact_export_preview(self, org, group, query: str) -> int:
         resp = self._request("contact/export_preview", {"org_id": org.id, "group_id": group.id, "query": query})
@@ -160,7 +159,6 @@ class MailroomClient:
             {
                 "org_id": org.id,
                 "group_id": group.id,
-                "exclude_ids": [c.id for c in exclude],  # deprecated but needed until we're done with Elastic
                 "exclude_uuids": [str(c.uuid) for c in exclude],
                 "query": query,
                 "sort": sort,
@@ -172,7 +170,7 @@ class MailroomClient:
         return SearchResults(
             query=resp["query"],
             total=resp["total"],
-            contact_ids=resp["contact_ids"],
+            contact_uuids=resp["contact_uuids"],
             metadata=QueryMetadata(**resp.get("metadata", {})),
         )
 

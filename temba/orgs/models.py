@@ -195,9 +195,7 @@ class OrgRole(Enum):
 
 class Org(SmartModel):
     """
-    An Org can have several users and is the main component that holds all Flows, Messages, Contacts, etc. Orgs
-    know their country so they can deal with locally formatted numbers (numbers provided without a country code).
-    As such, each org can only add phone channels from one country.
+    An Org can have several users and is the main component that holds all Flows, Messages, Contacts, etc.
 
     Users will create new Org for Flows that should be kept separate (say for distinct projects), or for
     each country where they are deploying messaging applications.
@@ -299,7 +297,7 @@ class Org(SmartModel):
         default=DATE_FORMAT_DAY_FIRST,
         help_text=_("Default formatting and parsing of dates in flows and messages."),
     )
-    country = models.ForeignKey("locations.AdminBoundary", null=True, on_delete=models.PROTECT)
+    root_location = models.ForeignKey("locations.AdminBoundary", null=True, on_delete=models.PROTECT, related_name="+")
     flow_languages = ArrayField(models.CharField(max_length=3), default=list, validators=[ArrayMinLengthValidator(1)])
     input_collation = models.CharField(max_length=32, choices=COLLATION_CHOICES, default=COLLATION_DEFAULT)
     flow_smtp = models.CharField(null=True)  # e.g. smtp://...
@@ -776,9 +774,9 @@ class Org(SmartModel):
         Gets the default country as a pycountry country for this org
         """
 
-        # first try the country boundary field
-        if self.country:
-            if country := pycountry.countries.get(name=self.country.name):
+        # first try the root location boundary field
+        if self.root_location:
+            if country := pycountry.countries.get(name=self.root_location.name):
                 return country
 
         # next up try timezone

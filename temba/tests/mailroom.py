@@ -80,14 +80,14 @@ class Mocks:
             return mailroom.SearchResults(
                 query=cleaned or query,
                 total=total or len(contacts),
-                contact_ids=[c.id for c in contacts],
+                contact_uuids=[str(c.uuid) for c in contacts],
                 metadata=mock_inspect_query(org, cleaned or query, fields),
             )
 
         self._contact_search[query] = mock
 
-    def contact_export(self, contact_ids: list[int]):
-        self._contact_export.append(contact_ids)
+    def contact_export(self, contact_uuids: list[str]):
+        self._contact_export.append(contact_uuids)
 
     def contact_export_preview(self, total: int):
         self._contact_export_preview.append(total)
@@ -231,11 +231,11 @@ class TestClient(MailroomClient):
         return {"indexed": len(contacts)}
 
     @_client_method
-    def contact_export(self, org, group, query: str) -> list[int]:
+    def contact_export(self, org, group, query: str) -> list[str]:
         if self.mocks._contact_export:
             return self.mocks._contact_export.pop(0)
 
-        return list(group.contacts.order_by("id").values_list("id", flat=True))
+        return [str(u) for u in group.contacts.order_by("id").values_list("uuid", flat=True)]
 
     @_client_method
     def contact_export_preview(self, org, group, query: str) -> int:
@@ -850,7 +850,7 @@ def parse_location(org, location_string, level, parent=None):
     Simplified version of mailroom's location parsing
     """
     # no country? bail
-    if not org.country_id or not isinstance(location_string, str):
+    if not org.root_location_id or not isinstance(location_string, str):
         return []
 
     boundary = None
@@ -879,7 +879,7 @@ def parse_location_path(org, location_string):
     """
     return (
         AdminBoundary.objects.filter(path__iexact=location_string.strip()).first()
-        if org.country_id and isinstance(location_string, str)
+        if org.root_location_id and isinstance(location_string, str)
         else None
     )
 
@@ -890,7 +890,7 @@ def find_boundary_by_name(org, name, level, parent):
         boundary = parent.children.filter(name__iexact=name, level=level)
     else:
         query = dict(name__iexact=name, level=level)
-        query["__".join(["parent"] * level)] = org.country
+        query["__".join(["parent"] * level)] = org.root_location
         boundary = AdminBoundary.objects.filter(**query)
 
     return boundary

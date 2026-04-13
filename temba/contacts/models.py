@@ -47,6 +47,7 @@ class URN:
         * No hex escaping in URN path
     """
 
+    BSUID_SCHEME = "bsuid"
     DELETED_SCHEME = "deleted"
     EMAIL_SCHEME = "mailto"
     EXTERNAL_SCHEME = "ext"
@@ -71,6 +72,7 @@ class URN:
     SCHEME_CHOICES = (
         (TEL_SCHEME, _("Phone Number")),
         (EMAIL_SCHEME, _("Email Address")),
+        (BSUID_SCHEME, _("WhatsApp BSUID")),
         (EXTERNAL_SCHEME, _("External Identifier")),
         (FACEBOOK_SCHEME, _("Facebook Identifier")),
         (FCM_SCHEME, _("Firebase Cloud Messaging Identifier")),
@@ -204,6 +206,10 @@ class URN:
         elif scheme in [cls.TELEGRAM_SCHEME, cls.WHATSAPP_SCHEME, cls.INSTAGRAM_SCHEME]:
             return regex.match(r"^[0-9]+$", path, regex.V0)
 
+        # bsuid (WhatsApp business-scoped user id): two-letter country code, dot, 1-128 alphanumerics
+        elif scheme == cls.BSUID_SCHEME:
+            return regex.match(r"^[A-Z]{2}\.[a-zA-Z0-9]{1,128}$", path, regex.V0)
+
         # validate Viber URNS look right (this is a guess)
         elif scheme == cls.VIBER_SCHEME:  # pragma: needs cover
             return regex.match(r"^[a-zA-Z0-9_=+/]{1,24}$", path, regex.V0)
@@ -245,6 +251,11 @@ class URN:
 
         elif scheme == cls.EMAIL_SCHEME:
             norm_path = norm_path.lower()
+
+        elif scheme == cls.BSUID_SCHEME:
+            # BSUIDs have format CC.ALPHANUMERIC - uppercase the country code
+            if len(norm_path) > 2 and norm_path[2] == ".":
+                norm_path = norm_path[:2].upper() + norm_path[2:]
 
         return cls.from_parts(scheme, norm_path, query, display)
 
@@ -1168,10 +1179,6 @@ class Contact(LegacyUUIDMixin, SmartModel):
             models.Index(
                 name="contacts_by_org_deleted", fields=("org", "-modified_on", "-id"), condition=Q(is_active=False)
             ),
-            # for getting the last modified_on during smart group population
-            models.Index(name="contacts_contact_org_modified", fields=["org", "-modified_on"]),
-            # for indexing modified contacts
-            models.Index(name="contacts_modified", fields=("modified_on",)),
         ]
         constraints = [
             models.CheckConstraint(condition=Q(status__in=("A", "B", "S", "V")), name="contact_status_valid"),
@@ -1768,9 +1775,9 @@ class ContactExport(ExportType):
         include_group_memberships = bool(len(group_fields) > 0)
 
         if search:
-            contact_ids = mailroom.get_client().contact_export(export.org, group, query=search)
+            contact_uuids = mailroom.get_client().contact_export(export.org, group, query=search)
         else:
-            contact_ids = group.contacts.using("readonly").order_by("id").values_list("id", flat=True)
+            contact_uuids = group.contacts.using("readonly").order_by("id").values_list("uuid", flat=True).iterator()
 
         # create our exporter
         exporter = MultiSheetExporter(
@@ -1780,19 +1787,19 @@ class ContactExport(ExportType):
         num_records = 0
 
         # write out contacts in batches to limit memory usage
-        for batch_ids in itertools.batched(contact_ids, 1000):
+        for batch_uuids in itertools.batched(contact_uuids, 1000):
             # fetch all the contacts for our batch
             batch_contacts = (
-                Contact.objects.filter(id__in=batch_ids).prefetch_related("org", "groups").using("readonly")
+                Contact.objects.filter(uuid__in=batch_uuids).prefetch_related("org", "groups").using("readonly")
             )
 
-            # to maintain our sort, we need to lookup by id, create a map of our id->contact to aid in that
-            contact_by_id = {c.id: c for c in batch_contacts}
+            # to maintain our sort, we need to lookup by uuid, create a map of our uuid->contact to aid in that
+            contact_by_uuid = {str(c.uuid): c for c in batch_contacts}
 
             Contact.bulk_urn_cache_initialize(batch_contacts, using="readonly")
 
-            for contact_id in batch_ids:
-                contact = contact_by_id[contact_id]
+            for contact_uuid in batch_uuids:
+                contact = contact_by_uuid[str(contact_uuid)]
 
                 values = []
                 for field in fields:

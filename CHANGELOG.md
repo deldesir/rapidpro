@@ -1,3 +1,100 @@
+v26.1.87 (2026-04-09)
+-------------------------
+ * Retire classic editor and force users to new editor
+
+v26.1.86 (2026-04-09)
+-------------------------
+ * Merge pull request #6555 from nyaruka/update-temba-components-0.156.6
+ * Update @nyaruka/temba-components to 0.156.6
+
+v26.1.85 (2026-04-09)
+-------------------------
+ * Update @nyaruka/temba-components to 0.156.5
+
+v26.1.84 (2026-04-09)
+-------------------------
+ * Merge pull request #6553 from nyaruka/update-temba-components-0.156.4
+
+v26.1.83 (2026-04-08)
+-------------------------
+ * Update @nyaruka/temba-components to 0.156.3
+
+v26.1.82 (2026-04-08)
+-------------------------
+ * Update @nyaruka/temba-components to 0.156.2
+ * Hide simulator when flow editor is in message view
+
+v26.1.81 (2026-04-08)
+-------------------------
+ * Update @nyaruka/temba-components to 0.156.0
+
+v26.1.80 (2026-04-08)
+-------------------------
+ * Tighten org scoping on a few list/lookup views
+
+v26.1.79 (2026-04-07)
+-------------------------
+ * Add support for bsuid URN scheme
+
+v26.1.78 (2026-04-02)
+-------------------------
+ * Enable chat search for contacts with last_seen_on
+ * Update @nyaruka/temba-components to 0.155.0
+
+v26.1.77 (2026-04-02)
+-------------------------
+ * Bump lodash from 4.17.23 to 4.18.1
+ * Remove Org.country field and rename Country view to Locations
+ * Bump aiohttp from 3.13.3 to 3.13.4
+ * Bump anthropic from 0.86.0 to 0.87.0
+ * Fix SPA back button race condition and initial page state
+
+v26.1.76 (2026-04-01)
+-------------------------
+ * Replace old editor banner with prominent retirement warning, remove new editor welcome banner
+ * Contact exports are now UUID based
+ * Stop writing Org.country, switch all reads to Org.root_location
+
+v26.1.75 (2026-04-01)
+-------------------------
+ * Add Org.root_location field with dual-write from Org.country
+ * Support contact_uuids in mailroom contact_export response
+ * Update contact_deindex and contact_reindex to send contacts by UUID
+
+v26.1.74 (2026-03-31)
+-------------------------
+ * Remove phone number honeypot from signup form
+ * Fix slow editor load for flows with many starts
+ * Defer workspace creation until after email verification
+ * Mailroom now always returns UUIDs when searching contacts
+
+v26.1.73 (2026-03-31)
+-------------------------
+ * Remove channel log_policy field
+
+v26.1.72 (2026-03-31)
+-------------------------
+ * Remove deprecated exclude_ids from contact search request
+ * Support contact_uuids in mailroom search responses
+ * Bump valkey from 8.0 to 8.1 in CI
+
+v26.1.71 (2026-03-30)
+-------------------------
+ * Restore message searching by name
+
+v26.1.70 (2026-03-30)
+-------------------------
+ * Remove no longer needed indexes on contact
+ * Update @nyaruka/temba-components to 0.154.1
+ * Make sure beta only channels can be enabled/disabled only by beta users
+
+v26.1.69 (2026-03-26)
+-------------------------
+ * Bump requests from 2.32.5 to 2.33.0
+ * Update @nyaruka/temba-components to 0.153.0
+ * Bump picomatch from 2.3.1 to 2.3.2
+ * Add ChatSearch view for searching messages within a contact's chat history
+
 v26.1.68 (2026-03-24)
 -------------------------
  * Tweak contacts ES index

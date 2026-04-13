@@ -716,7 +716,12 @@ class FlowCRUDL(SmartCRUDL):
 
     class Editor(SpaMixin, ContextMenuMixin, BaseReadView):
         def get(self, request, *args, **kwargs):
-            if request.COOKIES.get("use-new-editor") != "false" and self.__class__.__name__ != "Next":
+            if "classic" in request.GET:
+                response = HttpResponseRedirect(reverse("flows.flow_editor", args=[kwargs["uuid"]]))
+                response.set_cookie("classic-editor", "true", path="/", max_age=86400)  # 24 hours
+                return response
+
+            if request.COOKIES.get("classic-editor") != "true" and self.__class__.__name__ != "Next":
                 return HttpResponseRedirect(reverse("flows.flow_next", args=[kwargs["uuid"]]))
             return super().get(request, *args, **kwargs)
 
@@ -764,7 +769,7 @@ class FlowCRUDL(SmartCRUDL):
                 features.append("classifier")
             if org.get_resthooks():
                 features.append("resthook")
-            if org.country_id:
+            if org.root_location_id:
                 features.append("locations")
 
             return features
@@ -829,29 +834,12 @@ class FlowCRUDL(SmartCRUDL):
     class Next(Editor):
         template_name = "flows/flow_next.html"
 
-        def get(self, request, *args, **kwargs):
-            response = super().get(request, *args, **kwargs)
-
-            # show banner on first auto-redirect, then set cookie so it doesn't show again
-            if not request.COOKIES.get("new-editor-introduced") and request.COOKIES.get("use-new-editor") != "true":
-                response.set_cookie("new-editor-introduced", "true", path="/", max_age=31536000)
-
-            return response
-
-        def get_context_data(self, *args, **kwargs):
-            context = super().get_context_data(*args, **kwargs)
-            context["show_new_editor_banner"] = (
-                not self.request.COOKIES.get("new-editor-introduced")
-                and self.request.COOKIES.get("use-new-editor") != "true"
-            )
-            return context
-
         def build_context_menu(self, menu):
             super().build_context_menu(menu)
 
-            # replace "Switch to New Editor" with "Use Classic Editor"
+            # replace "Switch to New Editor" with "Classic Editor"
             menu.groups[-1] = [
-                {"type": "js", "id": "useClassicEditor", "label": str(_("Use Classic Editor")), "as_button": False}
+                {"type": "js", "id": "useClassicEditor", "label": str(_("Classic Editor")), "as_button": False}
             ]
 
     class ChangeLanguage(OrgObjPermsMixin, SmartUpdateView):
@@ -1767,7 +1755,7 @@ class FlowStartCRUDL(SmartCRUDL):
 
             return context
 
-    class Status(OrgPermsMixin, SmartListView):
+    class Status(BaseListView):
         permission = "flows.flowstart_list"
 
         def derive_queryset(self, **kwargs):

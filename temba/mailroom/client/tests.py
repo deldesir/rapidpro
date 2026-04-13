@@ -211,7 +211,6 @@ class MailroomClientTest(TembaTest):
             headers={"User-Agent": "Temba", "Authorization": "Token sesame"},
             json={
                 "org_id": self.org.id,
-                "contact_ids": [ann.id, bob.id],
                 "contact_uuids": [str(ann.uuid), str(bob.uuid)],
             },
         )
@@ -230,18 +229,21 @@ class MailroomClientTest(TembaTest):
             headers={"User-Agent": "Temba", "Authorization": "Token sesame"},
             json={
                 "org_id": self.org.id,
-                "contact_ids": [ann.id, bob.id],
+                "contact_uuids": [str(ann.uuid), str(bob.uuid)],
             },
         )
 
     @patch("requests.post")
     def test_contact_export(self, mock_post):
         group = self.create_group("Doctors", contacts=[])
-        mock_post.return_value = MockJsonResponse(200, {"contact_ids": [123, 234]})
+        ann = self.create_contact("Ann", phone="+1234567001")
+        bob = self.create_contact("Bob", phone="+1234567002")
+
+        mock_post.return_value = MockJsonResponse(200, {"contact_uuids": [str(bob.uuid), str(ann.uuid)]})
 
         result = self.client.contact_export(self.org, group, "age = 42")
 
-        self.assertEqual([123, 234], result)
+        self.assertEqual([str(bob.uuid), str(ann.uuid)], result)
         mock_post.assert_called_once_with(
             "http://localhost:8090/mr/contact/export",
             headers={"User-Agent": "Temba", "Authorization": "Token sesame"},
@@ -405,36 +407,54 @@ class MailroomClientTest(TembaTest):
 
     @patch("requests.post")
     def test_contact_search(self, mock_post):
-        joe = self.create_contact("Joe", urns=["tel:+12340000001"])
+        ann = self.create_contact("Ann", urns=["tel:+12340000001"])
+        bob = self.create_contact("Bob", urns=["tel:+12340000002"])
+        joe = self.create_contact("Joe", urns=["tel:+12340000003"])
         group = self.create_group("Doctors", contacts=[])
 
         mock_post.return_value = MockJsonResponse(
             200,
             {
-                "query": 'name ~ "frank"',
-                "contact_ids": [1, 2],
+                "query": 'name ~ "ann"',
+                "contact_uuids": [str(ann.uuid), str(bob.uuid)],
                 "total": 2,
                 "metadata": {"attributes": ["name"]},
             },
         )
-        response = self.client.contact_search(self.org, group, "frank", "-created_on", exclude=[joe])
+        response = self.client.contact_search(self.org, group, "ann", "-created_on", exclude=[joe])
 
-        self.assertEqual('name ~ "frank"', response.query)
+        self.assertEqual('name ~ "ann"', response.query)
+        self.assertEqual([str(ann.uuid), str(bob.uuid)], response.contact_uuids)
+        self.assertEqual(2, response.total)
         self.assertEqual(["name"], response.metadata.attributes)
         mock_post.assert_called_once_with(
             "http://localhost:8090/mr/contact/search",
             headers={"User-Agent": "Temba", "Authorization": "Token sesame"},
             json={
-                "query": "frank",
+                "query": "ann",
                 "org_id": self.org.id,
                 "group_id": group.id,
-                "exclude_ids": [joe.id],
                 "exclude_uuids": [str(joe.uuid)],
                 "sort": "-created_on",
                 "offset": 0,
                 "limit": 50,
             },
         )
+
+        # empty results
+        mock_post.return_value = MockJsonResponse(
+            200,
+            {
+                "query": 'name ~ "ann"',
+                "contact_uuids": [],
+                "total": 0,
+                "metadata": {"attributes": ["name"]},
+            },
+        )
+        response = self.client.contact_search(self.org, group, "ann", "-created_on")
+
+        self.assertEqual([], response.contact_uuids)
+        self.assertEqual(0, response.total)
 
     @patch("requests.post")
     def test_contact_urns(self, mock_post):
