@@ -70,15 +70,15 @@
     }
 
     function handleContactClicked(e) {
-      navigateTo("/contact/read/" + e.detail.uuid + "/", e.detail);
+      navigateTo("{% url 'contacts.contact_read' 'PLACEHOLDER' %}".replace('PLACEHOLDER', e.detail.uuid), e.detail);
     }
 
     function handleFlowClicked(e) {
-      navigateTo("/flow/next/" + e.detail.uuid + "/", e.detail);
+      navigateTo("{% url 'flows.flow_next' 'PLACEHOLDER' %}".replace('PLACEHOLDER', e.detail.uuid), e.detail);
     }
 
     function handleGroupClicked(e) {
-      navigateTo("/contact/group/" + e.detail.uuid + "/", e.detail);
+      navigateTo("{% url 'contacts.contact_group' 'PLACEHOLDER' %}".replace('PLACEHOLDER', e.detail.uuid), e.detail);
     }
 
     function handleFollow(event) {
