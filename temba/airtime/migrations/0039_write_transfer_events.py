@@ -8,6 +8,12 @@ from temba.utils import dynamo
 
 
 def write_transfer_events(apps, schema_editor):
+    try:
+        dynamo.HISTORY.batch_writer
+    except AttributeError:
+        print("Skipping airtime transfer history serialization (DynamoDB disabled in local mode)")
+        return
+
     AirtimeTransfer = apps.get_model("airtime", "AirtimeTransfer")
     Contact = apps.get_model("contacts", "Contact")
 
