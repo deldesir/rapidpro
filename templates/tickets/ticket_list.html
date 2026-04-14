@@ -264,7 +264,7 @@
       }
 
       // if we have auto selecting, dont clear the chat
-      var ticketsEndpoint = `/ticket/folder/${folder}/${status}/${initialTicket || ''}`;
+      var ticketsEndpoint = `/rp/ticket/folder/${folder}/${status}/${initialTicket || ''}`;
 
       // add assignee filter if set
       if (assigneeFilter) {
@@ -297,7 +297,7 @@
 
     function updateBrowserUrl() {
       var tabs = document.querySelector("temba-tabs");
-      var path = `/ticket/${folder}/${status}/`;
+      var path = `/rp/ticket/${folder}/${status}/`;
       if (ticketUUID) {
         path += `${ticketUUID}/`;
       }
@@ -426,7 +426,7 @@
 
       var contentMenu = document.querySelector("#default-content-menu");
       if (contentMenu) {
-        var menuPath = `/ticket/${folder}/${status}/`;
+        var menuPath = `/rp/ticket/${folder}/${status}/`;
         if (ticketUUID) {
           menuPath += `${ticketUUID}/`;
         }
