@@ -98,8 +98,8 @@ class Event:
 
     @classmethod
     def _query_history(cls, pk: str, *, after_sk: str, before_sk: str, limit: int, callback):
-        if dynamo.HISTORY is None:
-            return  # DynamoDB disabled
+        if not dynamo.is_enabled():
+            return cls._query_history_postgres(pk, after_sk=after_sk, before_sk=before_sk, limit=limit, callback=callback)
 
         num_fetches = 0
         next_start_sk = None
@@ -134,6 +134,221 @@ class Event:
             next_start_sk = response.get("LastEvaluatedKey", {}).get("SK")
             if not next_start_sk:
                 return
+
+    @classmethod
+    def _query_history_postgres(cls, pk: str, *, after_sk: str, before_sk: str, limit: int, callback):
+        """PostgreSQL fallback for contact event history when DynamoDB is disabled.
+
+        Queries msgs_msg, flows_flowrun, and tickets_ticket tables, merges them
+        into the DynamoDB event schema that _from_item and _postprocess_events expect.
+
+        Post-review fixes applied:
+        - visibility='V' filter excludes deleted/archived messages (F12)
+        - id tiebreaker for deterministic sort (F10)
+        - cross-table cursor resolution via _resolve_cursor_timestamp (F6)
+        - nested msg.uuid for read receipt linking (F8)
+        - occurred_on field in event payload (F9)
+        """
+        from temba.contacts.models import Contact
+        from temba.flows.models import FlowRun
+        from temba.msgs.models import Msg
+        from temba.tickets.models import Ticket
+
+        contact_uuid = pk[4:]
+        try:
+            contact = Contact.objects.get(uuid=contact_uuid)
+        except Contact.DoesNotExist:
+            return
+
+        # Resolve cursor timestamp across ALL event source tables
+        cursor_time = None
+        if after_sk or before_sk:
+            cursor_uuid = (after_sk or before_sk)[4:]  # strip "evt#"
+            cursor_time = cls._resolve_cursor_timestamp(cursor_uuid)
+
+        before_time = cursor_time if before_sk else None
+        after_time = cursor_time if after_sk else None
+        descending = not after_sk
+
+        # Collect events from multiple sources
+        events = []
+        events.extend(cls._msgs_to_events(contact, before_time, after_time, limit))
+        events.extend(cls._runs_to_events(contact, before_time, after_time, limit))
+        events.extend(cls._tickets_to_events(contact, before_time, after_time, limit))
+
+        # Sort with deterministic tiebreaker to prevent pagination skips
+        events.sort(key=lambda e: (e["_sort_key"], e["_sort_id"]), reverse=descending)
+
+        # Trim to limit and feed through callback
+        for evt in events[:limit]:
+            item = {
+                "OrgID": contact.org_id,
+                "PK": pk,
+                "SK": f"evt#{evt['uuid']}",
+                "Data": {k: v for k, v in evt.items() if not k.startswith("_sort_")},
+            }
+            if not callback(item):
+                return
+
+    @staticmethod
+    def _resolve_cursor_timestamp(cursor_uuid: str):
+        """Resolve a cursor UUID to a timestamp by checking all event source tables."""
+        from temba.flows.models import FlowRun
+        from temba.msgs.models import Msg
+        from temba.tickets.models import Ticket
+
+        # Check msgs_msg first (most common case)
+        ts = Msg.objects.filter(uuid=cursor_uuid).values_list("created_on", flat=True).first()
+        if ts:
+            return ts
+
+        # Check flow runs
+        ts = FlowRun.objects.filter(uuid=cursor_uuid).values_list("created_on", flat=True).first()
+        if ts:
+            return ts
+
+        # Check tickets
+        ts = Ticket.objects.filter(uuid=cursor_uuid).values_list("opened_on", flat=True).first()
+        if ts:
+            return ts
+
+        # Cursor not found — return None (query will fetch most recent events)
+        return None
+
+    @classmethod
+    def _msgs_to_events(cls, contact, before_time, after_time, limit):
+        from temba.msgs.models import Msg
+
+        # Filter out deleted/archived messages — only show visible ones (F12)
+        qs = Msg.objects.filter(contact=contact, visibility=Msg.VISIBILITY_VISIBLE)
+        if before_time:
+            qs = qs.filter(created_on__lt=before_time)
+        elif after_time:
+            qs = qs.filter(created_on__gt=after_time)
+
+        # Deterministic sort: timestamp + id tiebreaker (F10)
+        if after_time:
+            qs = qs.order_by("created_on", "id")
+        else:
+            qs = qs.order_by("-created_on", "-id")
+        qs = qs[:limit]
+
+        status_map = {
+            "P": "pending", "H": "handled", "I": "initializing",
+            "Q": "queued", "W": "wired", "S": "sent",
+            "D": "delivered", "R": "read", "E": "errored", "F": "failed",
+        }
+
+        events = []
+        for msg in qs:
+            evt_type = cls.TYPE_MSG_RECEIVED if msg.direction == Msg.DIRECTION_IN else cls.TYPE_MSG_CREATED
+            events.append({
+                "uuid": str(msg.uuid),
+                "type": evt_type,
+                "created_on": msg.created_on.isoformat(),
+                "occurred_on": msg.created_on.isoformat(),
+                "msg": {
+                    "uuid": str(msg.uuid),  # Required for read receipt linking (F8)
+                    "text": msg.text,
+                    "attachments": msg.attachments or [],
+                },
+                "_status": status_map.get(msg.status, "pending"),
+                "_user": {"uuid": str(msg.created_by.uuid)} if msg.created_by else None,
+                "_sort_key": msg.created_on,
+                "_sort_id": msg.id,
+            })
+        return events
+
+    @classmethod
+    def _runs_to_events(cls, contact, before_time, after_time, limit):
+        from temba.flows.models import FlowRun
+
+        qs = FlowRun.objects.filter(contact=contact).select_related("flow")
+        if before_time:
+            qs = qs.filter(created_on__lt=before_time)
+        elif after_time:
+            qs = qs.filter(created_on__gt=after_time)
+
+        if after_time:
+            qs = qs.order_by("created_on", "id")
+        else:
+            qs = qs.order_by("-created_on", "-id")
+        qs = qs[:limit]
+
+        events = []
+        for run in qs:
+            # Emit a run_started event
+            events.append({
+                "uuid": str(run.uuid),
+                "type": cls.TYPE_RUN_STARTED,
+                "created_on": run.created_on.isoformat(),
+                "occurred_on": run.created_on.isoformat(),
+                "flow": {"uuid": str(run.flow.uuid), "name": run.flow.name},
+                "_sort_key": run.created_on,
+                "_sort_id": run.id,
+            })
+
+            # If the run has exited, also emit a run_ended event
+            if run.exited_on:
+                events.append({
+                    "uuid": f"{run.uuid}-end",
+                    "type": cls.TYPE_RUN_ENDED,
+                    "created_on": run.exited_on.isoformat(),
+                    "occurred_on": run.exited_on.isoformat(),
+                    "flow": {"uuid": str(run.flow.uuid), "name": run.flow.name},
+                    "status": run.status,
+                    "_sort_key": run.exited_on,
+                    "_sort_id": run.id,
+                })
+        return events
+
+    @classmethod
+    def _tickets_to_events(cls, contact, before_time, after_time, limit):
+        from temba.tickets.models import Ticket
+
+        qs = Ticket.objects.filter(contact=contact).select_related("topic")
+        if before_time:
+            qs = qs.filter(opened_on__lt=before_time)
+        elif after_time:
+            qs = qs.filter(opened_on__gt=after_time)
+
+        if after_time:
+            qs = qs.order_by("opened_on", "id")
+        else:
+            qs = qs.order_by("-opened_on", "-id")
+        qs = qs[:limit]
+
+        events = []
+        for ticket in qs:
+            # Ticket opened event
+            events.append({
+                "uuid": str(ticket.uuid),
+                "type": cls.TYPE_TICKET_OPENED,
+                "created_on": ticket.opened_on.isoformat(),
+                "occurred_on": ticket.opened_on.isoformat(),
+                "ticket": {
+                    "uuid": str(ticket.uuid),
+                    "topic": {"uuid": str(ticket.topic.uuid), "name": ticket.topic.name},
+                },
+                "_sort_key": ticket.opened_on,
+                "_sort_id": ticket.id,
+            })
+
+            # If ticket is closed, also emit a close event
+            if ticket.closed_on:
+                events.append({
+                    "uuid": f"{ticket.uuid}-close",
+                    "type": cls.TYPE_TICKET_CLOSED,
+                    "created_on": ticket.closed_on.isoformat(),
+                    "occurred_on": ticket.closed_on.isoformat(),
+                    "ticket": {
+                        "uuid": str(ticket.uuid),
+                        "topic": {"uuid": str(ticket.topic.uuid), "name": ticket.topic.name},
+                    },
+                    "_sort_key": ticket.closed_on,
+                    "_sort_id": ticket.id,
+                })
+        return events
 
     @classmethod
     def _include_event(cls, event, ticket_uuid) -> bool:
