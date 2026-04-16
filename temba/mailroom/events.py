@@ -98,7 +98,7 @@ class Event:
 
     @classmethod
     def _query_history(cls, pk: str, *, after_sk: str, before_sk: str, limit: int, callback):
-        if dynamo.HISTORY is None:
+        if not dynamo.is_enabled():
             return cls._query_history_postgres(pk, after_sk=after_sk, before_sk=before_sk, limit=limit, callback=callback)
 
         num_fetches = 0

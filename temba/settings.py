@@ -30,8 +30,8 @@ from .settings_common import *  # noqa
 # Disable debug mode for production
 DEBUG = False
 
-# SECURITY: Unique secret key for this deployment
-SECRET_KEY = "(s^3(#+oi%hvb%4@2x*gy-l+z8fhu3lw=(wgffgu&f^-)uvdbc"
+# SECURITY: Use a unique secret key per deployment
+SECRET_KEY = "Jdo59sl2eMntjbdRtpzXejoe84nfOhdw"
 
 
 
@@ -73,13 +73,13 @@ CACHES = {
 CELERY_BROKER_URL = "redis://127.0.0.1:6379/15"
 
 # ----------------------------------------------------------------------------------
-# DynamoDB — disabled (nanoRP: all data stays in PostgreSQL)
+# DynamoDB — disabled (local-first: all data stays in PostgreSQL)
 # ----------------------------------------------------------------------------------
 DYNAMO_TABLE_PREFIX = ""
 DYNAMO_ENDPOINT_URL = None
 
 # ----------------------------------------------------------------------------------
-# Storage — Local Filesystem (nanoRP: no AWS dependencies)
+# Storage — Local Filesystem (no AWS dependencies)
 # ----------------------------------------------------------------------------------
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},

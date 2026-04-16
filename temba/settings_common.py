@@ -52,12 +52,10 @@ _localstack_host = "localhost"
 
 # AWS credentials for DynamoDB (used for counters/timeseries data)
 # These are dummy values for local Minio/DynamoDB development
-AWS_ACCESS_KEY_ID = "root"
-AWS_SECRET_ACCESS_KEY = "tembatemba"
-AWS_REGION = "us-east-1"
-
-DYNAMO_ENDPOINT_URL = f"http://{_localstack_host}:6000"
-DYNAMO_TABLE_PREFIX = "Test" if TESTING else "Temba"
+AWS_ACCESS_KEY_ID = ""
+AWS_SECRET_ACCESS_KEY = ""
+AWS_REGION = ""
+DYNAMO_TABLE_PREFIX = ""
 
 # ===============================================================================
 # File Storage Configuration
