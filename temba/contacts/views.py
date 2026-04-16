@@ -129,6 +129,11 @@ class ContactListView(SpaMixin, BulkActionMixin, BaseListView):
 
                 # this should be an empty resultset
                 return Contact.objects.none()
+            except Exception as e:
+                # nanorp fallback: Mailroom ES transport error
+                logger.warning("Mailroom contact search unavailable: %s", e)
+                self.search_error = _("Search is temporarily unavailable")
+                return Contact.objects.none()
         else:
             # if user search is not defined, use DB to select contacts
             qs = self.group.contacts.filter(org=self.request.org).order_by("-id").prefetch_related("org", "groups")
@@ -275,7 +280,12 @@ class ContactCRUDL(SmartCRUDL):
                 return blocker
 
             query = self.request.GET.get("s")
-            total = mailroom.get_client().contact_export_preview(self.request.org, self.group, query)
+            try:
+                total = mailroom.get_client().contact_export_preview(self.request.org, self.group, query)
+            except Exception as e:
+                logger.warning("Mailroom export preview unavailable: %s", e)
+                total = self.group.get_member_count()
+
             if total > self.size_limit:
                 return "too-big"
 
@@ -443,7 +453,11 @@ class ContactCRUDL(SmartCRUDL):
                 return JsonResponse({"results": []})
 
             contact = self.get_object()
-            results = mailroom.get_client().msg_search(request.org, text, contact=contact)
+            try:
+                results = mailroom.get_client().msg_search(request.org, text, contact=contact)
+            except Exception as e:
+                logger.warning("Mailroom message search unavailable: %s", e)
+                return JsonResponse({"results": []})
 
             return JsonResponse({"results": [event for _, event in results]})
 
@@ -472,6 +486,9 @@ class ContactCRUDL(SmartCRUDL):
                 }
             except mailroom.QueryValidationException as e:
                 return JsonResponse({"total": 0, "sample": [], "query": "", "error": str(e)})
+            except Exception as e:
+                logger.warning("Mailroom contact search unavailable: %s", e)
+                return JsonResponse({"total": 0, "sample": [], "query": "", "error": _("Search is temporarily unavailable")})
 
             # serialize our contact sample
             json_contacts = []
@@ -525,6 +542,9 @@ class ContactCRUDL(SmartCRUDL):
                     self.search_is_saveable = parsed.metadata.allow_as_group
                 except mailroom.QueryValidationException as e:
                     self.search_error = str(e)
+                except Exception as e:
+                    logger.warning("Mailroom query parse unavailable: %s", e)
+                    self.search_error = _("Search is temporarily unavailable")
 
             if self.has_org_perm("contacts.contactgroup_create") and self.search_is_saveable:
                 menu.add_modax(

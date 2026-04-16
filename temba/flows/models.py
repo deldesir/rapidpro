@@ -1662,9 +1662,14 @@ class FlowStart(models.Model):
         Requests a preview of the recipients of a start created with the given inclusions/exclusions, returning a tuple
         of the canonical query and the total count of contacts.
         """
-        preview = mailroom.get_client().flow_start_preview(flow.org, flow, include=include, exclude=exclude)
+        try:
+            preview = mailroom.get_client().flow_start_preview(flow.org, flow, include=include, exclude=exclude)
+            return preview.query, preview.total
+        except Exception:
+            import logging
 
-        return preview.query, preview.total
+            logging.getLogger(__name__).warning("Flow start preview unavailable (ES disabled?), returning 0")
+            return "", 0
 
     def is_starting(self) -> bool:
         return self.status in (self.STATUS_PENDING, self.STATUS_STARTED)

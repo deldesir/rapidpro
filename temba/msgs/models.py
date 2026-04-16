@@ -277,9 +277,14 @@ class Broadcast(models.Model):
         Requests a preview of the recipients of a broadcast created with the given inclusions/exclusions, returning a
         tuple of the canonical query and the total count of contacts.
         """
-        preview = mailroom.get_client().msg_broadcast_preview(org, include=include, exclude=exclude)
+        try:
+            preview = mailroom.get_client().msg_broadcast_preview(org, include=include, exclude=exclude)
+            return preview.query, preview.total
+        except Exception:
+            import logging
 
-        return preview.query, preview.total
+            logging.getLogger(__name__).warning("Broadcast preview unavailable (ES disabled?), returning 0")
+            return "", 0
 
     def has_pending_fire(self):  # pragma: needs cover
         return self.schedule and self.schedule.next_fire is not None
