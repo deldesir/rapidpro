@@ -20,13 +20,10 @@ class CustomAIType(LLMType):
         <div class="mb-4">
             <p>Connect to any <b>OpenAI-compatible</b> endpoint to use it as an AI provider.</p>
             <div class="mt-3 p-3 bg-gray-100 border border-gray-300 rounded text-sm">
-                <strong>Authentication Required:</strong><br/>
-                Ensure you have authenticated with your AI provider and have a valid API token.
-                <div class="mt-2">
-                    <a href="http://localhost:3030/__openclaw__/canvas/" target="_blank" class="btn btn-sm btn-default">
-                        Open Auth Dashboard ↗
-                    </a>
-                    <span class="ml-2 text-gray-500">or configure your endpoint and token below</span>
+                <strong>IIAB AI Gateway:</strong><br/>
+                Set the endpoint to <code>http://localhost:8086/v1</code> and use your LiteLLM master key as the API token.
+                <div class="mt-2 text-gray-500">
+                    Find your key in <code>/etc/iiab/local_vars.yml</code> under <code>litellm_master_key</code>.
                 </div>
             </div>
         </div>

@@ -11,10 +11,10 @@ from temba.utils.fields import InputWidget
 
 class CredentialsForm(BaseConnectWizard.Form):
     endpoint = forms.CharField(
-        widget=InputWidget({"placeholder": "http://localhost:3030/v1", "widget_only": False, "label": "Endpoint URL", "value": "http://localhost:3030/v1"}),
+        widget=InputWidget({"placeholder": "http://localhost:8086/v1", "widget_only": False, "label": "Endpoint URL", "value": "http://localhost:8086/v1"}),
         label="Endpoint URL",
-        help_text=_("The base URL for any OpenAI-compatible endpoint (e.g. http://localhost:3030/v1)"),
-        initial="http://localhost:3030/v1"
+        help_text=_("The base URL for any OpenAI-compatible endpoint (e.g. http://localhost:8086/v1)"),
+        initial="http://localhost:8086/v1"
     )
 
     api_key = forms.CharField(
