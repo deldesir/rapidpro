@@ -1,3 +1,19 @@
+v26.1.90 (2026-04-16)
+-------------------------
+ * Update @nyaruka/temba-components to 0.156.9
+ * Remove unused intercooler dependency and orphaned templates
+ * Rename org_country.html template to org_locations.html
+ * Remove classic flow editor and consolidate to new editor
+ * Harden request validation in android sync and org switch views
+
+v26.1.89 (2026-04-16)
+-------------------------
+ * Update @nyaruka/temba-components to 0.156.8
+
+v26.1.88 (2026-04-15)
+-------------------------
+ * Update @nyaruka/temba-components to 0.156.7
+
 v26.1.87 (2026-04-09)
 -------------------------
  * Retire classic editor and force users to new editor
