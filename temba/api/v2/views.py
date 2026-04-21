@@ -1729,6 +1729,10 @@ class FlowsEndpoint(ListAPIMixin, BaseEndpoint):
         if uuid := self.get_uuid_param("uuid"):
             queryset = queryset.filter(uuid=uuid)
 
+        # filter by name (optional) — used by CRM Ops flow lookup
+        if name := params.get("name"):
+            queryset = queryset.filter(name__iexact=name)
+
         # filter by type (optional)
         if flow_type := params.get("type"):
             queryset = queryset.filter(flow_type=self.FLOW_TYPES.get(flow_type))

@@ -1,8 +1,14 @@
 from dataclasses import dataclass
-from uuid import UUID
+from uuid import UUID, uuid5, NAMESPACE_URL
 
 from temba.users.models import User
 from temba.utils import dynamo
+
+# Stable namespace for deriving synthetic event UUIDs (run_ended, ticket_closed).
+# These events don't have a native UUID in the DB so we derive one deterministically
+# from the source object's UUID + a suffix string.  This keeps the result valid as a
+# UUID so the JS frontend can use it as an ?after= polling cursor without error.
+_SYNTH_NAMESPACE = NAMESPACE_URL
 
 
 @dataclass
@@ -181,18 +187,24 @@ class Event:
 
         # Trim to limit and feed through callback
         for evt in events[:limit]:
+            # Strip internal tracking keys before handing to the callback
+            data = {k: v for k, v in evt.items() if not k.startswith("_sort_") and not k.startswith("_source_")}
             item = {
                 "OrgID": contact.org_id,
                 "PK": pk,
                 "SK": f"evt#{evt['uuid']}",
-                "Data": {k: v for k, v in evt.items() if not k.startswith("_sort_")},
+                "Data": data,
             }
             if not callback(item):
                 return
 
     @staticmethod
     def _resolve_cursor_timestamp(cursor_uuid: str):
-        """Resolve a cursor UUID to a timestamp by checking all event source tables."""
+        """Resolve a cursor UUID to a timestamp by checking all event source tables.
+
+        Handles both native UUIDs (from msgs, flow runs, tickets) and synthetic
+        uuid5-derived UUIDs (from run_ended / ticket_closed events).
+        """
         from temba.flows.models import FlowRun
         from temba.msgs.models import Msg
         from temba.tickets.models import Ticket
@@ -202,15 +214,31 @@ class Event:
         if ts:
             return ts
 
-        # Check flow runs
+        # Check flow runs by native UUID (run_started cursor)
         ts = FlowRun.objects.filter(uuid=cursor_uuid).values_list("created_on", flat=True).first()
         if ts:
             return ts
 
-        # Check tickets
+        # Check flow runs by synthetic run_ended UUID — reverse the uuid5 derivation
+        # by scanning all exited runs and comparing derived UUIDs.
+        # We limit to runs that have exited to keep the scan small.
+        for run_uuid, exited_on in FlowRun.objects.filter(
+            exited_on__isnull=False
+        ).values_list("uuid", "exited_on"):
+            if str(uuid5(_SYNTH_NAMESPACE, f"{run_uuid}-end")) == cursor_uuid:
+                return exited_on
+
+        # Check tickets by native UUID (ticket_opened cursor)
         ts = Ticket.objects.filter(uuid=cursor_uuid).values_list("opened_on", flat=True).first()
         if ts:
             return ts
+
+        # Check tickets by synthetic ticket_closed UUID
+        for ticket_uuid, closed_on in Ticket.objects.filter(
+            closed_on__isnull=False
+        ).values_list("uuid", "closed_on"):
+            if str(uuid5(_SYNTH_NAMESPACE, f"{ticket_uuid}-close")) == cursor_uuid:
+                return closed_on
 
         # Cursor not found — return None (query will fetch most recent events)
         return None
@@ -288,10 +316,13 @@ class Event:
                 "_sort_id": run.id,
             })
 
-            # If the run has exited, also emit a run_ended event
+            # If the run has exited, also emit a run_ended event.
+            # We derive a stable uuid5 from the run UUID + "-end" so that the
+            # frontend can use it as a valid ?after= polling cursor.
             if run.exited_on:
+                end_uuid = str(uuid5(_SYNTH_NAMESPACE, f"{run.uuid}-end"))
                 events.append({
-                    "uuid": f"{run.uuid}-end",
+                    "uuid": end_uuid,
                     "type": cls.TYPE_RUN_ENDED,
                     "created_on": run.exited_on.isoformat(),
                     "occurred_on": run.exited_on.isoformat(),
@@ -299,6 +330,8 @@ class Event:
                     "status": run.status,
                     "_sort_key": run.exited_on,
                     "_sort_id": run.id,
+                    # Store source so _resolve_cursor_timestamp can decode it
+                    "_source_run_uuid": str(run.uuid),
                 })
         return events
 
@@ -334,10 +367,12 @@ class Event:
                 "_sort_id": ticket.id,
             })
 
-            # If ticket is closed, also emit a close event
+            # If ticket is closed, also emit a close event.
+            # Same uuid5 derivation approach as run_ended above.
             if ticket.closed_on:
+                close_uuid = str(uuid5(_SYNTH_NAMESPACE, f"{ticket.uuid}-close"))
                 events.append({
-                    "uuid": f"{ticket.uuid}-close",
+                    "uuid": close_uuid,
                     "type": cls.TYPE_TICKET_CLOSED,
                     "created_on": ticket.closed_on.isoformat(),
                     "occurred_on": ticket.closed_on.isoformat(),
@@ -347,6 +382,8 @@ class Event:
                     },
                     "_sort_key": ticket.closed_on,
                     "_sort_id": ticket.id,
+                    # Store source so _resolve_cursor_timestamp can decode it
+                    "_source_ticket_uuid": str(ticket.uuid),
                 })
         return events
 
