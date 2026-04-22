@@ -24,7 +24,8 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import F, Prefetch, Q
 from django.db.models.functions import Lower
-from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
+from django.core.files.storage import default_storage
+from django.http import FileResponse, HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
@@ -1798,13 +1799,16 @@ class ExportCRUDL(SmartCRUDL):
 
                 url = export.get_raw_url()
 
-                # if our URL doesn't have the content disposition set (local storage), we can set it ourselves
-                # using X-Accel-Redirect
+                # For local storage (Nanorp/IIAB), the URL is a local path without S3-style
+                # ResponseContentDisposition. Stream the file directly via FileResponse rather
+                # than relying on X-Accel-Redirect which fails with Nginx alias directives.
                 if "ResponseContentDisposition" not in url:
-                    response = HttpResponse()
-                    response["X-Accel-Redirect"] = url
-                    response["Content-Disposition"] = f'attachment; filename="{export._get_download_filename()}"'
-                    return response
+                    file_path = default_storage.path(export.path)
+                    return FileResponse(
+                        open(file_path, "rb"),
+                        as_attachment=True,
+                        filename=export._get_download_filename(),
+                    )
 
                 return HttpResponseRedirect(url)
 

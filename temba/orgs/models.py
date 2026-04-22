@@ -1424,7 +1424,7 @@ class DefinitionExport(ExportType):
         export_defs = org.export_definitions(f"https://{org.get_brand_domain()}", components)
 
         temp_file = NamedTemporaryFile(delete=False, suffix=".json", mode="w+", encoding="utf8")
-        json.json.dump(export_defs, temp_file)
+        temp_file.write(json.dumps(export_defs))
         temp_file.flush()
 
         return temp_file, "json", len(components)
