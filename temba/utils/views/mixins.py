@@ -5,6 +5,7 @@ from urllib.parse import quote, urlencode
 from smartmin.views import SmartFormView, SmartModelActionView, SmartModelFormView
 
 from django import forms
+from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
