@@ -7,77 +7,64 @@ from celery.schedules import crontab
 
 from django.utils.translation import gettext_lazy as _
 
-# ===============================================================================
-# Core Django Settings
-# ===============================================================================
-
-# IP addresses/networks allowed to access debug tools like Django Debug Toolbar
-# Includes localhost, local network, and Docker network ranges
 INTERNAL_IPS = iptools.IpRangeList("127.0.0.1", "192.168.0.10", "192.168.0.0/24", "0.0.0.0")  # network block
 HOSTNAME = "localhost"
 
-# User-Agent header for outgoing HTTP requests to external services
+# HTTP Headers using for outgoing requests to other services
 OUTGOING_REQUEST_HEADERS = {"User-agent": "RapidPro"}
 
-# SECURITY WARNING: This is a placeholder! In production, use a cryptographically
-# secure secret key and never commit it to version control.
-SECRET_KEY = "Jdo59sl2eMntjbdRtpzXejoe84nfOhdw"
+# Make this unique, and don't share it with anybody.
+SECRET_KEY = "your own secret key"
 
-# XOR mask values used to obfuscate IDs (e.g., contact IDs) in anonymous workspaces
-# Provides a simple way to hide sequential IDs without full encryption
+# used to obfuscate IDs - i.e. contact ids in anonymous workspaces
 ID_OBFUSCATION_KEY = (0xA3B1C, 0xD2E3F, 0x1A2B3, 0xC0FFEE)
 
-# Maximum number of fields allowed in a single form submission (important for large workspace exports)
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 2500  # needed for exports of big workspaces
 
-# ===============================================================================
-# Testing Configuration
-# ===============================================================================
-
-# Detect if we're running Django tests
+# -----------------------------------------------------------------------------------
+# Tests
+# -----------------------------------------------------------------------------------
 TESTING = sys.argv[1:2] == ["test"]
 
 if TESTING:
-    # Use fast MD5 hasher for tests to speed up test execution
     PASSWORD_HASHERS = ("django.contrib.auth.hashers.MD5PasswordHasher",)
     DEBUG = False
 
-_db_host = "localhost"
-_valkey_host = "localhost"
-_localstack_host = "localhost"
+_db_host = "postgres"
+_valkey_host = "valkey"
+_localstack_host = "localstack"
 
-# ===============================================================================
-# AWS Configuration (for DynamoDB)
-# ===============================================================================
+# -----------------------------------------------------------------------------------
+# AWS
+# -----------------------------------------------------------------------------------
 
-# AWS credentials for DynamoDB (used for counters/timeseries data)
-# These are dummy values for local Minio/DynamoDB development
-AWS_ACCESS_KEY_ID = ""
-AWS_SECRET_ACCESS_KEY = ""
-AWS_REGION = ""
-DYNAMO_TABLE_PREFIX = ""
+AWS_ACCESS_KEY_ID = "root"
+AWS_SECRET_ACCESS_KEY = "tembatemba"
+AWS_REGION = "us-east-1"
 
-# ===============================================================================
-# File Storage Configuration
-# ===============================================================================
+DYNAMO_ENDPOINT_URL = f"http://{_localstack_host}:4566"
+DYNAMO_TABLE_PREFIX = "Test" if TESTING else "Temba"
 
-# S3-compatible storage bucket prefix
+ELASTIC_ENDPOINT_URL = "http://elastic:9200"
+
+# -----------------------------------------------------------------------------------
+# Storage
+# -----------------------------------------------------------------------------------
+
 BUCKET_PREFIX = "test" if TESTING else "temba"
 
-# Django 4.2+ STORAGES configuration
-# Defines multiple storage backends for different purposes
 STORAGES = {
-    # Default storage for exports, imports, and general file uploads
+    # default storage for things like exports, imports
     "default": {
         "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
         "OPTIONS": {"bucket_name": f"{BUCKET_PREFIX}-default"},
     },
-    # Where rp-archiver writes message/call archive files
+    # wherever rp-archiver writes archive files
     "archives": {
         "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
         "OPTIONS": {"bucket_name": f"{BUCKET_PREFIX}-archives"},
     },
-    # Publicly accessible media files (requires public-read ACL)
+    # media file uploads that need to be publicly accessible
     "public": {
         "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
         "OPTIONS": {
@@ -87,46 +74,33 @@ STORAGES = {
             "querystring_auth": False,
         },
     },
-    # Standard Django static files storage (local filesystem)
+    # standard Django static files storage
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
 }
 
-# django-storages S3 configuration (defaults to local Minio server for development)
+# settings used by django-storages (defaults to localstack)
 AWS_S3_REGION_NAME = AWS_REGION
-AWS_S3_ENDPOINT_URL = f"http://{_localstack_host}:4566"  # Localstack S3 endpoint
-AWS_S3_ADDRESSING_STYLE = "path"  # Path-style URLs for Minio compatibility
-AWS_S3_FILE_OVERWRITE = False  # Prevent accidental file overwrites
+AWS_S3_ENDPOINT_URL = f"http://{_localstack_host}:4566"
+AWS_S3_ADDRESSING_STYLE = "path"
+AWS_S3_FILE_OVERWRITE = False
 
-# Base URL for constructing file URLs
 STORAGE_URL = f"{AWS_S3_ENDPOINT_URL}/{BUCKET_PREFIX}-default"
 
-# ===============================================================================
-# Internationalization & Localization
-# ===============================================================================
+# -----------------------------------------------------------------------------------
+# Localization
+# -----------------------------------------------------------------------------------
 
-# Register Haitian Creole — not in Django's built-in LANG_INFO
-from django.conf.locale import LANG_INFO
-
-LANG_INFO["ht"] = {
-    "bidi": False,
-    "code": "ht",
-    "name": "Haitian Creole",
-    "name_local": "Kreyòl Ayisyen",
-}
-
-USE_TZ = True  # Use timezone-aware datetimes
-TIME_ZONE = "UTC"  # Default server timezone
-USER_TIME_ZONE = "America/New_York"  # Default timezone for users
+USE_TZ = True
+TIME_ZONE = "GMT"
+USER_TIME_ZONE = "Africa/Kigali"
 
 LANGUAGE_CODE = "en-us"
 
-# Supported languages for the UI (uses Django's LANGUAGES format)
 LANGUAGES = (
     ("en-us", _("English")),
     ("cs", _("Czech")),
     ("es", _("Spanish")),
     ("fr", _("French")),
-    ("ht", _("Haitian Creole")),
     ("mn", _("Mongolian")),
     ("pt-br", _("Portuguese")),
     ("ru", _("Russian")),
@@ -135,72 +109,65 @@ DEFAULT_LANGUAGE = "en-us"
 
 SITE_ID = 1
 
-USE_I18N = True  # Enable Django's translation system
-USE_L10N = True  # Enable locale-specific formatting
+USE_I18N = True
+USE_L10N = True
 
-# ===============================================================================
-# Static Files & Asset Management
-# ===============================================================================
+# -----------------------------------------------------------------------------------
+# Static Files
+# -----------------------------------------------------------------------------------
 
-# Classes that know how to find static files in various locations
+# List of finder classes that know how to find static files in
+# various locations.
 STATICFILES_FINDERS = (
     "django.contrib.staticfiles.finders.FileSystemFinder",
     "django.contrib.staticfiles.finders.AppDirectoriesFinder",
     "compressor.finders.CompressorFinder",
 )
 
-# Project directory paths
+
 PROJECT_DIR = os.path.join(os.path.abspath(os.path.dirname(__file__)))
-LOCALE_PATHS = (os.path.join(PROJECT_DIR, "../locale"),)  # Translation files
+LOCALE_PATHS = (os.path.join(PROJECT_DIR, "../locale"),)
 RESOURCES_DIR = os.path.join(PROJECT_DIR, "../resources")
-FIXTURE_DIRS = (os.path.join(PROJECT_DIR, "../fixtures"),)  # Test fixtures
+FIXTURE_DIRS = (os.path.join(PROJECT_DIR, "../fixtures"),)
 TESTFILES_DIR = os.path.join(PROJECT_DIR, "../testfiles")
-
-# Additional directories to search for static files
 STATICFILES_DIRS = (
-    os.path.join(PROJECT_DIR, "../static"),  # Main static assets
-    os.path.join(PROJECT_DIR, "../media"),  # Media files
-    os.path.join(PROJECT_DIR, "../node_modules/@nyaruka/flow-editor/build"),  # Flow editor React app
-    os.path.join(PROJECT_DIR, "../node_modules/@nyaruka/temba-components/dist/static"),  # UI components
-    os.path.join(PROJECT_DIR, "../node_modules"),  # Node dependencies
-    os.path.join(PROJECT_DIR, "../node_modules/react/umd"),  # React for legacy components
-    os.path.join(PROJECT_DIR, "../node_modules/react-dom/umd"),  # ReactDOM for legacy components
+    os.path.join(PROJECT_DIR, "../static"),
+    os.path.join(PROJECT_DIR, "../media"),
+    os.path.join(PROJECT_DIR, "../node_modules/@nyaruka/temba-components/dist/static"),
+    os.path.join(PROJECT_DIR, "../node_modules"),
 )
+STATIC_ROOT = os.path.join(PROJECT_DIR, "../sitestatic")
+STATIC_URL = "/sitestatic/"
+COMPRESS_ROOT = os.path.join(PROJECT_DIR, "../sitestatic")
+MEDIA_ROOT = os.path.join(PROJECT_DIR, "../media")
+MEDIA_URL = "/media/"
 
-STATIC_ROOT = os.path.join(PROJECT_DIR, "../sitestatic")  # Where collected static files are stored
-STATIC_URL = "/sitestatic/"  # URL prefix for static files
-COMPRESS_ROOT = os.path.join(PROJECT_DIR, "../sitestatic")  # django-compressor root
-MEDIA_ROOT = os.path.join(PROJECT_DIR, "../media")  # Uploaded media files
-MEDIA_URL = "/media/"  # URL prefix for media files
-
-# ===============================================================================
-# Email Configuration
-# ===============================================================================
-
-# SMTP settings for outgoing transactional emails
+# -----------------------------------------------------------------------------------
+# Email
+# -----------------------------------------------------------------------------------
 EMAIL_HOST = "smtp.gmail.com"
 EMAIL_HOST_USER = "server@temba.io"
 DEFAULT_FROM_EMAIL = "Temba <server@temba.io>"
-EMAIL_HOST_PASSWORD = "mypassword"  # SECURITY: Use environment variables in production!
+EMAIL_HOST_PASSWORD = "mypassword"
 EMAIL_USE_TLS = True
-EMAIL_TIMEOUT = 10  # Timeout in seconds
+EMAIL_TIMEOUT = 10
 
-# Fallback FROM address when users haven't configured their own SMTP in flows
+# Used when sending email from within a flow and the user hasn't configured
+# their own SMTP server.
 FLOW_FROM_EMAIL = "Temba <no-reply@temba.io>"
 
-# ===============================================================================
-# Template Configuration
-# ===============================================================================
+# -----------------------------------------------------------------------------------
+# Templates
+# -----------------------------------------------------------------------------------
 
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
         "DIRS": [
-            os.path.join(PROJECT_DIR, "../templates"),  # Main templates directory
+            os.path.join(PROJECT_DIR, "../templates"),
         ],
         "OPTIONS": {
             "context_processors": [
-                # Standard Django context processors
                 "django.contrib.auth.context_processors.auth",
                 "django.template.context_processors.debug",
                 "django.template.context_processors.i18n",
@@ -208,7 +175,6 @@ TEMPLATES = [
                 "django.template.context_processors.static",
                 "django.contrib.messages.context_processors.messages",
                 "django.template.context_processors.request",
-                # RapidPro-specific context processors
                 "temba.context_processors.branding",
                 "temba.context_processors.config",
                 "temba.orgs.views.context_processors.org_perms_processor",
@@ -221,49 +187,39 @@ TEMPLATES = [
     }
 ]
 
-# Use standard TemplatesSetting for form rendering (instead of default div-based)
 FORM_RENDERER = "django.forms.renderers.TemplatesSetting"
 
-# ===============================================================================
-# Middleware Stack
-# ===============================================================================
+# -----------------------------------------------------------------------------------
+# Middleware
+# -----------------------------------------------------------------------------------
 
 MIDDLEWARE = (
-    # Security headers (HSTS, SSL redirect, etc.)
     "django.middleware.security.SecurityMiddleware",
-    # Manages sessions across requests
     "django.contrib.sessions.middleware.SessionMiddleware",
-    # Common middleware (APPEND_SLASH, PREPEND_WWW)
     "django.middleware.common.CommonMiddleware",
-    # CSRF protection
     "django.middleware.csrf.CsrfViewMiddleware",
-    # Authentication middleware
     "django.contrib.auth.middleware.AuthenticationMiddleware",
-    # Message framework middleware
     "django.contrib.messages.middleware.MessageMiddleware",
-    # Clickjacking protection
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    # RapidPro custom middleware
-    "temba.middleware.OrgMiddleware",  # Sets current org from subdomain/subpath
-    "temba.middleware.LanguageMiddleware",  # Sets user's language preference
-    "temba.middleware.TimezoneMiddleware",  # Sets user's timezone
-    "temba.middleware.ToastMiddleware",  # Handles in-app toast notifications
-    "allauth.account.middleware.AccountMiddleware",  # django-allauth
+    "temba.middleware.OrgMiddleware",
+    "temba.middleware.LanguageMiddleware",
+    "temba.middleware.TimezoneMiddleware",
+    "temba.middleware.ToastMiddleware",
+    "allauth.account.middleware.AccountMiddleware",
 )
 
-# ===============================================================================
-# Installed Apps & URL Configuration
-# ===============================================================================
+# -----------------------------------------------------------------------------------
+# Apps
+# -----------------------------------------------------------------------------------
 
 ROOT_URLCONF = "temba.urls"
 
-# Additional URL patterns from external apps (used for plugins)
+# other urls to add
 APP_URLS = []
 
 SITEMAP = ("public.public_index", "api")
 
 INSTALLED_APPS = (
-    # Django core apps
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -275,20 +231,18 @@ INSTALLED_APPS = (
     "django.contrib.sitemaps",
     "django.contrib.postgres",
     "django.forms",
-    # Third-party apps
-    "allauth",  # Authentication framework
+    "allauth",
     "allauth.account",
-    "allauth.mfa",  # Multi-factor auth
+    "allauth.mfa",
     "allauth.socialaccount",
     "allauth.socialaccount.providers.google",
-    "formtools",  # Multi-step forms
-    "imagekit",  # Image processing
-    "rest_framework",  # API framework
+    "formtools",
+    "imagekit",
+    "rest_framework",
     "rest_framework.authtoken",
-    "compressor",  # Asset compression
-    "smartmin",  # CRUD framework
-    "timezone_field",  # Timezone model fields
-    # RapidPro apps
+    "compressor",
+    "smartmin",
+    "timezone_field",
     "temba.users",
     "temba.ai",
     "temba.apks",
@@ -318,39 +272,33 @@ INSTALLED_APPS = (
     "temba.staff",
 )
 
-# Disable Smartmin's automatic success messages (RapidPro handles its own messaging)
+# don't let smartmin auto create django messages for create and update submissions
 SMARTMIN_DEFAULT_MESSAGES = False
 
-# ===============================================================================
-# Logging Configuration
-# ===============================================================================
+# -----------------------------------------------------------------------------------
+# Logging
+# -----------------------------------------------------------------------------------
 
 LOGGING = {
     "version": 1,
-    "disable_existing_loggers": True,  # Disable all existing loggers
-    "formatters": {
-        "verbose": {
-            "format": "%(levelname)s %(asctime)s %(module)s %(message)s"
-        }
-    },
+    "disable_existing_loggers": True,
+    "formatters": {"verbose": {"format": "%(levelname)s %(asctime)s %(module)s %(message)s"}},
     "handlers": {
-        # Log to console (stdout)
         "console": {"level": "DEBUG", "class": "logging.StreamHandler", "formatter": "verbose"},
     },
-    "root": {"level": "INFO", "handlers": ["console"]},  # Root logger configuration
+    "root": {"level": "INFO", "handlers": ["console"]},
 }
 
-# ===============================================================================
-# RapidPro Branding & Features
-# ===============================================================================
+# -----------------------------------------------------------------------------------
+# Branding
+# -----------------------------------------------------------------------------------
 
-# Branding configuration for this RapidPro instance
 BRAND = {
     "name": "RapidPro",
     "description": _("Visually build nationally scalable mobile applications anywhere in the world."),
-    "hosts": ["box.lan"],  # Allowed hostnames for this brand
-    "domain": "box.lan",  # Primary domain
-    "emails": {"notifications": "support@box.lan"},
+    "hosts": ["rapidpro.io"],
+    "domain": "app.rapidpro.io",
+    "emails": {"notifications": "support@rapidpro.io"},
     "logos": {
         "primary": "images/logo-dark.svg",
         "favico": "brands/rapidpro/rapidpro.ico",
@@ -359,33 +307,30 @@ BRAND = {
     "landing": {
         "hero": "brands/rapidpro/splash.jpg",
     },
-    "features": ["signups"],  # Enabled features for this brand (signups, sso, etc.)
+    "features": ["signups", "sso"],
 }
 
-# Global feature flags for this installation
-FEATURES = {"locations"}  # Enable location/admin boundary support
+FEATURES = {"locations"}
 
-# Default exclusions for flow starts and broadcasts (set to True to disable contacting people already in a flow)
-DEFAULT_EXCLUSIONS = {"in_a_flow": False}
+# The default checked options for flow starts and broadcasts
+DEFAULT_EXCLUSIONS = {"in_a_flow": True}
 
-# Send time limits: warn/block sending after X hours (0 = no limit)
+# Estimated send time limits before warning or blocking, zero is no limit
 SEND_HOURS_WARNING = 0
 SEND_HOURS_BLOCK = 0
 
-# ===============================================================================
-# Permission System
-# ===============================================================================
+# -----------------------------------------------------------------------------------
+# Permissions
+# -----------------------------------------------------------------------------------
 
-# Base permissions available for each model (wildcard patterns)
 PERMISSIONS = {
     "*": (
         "create",  # can create an object
-        "read",  # can read an object, viewing its details
+        "read",  # can read an object, viewing it's details
         "update",  # can update an object
-        "delete",  # can delete an object
+        "delete",  # can delete an object,
         "list",  # can view a list of the objects
     ),
-    # Model-specific permissions
     "ai.llm": ("connect", "translate"),
     "api.apitoken": ("explorer",),
     "archives.archive": ("run", "message"),
@@ -434,13 +379,13 @@ PERMISSIONS = {
     "triggers.trigger": ("archived", "type", "menu"),
 }
 
-# Permission assignments for each user role/group
+
+# assigns the permissions that each group should have
 GROUP_PERMISSIONS = {
-    "Beta": (),  # Beta users get no special permissions by default
-    "Dashboard": ("orgs.org_dashboard",),  # Dashboard-only access
-    "Granters": ("orgs.org_grant",),  # Can grant organizations to users
+    "Beta": (),
+    "Dashboard": ("orgs.org_dashboard",),
+    "Granters": ("orgs.org_grant",),
     "Administrators": (
-        # Full access to all features
         "ai.llm.*",
         "airtime.airtimetransfer_list",
         "airtime.airtimetransfer_read",
@@ -541,7 +486,6 @@ GROUP_PERMISSIONS = {
         "users.user_update",
     ),
     "Editors": (
-        # Can edit flows, campaigns, contacts but limited admin functions
         "ai.llm_list",
         "ai.llm_read",
         "ai.llm_translate",
@@ -629,7 +573,6 @@ GROUP_PERMISSIONS = {
         "triggers.trigger.*",
     ),
     "Agents": (
-        # Can manage contacts and tickets
         "contacts.contact_chat",
         "contacts.contact_interrupt",
         "notifications.notification_list",
@@ -645,7 +588,7 @@ GROUP_PERMISSIONS = {
     ),
 }
 
-# API-specific permissions (these override web permissions for API requests)
+# extra permissions that only apply to API requests (wildcard notation not supported here)
 API_PERMISSIONS = {
     "Editors": ("orgs.org_list", "users.user_list"),
     "Agents": (
@@ -664,74 +607,69 @@ API_PERMISSIONS = {
     ),
 }
 
-# ===============================================================================
-# Authentication & User Management
-# ===============================================================================
+# -----------------------------------------------------------------------------------
+# Authentication
+# -----------------------------------------------------------------------------------
 
-LOGIN_URL = "/accounts/login/"  # Redirect here if not logged in
-LOGIN_REDIRECT_URL = "/org/choose/"  # Redirect here after login
+LOGIN_URL = "/accounts/login/"
+LOGIN_REDIRECT_URL = "/org/choose/"
 
-AUTH_USER_MODEL = "users.User"  # Custom user model
-
-# Password validation rules
+AUTH_USER_MODEL = "users.User"
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 8}},
 ]
 
-# How long organization invitations remain valid
 INVITATION_VALIDITY = timedelta(days=30)
 
-# ===============================================================================
-# Database Configuration
-# ===============================================================================
+# -----------------------------------------------------------------------------------
+# Database
+# -----------------------------------------------------------------------------------
 
 _default_database_config = {
-    "ENGINE": "django.db.backends.postgresql",  # PostgreSQL backend
-    "NAME": "temba",  # Database name
-    "USER": "temba",  # Database user
-    "PASSWORD": "temba",  # Database password (use env vars in production!)
-    "HOST": _db_host,  # Database host (set above based on environment)
+    "ENGINE": "django.db.backends.postgresql",
+    "NAME": "temba",
+    "USER": "temba",
+    "PASSWORD": "temba",
+    "HOST": _db_host,
     "PORT": "5432",
-    "ATOMIC_REQUESTS": True,  # Wrap each request in a transaction
-    "CONN_MAX_AGE": 60,  # Connection pooling: 60 seconds
+    "ATOMIC_REQUESTS": True,
+    "CONN_MAX_AGE": 60,
     "OPTIONS": {},
-    "DISABLE_SERVER_SIDE_CURSORS": True,  # Disable server-side cursors for connection pooling
+    "DISABLE_SERVER_SIDE_CURSORS": True,
 }
 
-# Primary and optional read-only database (e.g., read replica) configuration
+# installs can provide a default connection and an optional read-only connection (e.g. a separate read replica) which
+# will be used for certain fetch operations
 DATABASES = {"default": _default_database_config, "readonly": _default_database_config.copy()}
 
-DEFAULT_AUTO_FIELD = "django.db.models.AutoField"  # Primary key type
+DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
 
-# ===============================================================================
-# Cache Configuration
-# ===============================================================================
-
-_valkey_url = f"redis://{_valkey_host}:6379/{10 if TESTING else 15}"  # DB 10 for tests, 15 for prod
+# -----------------------------------------------------------------------------------
+# Cache
+# -----------------------------------------------------------------------------------
+_valkey_url = f"redis://{_valkey_host}:6379/{10 if TESTING else 15}"
 
 CACHES = {
     "default": {
-        "BACKEND": "django_valkey.cache.ValkeyCache",  # Using Valkey (Redis fork)
+        "BACKEND": "django_valkey.cache.ValkeyCache",
         "LOCATION": _valkey_url,
     }
 }
 
-# Use cached database sessions (stored in Valkey for performance)
 SESSION_ENGINE = "django.contrib.sessions.backends.cached_db"
 SESSION_CACHE_ALIAS = "default"
 
-# ===============================================================================
-# Celery Task Queue
-# ===============================================================================
+# -----------------------------------------------------------------------------------
+# Celery
+# -----------------------------------------------------------------------------------
 
-CELERY_BROKER_URL = _valkey_url  # Use Valkey as message broker
-CELERY_RESULT_BACKEND = None  # We don't store task results
-CELERY_TASK_TRACK_STARTED = True  # Track when tasks start running
+CELERY_BROKER_URL = _valkey_url
+CELERY_RESULT_BACKEND = None
+CELERY_TASK_TRACK_STARTED = True
 
-# Timeout for Valkey connections (prevents hanging connections)
+# by default, celery doesn't have any timeout on our valkey connections, this fixes that
 CELERY_BROKER_TRANSPORT_OPTIONS = {"socket_timeout": 5}
 
-# Periodic task schedule (runs these tasks automatically)
 CELERY_BEAT_SCHEDULE = {
     "check-android-channels": {"task": "check_android_channels", "schedule": timedelta(seconds=300)},
     "delete-released-orgs": {"task": "delete_released_orgs", "schedule": crontab(hour=4, minute=0)},
@@ -745,6 +683,7 @@ CELERY_BEAT_SCHEDULE = {
     "squash-group-counts": {"task": "squash_group_counts", "schedule": timedelta(seconds=60)},
     "squash-flow-counts": {"task": "squash_flow_counts", "schedule": timedelta(seconds=30)},
     "squash-item-counts": {"task": "squash_item_counts", "schedule": timedelta(seconds=30)},
+    "squash-llm-counts": {"task": "squash_llm_counts", "schedule": timedelta(seconds=60)},
     "squash-msg-counts": {"task": "squash_msg_counts", "schedule": timedelta(seconds=60)},
     "sync-classifier-intents": {"task": "sync_classifier_intents", "schedule": timedelta(seconds=300)},
     "trim-channel-events": {"task": "trim_channel_events", "schedule": crontab(hour=3, minute=0)},
@@ -753,51 +692,49 @@ CELERY_BEAT_SCHEDULE = {
     "trim-flow-revisions": {"task": "trim_flow_revisions", "schedule": crontab(hour=0, minute=0)},
     "trim-flow-sessions": {"task": "trim_flow_sessions", "schedule": crontab(hour=0, minute=0)},
     "trim-http-logs": {"task": "trim_http_logs", "schedule": crontab(hour=2, minute=0)},
+    "trim-llm-counts": {"task": "trim_llm_counts", "schedule": crontab(hour=3, minute=0)},
     "trim-notifications": {"task": "trim_notifications", "schedule": crontab(hour=2, minute=0)},
     "trim-webhook-events": {"task": "trim_webhook_events", "schedule": crontab(hour=3, minute=0)},
     "update-members-seen": {"task": "update_members_seen", "schedule": timedelta(seconds=30)},
     "update-tokens-used": {"task": "update_tokens_used", "schedule": timedelta(seconds=30)},
 }
 
-# ===============================================================================
-# REST API Configuration
-# ===============================================================================
+# -----------------------------------------------------------------------------------
+# API
+# -----------------------------------------------------------------------------------
 
 REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
-        # Rate limiting: 3600 requests per hour per endpoint class
         "v2": "3600/hour",
         "v2.contacts": "3600/hour",
         "v2.messages": "3600/hour",
         "v2.runs": "3600/hour",
     },
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.LimitOffsetPagination",
-    "PAGE_SIZE": 250,  # Default page size
-    "EXCEPTION_HANDLER": "temba.api.support.temba_exception_handler",  # Custom error handler
+    "PAGE_SIZE": 250,
+    "EXCEPTION_HANDLER": "temba.api.support.temba_exception_handler",
 }
-REST_HANDLE_EXCEPTIONS = not TESTING  # Don't handle exceptions in tests (let them bubble up)
+REST_HANDLE_EXCEPTIONS = not TESTING
 
-# ===============================================================================
-# Asset Compression (django-compressor)
-# ===============================================================================
+# -----------------------------------------------------------------------------------
+# Compression
+# -----------------------------------------------------------------------------------
 
 if TESTING:
-    # Disable LESS compilation during tests for speed
+    # if only testing, disable less compilation
     COMPRESS_PRECOMPILERS = ()
 else:
-    # Compile LESS files to CSS in production
     COMPRESS_PRECOMPILERS = (
         ("text/less", 'lessc --include-path="%s" {infile} {outfile}' % os.path.join(PROJECT_DIR, "../static", "less")),
     )
 
-# Post-processing filters for compressed assets
 COMPRESS_FILTERS = {
-    "css": ["compressor.filters.css_default.CssAbsoluteFilter"],  # Fix CSS URLs
-    "js": [],  # No JS filters by default
+    "css": ["compressor.filters.css_default.CssAbsoluteFilter"],
+    "js": [],
 }
 
-COMPRESS_ENABLED = False  # Disable compression in development
-COMPRESS_OFFLINE = False  # Disable offline compression
+COMPRESS_ENABLED = False
+COMPRESS_OFFLINE = False
 
 # -----------------------------------------------------------------------------------
 # Pluggable Types
@@ -807,12 +744,10 @@ INTEGRATION_TYPES = [
     "temba.orgs.integrations.dtone.DTOneType",
 ]
 
-# Available classifier types (NLU/AI services)
 CLASSIFIER_TYPES = [
     "temba.classifiers.types.wit.WitType",
 ]
 
-# Available channel types (messaging services) - this is the full list of supported channels
 CHANNEL_TYPES = [
     "temba.channels.types.africastalking.AfricasTalkingType",
     "temba.channels.types.arabiacell.ArabiaCellType",
@@ -876,7 +811,6 @@ CHANNEL_TYPES = [
     "temba.channels.types.wechat.WeChatType",
     "temba.channels.types.whatsapp.WhatsAppType",
     "temba.channels.types.whatsapp_legacy.WhatsAppLegacyType",
-    "temba.channels.types.wuzapi.type.WuzapiType",
     "temba.channels.types.yo.YoType",
     "temba.channels.types.zenvia_sms.ZenviaSMSType",
     "temba.channels.types.zenvia_whatsapp.ZenviaWhatsAppType",
@@ -884,121 +818,134 @@ CHANNEL_TYPES = [
     "temba.channels.types.test.TestType",
 ]
 
-# Large Language Model (LLM) providers for AI features
 LLM_TYPES = {
     "temba.ai.types.anthropic.type.AnthropicType": {
-        "models": [
-            "claude-3-7-sonnet-20250219",
-            "claude-3-5-sonnet-20241022",
-            "claude-3-5-haiku-20241022",
-            "claude-3-opus-20240229",
-        ],
+        # model id -> max output tokens
+        "models": {
+            "claude-opus-4-7": 128_000,
+            "claude-opus-4-5-20251101": 64_000,
+            "claude-sonnet-4-6": 64_000,
+            "claude-3-7-sonnet-20250219": 64_000,
+            "claude-haiku-4-5-20251001": 64_000,
+            "claude-3-5-haiku-20241022": 8_192,
+        },
     },
     "temba.ai.types.deepseek.type.DeepSeekType": {
-        "models": ["deepseek-chat"],
+        "models": {"deepseek-chat": 8_192},
     },
     "temba.ai.types.google.type.GoogleType": {
-        "models": ["gemini-2.0-flash", "gemini-1.5-flash"],
+        "models": {
+            "gemini-2.5-flash": 65_536,
+            "gemini-2.0-flash": 8_192,
+            "gemini-1.5-flash": 8_192,
+        },
     },
     "temba.ai.types.openai.type.OpenAIType": {
-        "models": ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"],
-    },
-    "temba.ai.types.custom_ai.type.CustomAIType": {
-        "models": ["custom_ai"],
+        "models": {
+            "gpt-5.5": 128_000,
+            "gpt-5.4": 128_000,
+            "gpt-5.4-mini": 128_000,
+            "gpt-4.1": 32_768,
+            "gpt-4.1-mini": 32_768,
+            "gpt-4.1-nano": 32_768,
+            "gpt-4o": 16_384,
+            "gpt-4o-mini": 16_384,
+            "gpt-3.5-turbo": 4_096,
+        },
     },
 }
 if TESTING:
-    # Add Azure OpenAI for testing
-    LLM_TYPES["temba.ai.types.openai_azure.type.OpenAIAzureType"] = {"models": ["gpt-35-turbo", "gpt-4"]}
+    LLM_TYPES["temba.ai.types.openai_azure.type.OpenAIAzureType"] = {"models": {"gpt-35-turbo": 4_096}}
 
-# ISO-639-3 language codes to allow in addition to standard ISO-639-1 languages
+
+# set of ISO-639-3 codes of languages to allow in addition to all ISO-639-1 languages
 NON_ISO6391_LANGUAGES = {"mul", "und"}
 
-# ===============================================================================
-# Mailroom Service Configuration
-# ===============================================================================
+# -----------------------------------------------------------------------------------
+# Mailroom
+# -----------------------------------------------------------------------------------
 
-# Mailroom is RapidPro's flow engine service (external Go service)
-MAILROOM_URL = None  # URL to mailroom service (set in production)
-MAILROOM_AUTH_TOKEN = None  # Auth token for mailroom (set in production)
+MAILROOM_URL = None
+MAILROOM_AUTH_TOKEN = None
 
-# ===============================================================================
-# Data Model Constraints
-# ===============================================================================
+# -----------------------------------------------------------------------------------
+# Data Model
+# -----------------------------------------------------------------------------------
 
-# Maximum size for global values (in characters)
-GLOBAL_VALUE_SIZE = 10_000
+GLOBAL_VALUE_SIZE = 10_000  # max length of global values
 
-# Default organization limits (can be overridden per org)
 ORG_LIMIT_DEFAULTS = {
-    "channels": 10,  # Max number of channels
-    "fields": 250,  # Max contact fields
-    "globals": 250,  # Max global variables
-    "groups": 250,  # Max contact groups
-    "labels": 250,  # Max message labels
-    "llms": 10,  # Max LLM connections
-    "teams": 50,  # Max ticket teams
-    "topics": 50,  # Max ticket topics
+    "channels": 10,
+    "fields": 250,
+    "globals": 250,
+    "groups": 250,
+    "labels": 250,
+    "llms": 10,
+    "teams": 50,
+    "topics": 50,
 }
 
-# Data retention periods for different model types
 RETENTION_PERIODS = {
     "channelevent": timedelta(days=90),
     "channellog": timedelta(days=7),
     "export": timedelta(days=90),
     "flowsession": timedelta(days=7),
     "httplog": timedelta(days=3),
+    "llmcount": timedelta(days=30),
     "notification": timedelta(days=30),
     "syncevent": timedelta(days=7),
     "webhookevent": timedelta(hours=48),
 }
 
-# ===============================================================================
-# Third-Party Integration Settings
-# ===============================================================================
+# -----------------------------------------------------------------------------------
+# 3rd Party Integrations
+# -----------------------------------------------------------------------------------
 
-# Mailgun email service (for inbound email processing)
 MAILGUN_API_KEY = os.environ.get("MAILGUN_API_KEY", "")
 
-# Zendesk ticketing integration
 ZENDESK_CLIENT_ID = os.environ.get("ZENDESK_CLIENT_ID", "")
 ZENDESK_CLIENT_SECRET = os.environ.get("ZENDESK_CLIENT_SECRET", "")
 
-# Facebook/WhatsApp Business configuration
+
+#    1. Create an Facebook app on https://developers.facebook.com/apps/
 #
-# To set up:
-# 1. Create Facebook app at https://developers.facebook.com/apps/
-# 2. Copy Application ID and Secret
-# 3. Generate a webhook secret
+#    2. Copy the Facebook Application ID
+#
+#    3. From Settings > Basic, show and copy the Facebook Application Secret
+#
+#    4. Generate a Random Secret to use as Facebook Webhook Secret as described
+#       on https://developers.facebook.com/docs/messenger-platform/webhook#setup
+#
 FACEBOOK_APPLICATION_ID = os.environ.get("FACEBOOK_APPLICATION_ID", "MISSING_FACEBOOK_APPLICATION_ID")
 FACEBOOK_APPLICATION_SECRET = os.environ.get("FACEBOOK_APPLICATION_SECRET", "MISSING_FACEBOOK_APPLICATION_SECRET")
 FACEBOOK_WEBHOOK_SECRET = os.environ.get("FACEBOOK_WEBHOOK_SECRET", "MISSING_FACEBOOK_WEBHOOK_SECRET")
 
-# Facebook login configuration IDs for different channel types
+# Facebook login for business config IDs
 FACEBOOK_LOGIN_WHATSAPP_CONFIG_ID = os.environ.get("FACEBOOK_LOGIN_WHATSAPP_CONFIG_ID", "")
 FACEBOOK_LOGIN_INSTAGRAM_CONFIG_ID = os.environ.get("FACEBOOK_LOGIN_INSTAGRAM_CONFIG_ID", "")
 FACEBOOK_LOGIN_MESSENGER_CONFIG_ID = os.environ.get("FACEBOOK_LOGIN_MESSENGER_CONFIG_ID", "")
 
-# WhatsApp Business API credentials
 WHATSAPP_ADMIN_SYSTEM_USER_ID = os.environ.get("WHATSAPP_ADMIN_SYSTEM_USER_ID", "MISSING_WHATSAPP_ADMIN_SYSTEM_USER_ID")
 WHATSAPP_ADMIN_SYSTEM_USER_TOKEN = os.environ.get(
     "WHATSAPP_ADMIN_SYSTEM_USER_TOKEN", "MISSING_WHATSAPP_ADMIN_SYSTEM_USER_TOKEN"
 )
 WHATSAPP_FACEBOOK_BUSINESS_ID = os.environ.get("WHATSAPP_FACEBOOK_BUSINESS_ID", "MISSING_WHATSAPP_FACEBOOK_BUSINESS_ID")
 
-# IP addresses of this RapidPro instance (for channel provider whitelisting)
-# SECURITY: You MUST change these to your actual server IPs in production!
+# IP Addresses
+# These are the externally accessible IP addresses of the servers running RapidPro.
+# Needed for channel types that authenticate by whitelisting public IPs.
+#
+# You need to change these to real addresses to work with these.
 IP_ADDRESSES = ("172.16.10.10", "162.16.10.20")
 
-# ===============================================================================
-# Django AllAuth Configuration
-# ===============================================================================
+# -----------------------------------------------------------------------------------
+# AllAuth
+# -----------------------------------------------------------------------------------
 
 AUTHENTICATION_BACKENDS = [
     "allauth.account.auth_backends.AuthenticationBackend",
 ]
 
-# Custom forms for authentication
 ACCOUNT_FORMS = {
     "login": "temba.users.forms.TembaLoginForm",
     "signup": "temba.users.forms.TembaSignupForm",
@@ -1006,41 +953,27 @@ ACCOUNT_FORMS = {
     "add_email": "temba.users.forms.TembaAddEmailForm",
 }
 
-# Custom adapters for authentication flow
 ACCOUNT_ADAPTER = "temba.users.adapter.TembaAccountAdapter"
 SOCIALACCOUNT_ADAPTER = "temba.users.adapter.TembaSocialAccountAdapter"
 
 MFA_ADAPTER = "temba.users.adapter.TembaMFAAdapter"
 
-# Social authentication providers (Google OAuth)
 SOCIALACCOUNT_PROVIDERS = {}
-SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True  # Auto-link social accounts to existing emails
-SOCIALACCOUNT_LOGIN_ON_GET = True  # Allow immediate social login (no confirmation page)
+SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
+SOCIALACCOUNT_LOGIN_ON_GET = True
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 
-# Authentication methods and policies
-ACCOUNT_LOGIN_METHODS = ("email",)  # Only allow email login (not username)
-ACCOUNT_EMAIL_VERIFICATION = "none"  # Require email verification
-ACCOUNT_EMAIL_NOTIFICATIONS = False  # Send email notifications
-ACCOUNT_UNIQUE_EMAIL = True  # Enforce unique emails
-ACCOUNT_CHANGE_EMAIL = True  # Allow users to change email
-ACCOUNT_DEFAULT_HTTP_PROTOCOL = "http"  # Force HTTPS
-ACCOUNT_USER_MODEL_USERNAME_FIELD = None  # No username field on User model
-ACCOUNT_SESSION_REMEMBER = True  # Remember login sessions
+ACCOUNT_LOGIN_METHODS = ("email",)
+ACCOUNT_EMAIL_VERIFICATION = "mandatory"
+ACCOUNT_EMAIL_NOTIFICATIONS = True
+ACCOUNT_UNIQUE_EMAIL = True
+ACCOUNT_CHANGE_EMAIL = True
+ACCOUNT_DEFAULT_HTTP_PROTOCOL = "https"
+ACCOUNT_USER_MODEL_USERNAME_FIELD = None
+ACCOUNT_SESSION_REMEMBER = True
 
-# Email confirmation behavior
-ACCOUNT_LOGIN_ON_EMAIL_CONFIRMATION = False  # Auto-login after email confirmation
-ACCOUNT_CONFIRM_EMAIL_ON_GET = False  # Confirm email via GET request
 
-# Fields to show on signup form
-ACCOUNT_SIGNUP_FIELDS = ["email*", "password1"]  # Email (required) and password
+ACCOUNT_LOGIN_ON_EMAIL_CONFIRMATION = True
+ACCOUNT_CONFIRM_EMAIL_ON_GET = True
 
-# ===============================================================================
-# End of settings_common.py
-# ===============================================================================
-
-# Wuzapi Configuration
-WUZAPI_ADMIN_TOKEN = "KkgTyrbl85bdlUnglMg34nfldOprmegt"
-
-# Custom AI Configuration
-CUSTOM_AI_ADMIN_TOKEN = "sk-gHeiEespOinVckJfkWqsdEcXzxkgdjgGdl"
+ACCOUNT_SIGNUP_FIELDS = ["email*", "password1"]

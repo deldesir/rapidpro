@@ -1,4 +1,4 @@
-from unittest.mock import call
+from unittest.mock import call, patch
 
 from django.urls import reverse
 
@@ -6,6 +6,7 @@ from temba.campaigns.models import Campaign, CampaignEvent
 from temba.contacts.models import ContactField, ContactGroup
 from temba.flows.models import (
     Flow,
+    FlowRevision,
     FlowRun,
     FlowStart,
     FlowStartCount,
@@ -83,7 +84,8 @@ class FlowTest(TembaTest, CRUDLTestMixin):
         self.assertFalse(flow.is_active)
         self.assertEqual(0, flow.global_dependencies.count())
 
-    def test_get_definition(self):
+    @mock_mailroom
+    def test_get_definition(self, mr_mocks):
         favorites = self.get_flow("favorites_v13")
 
         # fill the definition with junk metadata
@@ -113,7 +115,8 @@ class FlowTest(TembaTest, CRUDLTestMixin):
         favorites.revisions.all().delete()
         self.assertRaises(AssertionError, favorites.get_definition)
 
-    def test_ensure_current_version(self):
+    @mock_mailroom
+    def test_ensure_current_version(self, mr_mocks):
         # importing migrates to latest spec version
         flow = self.get_flow("favorites_v13")
         self.assertEqual(Flow.CURRENT_SPEC_VERSION, flow.version_number)
@@ -132,10 +135,13 @@ class FlowTest(TembaTest, CRUDLTestMixin):
 
         flow.ensure_current_version()
 
-        # check we migrate to current spec version
+        # spec migration is itself a recorded change — a new revision is created with
+        # the "spec" tag even if the migration is content-equivalent for this fixture
         self.assertEqual(Flow.CURRENT_SPEC_VERSION, flow.version_number)
         self.assertEqual(2, flow.revisions.count())
-        self.assertEqual("system", flow.revisions.order_by("id").last().created_by.email)
+        latest = flow.revisions.order_by("id").last()
+        self.assertEqual("system", latest.created_by.email)
+        self.assertEqual({"tags": ["spec"]}, latest.changes)
 
         # saved on won't have been updated but modified on will
         self.assertEqual(old_saved_on, flow.saved_on)
@@ -234,6 +240,45 @@ class FlowTest(TembaTest, CRUDLTestMixin):
         flow = Flow.objects.get(
             org=self.org, name="Go Flow", flow_type=Flow.TYPE_MESSAGE, version_number=Flow.CURRENT_SPEC_VERSION
         )
+
+        # initial revision has no diff baseline so changes is null
+        first = flow.revisions.order_by("id").last()
+        self.assertIsNone(first.changes)
+
+        # saving an unchanged definition is a no-op — returns the current revision and
+        # doesn't create a new one
+        same, _ = flow.save_revision(self.admin, dict(first.definition))
+        self.assertEqual(first.id, same.id)
+        self.assertEqual(1, flow.revisions.count())
+
+        # renaming the flow shows up as a metadata tag in the next saved revision
+        flow.name = "Renamed"
+        flow.save(update_fields=("name",))
+        rev2, _ = flow.save_revision(self.admin, dict(first.definition))
+        self.assertEqual({"tags": ["metadata"]}, rev2.changes)
+
+        # if migrating the prior revision blows up the save still succeeds with changes=None
+        rev2.spec_version = "11.12"
+        rev2.save(update_fields=("spec_version",))
+        with patch(
+            "temba.flows.models.FlowRevision.get_migrated_definition",
+            side_effect=ValueError("boom"),
+        ):
+            rev3, _ = flow.save_revision(self.admin, dict(rev2.definition))
+        self.assertIsNone(rev3.changes)
+
+        # a trim failure shouldn't surface as a save failure — the inline trim is
+        # best-effort housekeeping and the cron task is the safety net
+        flow.name = "Trim Test"
+        flow.save(update_fields=("name",))
+        latest_def = flow.revisions.order_by("id").last().definition
+        with patch(
+            "temba.flows.models.FlowRevision.trim_for_flow",
+            side_effect=RuntimeError("trim boom"),
+        ):
+            rev_after_trim_fail, _ = flow.save_revision(self.admin, dict(latest_def))
+        self.assertIsNotNone(rev_after_trim_fail)
+        self.assertTrue(FlowRevision.objects.filter(id=rev_after_trim_fail.id).exists())
 
         # can't save older spec version over newer
         definition = flow.revisions.order_by("id").last().definition
@@ -500,7 +545,8 @@ class FlowTest(TembaTest, CRUDLTestMixin):
             )
             self.assertEqual(len(flow.info["parent_refs"]), 0)
 
-    def test_group_send(self):
+    @mock_mailroom
+    def test_group_send(self, mr_mocks):
         # create an inactive group with the same name, to test that this doesn't blow up our import
         group = ContactGroup.get_or_create(self.org, self.admin, "Survey Audience")
         group.release(self.admin)

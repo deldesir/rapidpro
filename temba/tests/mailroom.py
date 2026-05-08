@@ -6,6 +6,8 @@ from decimal import Decimal
 from functools import wraps
 from unittest.mock import call, patch
 
+from packaging.version import Version
+
 from django.conf import settings
 from django.db import connection
 from django.utils import timezone
@@ -14,7 +16,7 @@ from temba import mailroom
 from temba.campaigns.models import CampaignEvent
 from temba.channels.models import ChannelEvent
 from temba.contacts.models import URN, Contact, ContactField, ContactGroup, ContactURN
-from temba.flows.models import FlowRun, FlowSession, FlowStart
+from temba.flows.models import Flow, FlowRun, FlowSession, FlowStart
 from temba.locations.models import AdminBoundary
 from temba.mailroom.client.client import MailroomClient
 from temba.mailroom.modifiers import Modifier
@@ -95,13 +97,15 @@ class Mocks:
     def contact_urns(self, urns: dict):
         self._contact_urns.append(urns)
 
-    def flow_inspect(self, *, dependencies=(), issues=(), results=(), parent_refs=()):
+    def flow_inspect(self, *, dependencies=(), issues=(), results=(), parent_refs=(), counts=None, locals=None):
         self._flow_inspect.append(
             {
                 "dependencies": dependencies,
                 "issues": issues,
                 "results": results,
                 "parent_refs": parent_refs,
+                "counts": counts if counts is not None else {},
+                "locals": locals if locals is not None else [],
             }
         )
 
@@ -111,8 +115,8 @@ class Mocks:
 
         self._flow_start_preview.append(mock)
 
-    def llm_translate(self, text):
-        self._llm_translate.append(text)
+    def llm_translate(self, items: dict):
+        self._llm_translate.append(items)
 
     def msg_broadcast_preview(self, query, total):
         def mock(org):
@@ -345,7 +349,22 @@ class TestClient(MailroomClient):
             "issues": [],
             "results": [],
             "parent_refs": [],
+            "counts": {},
+            "locals": [],
         }
+
+    @_client_method
+    def flow_migrate(self, definition: dict, to_version=None):
+        # fast-path: if the definition is already at the target version, skip the HTTP call.
+        # for older fixtures we fall through to real mailroom since we'd need to actually migrate.
+        if not to_version:
+            to_version = Flow.CURRENT_SPEC_VERSION
+
+        current = definition.get("spec_version")
+        if current and Version(current) >= Version(to_version):
+            return definition
+
+        return super().flow_migrate(definition, to_version=to_version)
 
     @_client_method
     def flow_interrupt(self, org, flow):
@@ -364,10 +383,10 @@ class TestClient(MailroomClient):
         return mock(org)
 
     @_client_method
-    def llm_translate(self, llm, from_language: str, to_language: str, text: str) -> dict:
+    def llm_translate(self, llm, source: str, target: str, items: dict[str, list[str]]) -> dict[str, list[str]]:
         assert self.mocks._llm_translate, "missing llm_translate mock"
 
-        return {"text": self.mocks._llm_translate.pop(0)}
+        return self.mocks._llm_translate.pop(0)
 
     @_client_method
     def msg_broadcast(

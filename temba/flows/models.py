@@ -15,8 +15,8 @@ from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
 from django.contrib.postgres.indexes import OpClass
 from django.db import models, transaction
-from django.db.models import Max, Prefetch, Q, Sum
-from django.db.models.functions import Lower, TruncDate
+from django.db.models import Prefetch, Q, Sum
+from django.db.models.functions import Lower
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -27,15 +27,17 @@ from temba.classifiers.models import Classifier
 from temba.contacts.models import Contact, ContactField, ContactGroup
 from temba.globals.models import Global
 from temba.msgs.models import Label, OptIn
-from temba.orgs.models import DependencyMixin, Export, ExportType, Org, User
+from temba.orgs.models import DependencyMixin, Export, ExportType, Org
 from temba.templates.models import Template
 from temba.tickets.models import Topic
+from temba.users.models import User
 from temba.utils.export.models import MultiSheetExporter
 from temba.utils.models import JSONAsTextField, LegacyUUIDMixin, TembaModel, delete_in_batches
 from temba.utils.models.counts import BaseScopedCount, BaseSquashableCount
 from temba.utils.uuid import uuid4
 
 from . import legacy
+from .changes import compute_changes
 
 logger = logging.getLogger(__name__)
 
@@ -255,7 +257,7 @@ class Flow(LegacyUUIDMixin, TembaModel, DependencyMixin):
 
             if flow:
                 flow.name = Flow.get_unique_name(org, flow_name, ignore=flow)
-                flow.version_number = flow_version
+                flow.version_number = str(flow_version)
                 flow.expires_after_minutes = flow_expires
                 flow.save(update_fields=("name", "expires_after_minutes"))
             else:
@@ -706,11 +708,42 @@ class Flow(LegacyUUIDMixin, TembaModel, DependencyMixin):
         else:
             revision = 1
 
-        # update metadata from database object
+        # update metadata from database object; normalize spec_version to CURRENT
+        # since that's what we persist on the new revision row, so the saved row
+        # and the diff input agree
         definition[Flow.DEFINITION_UUID] = self.uuid
         definition[Flow.DEFINITION_NAME] = self.name
         definition[Flow.DEFINITION_REVISION] = revision
         definition[Flow.DEFINITION_EXPIRE_AFTER_MINUTES] = self.expires_after_minutes
+        definition[Flow.DEFINITION_SPEC_VERSION] = Flow.CURRENT_SPEC_VERSION
+
+        # diff against prior revision so we can skip no-op saves and later collapse
+        # like-for-like edits; done outside the transaction below because
+        # get_migrated_definition() may call mailroom (HTTP) and we don't want that
+        # holding row locks
+        changes = None
+        if current_revision:
+            prior_def = current_revision.definition
+            if current_revision.spec_version != Flow.CURRENT_SPEC_VERSION:
+                # migrate the prior forward so the schemas align; accepting that name/expire
+                # then come from the live flow (get_migrated_definition rewrites them) — fine
+                # because cross-spec saves are rare and not where metadata diffs matter
+                try:
+                    prior_def = current_revision.get_migrated_definition()
+                    # get_migrated_definition rewrites spec_version to CURRENT, but we
+                    # want compute_changes to see the original spec so it can tag "spec"
+                    prior_def[Flow.DEFINITION_SPEC_VERSION] = current_revision.spec_version
+                except Exception:
+                    # don't block a valid save just because the legacy migration failed
+                    logger.warning("could not migrate prior revision for flow %s", self.uuid, exc_info=True)
+                    prior_def = None
+            if prior_def is not None:
+                changes = compute_changes(prior_def, definition)
+
+        # if the definition is unchanged from the current revision, don't create a
+        # new one — author-only changes shouldn't produce revision churn
+        if changes is not None and not changes["tags"]:
+            return current_revision, (self.info or {}).get("issues", [])
 
         # inspect the flow (with optional validation)
         info = mailroom.get_client().flow_inspect(self.org, definition)
@@ -741,12 +774,21 @@ class Flow(LegacyUUIDMixin, TembaModel, DependencyMixin):
             # create our new revision
             revision = self.revisions.create(
                 definition=definition,
+                changes=changes,
                 created_by=user,
                 spec_version=Flow.CURRENT_SPEC_VERSION,
                 revision=revision,
             )
 
             self.update_dependencies(info["dependencies"])
+
+        # cap the revision history inline so it doesn't pile up between cron runs;
+        # best-effort and outside the save transaction so a trim failure can neither
+        # roll back nor surface as a save failure (the cron task is the safety net)
+        try:
+            FlowRevision.trim_for_flow(self.id)
+        except Exception:
+            logger.warning("failed to trim revisions for flow %s", self.uuid, exc_info=True)
 
         return revision, info["issues"]
 
@@ -940,8 +982,7 @@ class Flow(LegacyUUIDMixin, TembaModel, DependencyMixin):
 
         assert not self.is_active, "can't delete flow which hasn't been released"
 
-        for rev in self.revisions.all():
-            rev.release()
+        delete_in_batches(self.revisions.all())
 
         for trigger in self.triggers.all():
             trigger.delete()
@@ -1153,11 +1194,17 @@ class FlowRevision(models.Model):
     """
 
     LAST_TRIM_KEY = "temba:last_flow_revision_trim"
+    MAX_REVISIONS = 500
 
     flow = models.ForeignKey(Flow, on_delete=models.PROTECT, related_name="revisions")
     definition = JSONAsTextField(default=dict)
     spec_version = models.CharField(default=Flow.FINAL_LEGACY_VERSION, max_length=8)
     revision = models.IntegerField()
+
+    # categorized record of what changed since the previous revision; null for legacy
+    # revisions that pre-date this field.
+    changes = models.JSONField(null=True, default=None)
+
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="revisions")
     created_on = models.DateTimeField(default=timezone.now)
 
@@ -1180,35 +1227,17 @@ class FlowRevision(models.Model):
     @classmethod
     def trim_for_flow(cls, flow_id):
         """
-        Trims the revisions for the passed in flow.
-
-        Our logic is:
-         * always keep last 25 revisions
-         * for any revision beyond those, collapse to first revision for that day
+        Keeps the MAX_REVISIONS most recent revisions for this flow and deletes the rest.
 
         :param flow: the id of the flow to trim revisions for
         :return: the number of trimmed revisions
         """
-        # find what date cutoff we will use for "25 most recent"
-        cutoff = FlowRevision.objects.filter(flow=flow_id).order_by("-created_on")[24:25]
-
-        # fewer than 25 revisions
-        if not cutoff:
-            return 0
-
-        cutoff = cutoff[0].created_on
-
-        # find the ids of the first revision for each day starting at the cutoff
-        keepers = (
-            FlowRevision.objects.filter(flow=flow_id, created_on__lt=cutoff)
-            .annotate(created_date=TruncDate("created_on"))
-            .values("created_date")
-            .annotate(max_id=Max("id"))
-            .values_list("max_id", flat=True)
+        keepers = list(
+            FlowRevision.objects.filter(flow=flow_id)
+            .order_by("-created_on", "-id")
+            .values_list("id", flat=True)[: cls.MAX_REVISIONS]
         )
-
-        # delete the rest
-        return FlowRevision.objects.filter(flow=flow_id, created_on__lt=cutoff).exclude(id__in=keepers).delete()[0]
+        return FlowRevision.objects.filter(flow=flow_id).exclude(id__in=keepers).delete()[0]
 
     @classmethod
     def validate_legacy_definition(cls, definition):
@@ -1283,10 +1312,8 @@ class FlowRevision(models.Model):
             "created_on": self.created_on.isoformat(),
             "version": self.spec_version,
             "revision": self.revision,
+            "changes": self.changes or {},
         }
-
-    def release(self):
-        self.delete()
 
 
 class FlowActivityCount(BaseScopedCount):

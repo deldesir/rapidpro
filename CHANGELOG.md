@@ -1,3 +1,78 @@
+v26.1.109 (2026-05-07)
+-------------------------
+ * Simplify trim to keep MAX_REVISIONS most recent
+ * Trim flow revisions on save
+
+v26.1.108 (2026-05-06)
+-------------------------
+ * Update @nyaruka/temba-components to 0.156.18
+ * Fix revision changes backfill: capture spec tag in compute_changes
+
+v26.1.107 (2026-05-05)
+-------------------------
+ * Backfill changes field on historical flow revisions
+
+v26.1.106 (2026-05-05)
+-------------------------
+ * Update @nyaruka/temba-components to 0.156.17
+ * Skip creating new flow revisions when definition is unchanged
+ * Hardcode stable UUIDs for root and system users in mailroom_db dump
+ * Disable mailroom task processing in CI and mailroom_db dev command
+
+v26.1.105 (2026-05-04)
+-------------------------
+ * Update @nyaruka/temba-components to 0.156.16
+
+v26.1.104 (2026-05-04)
+-------------------------
+ * Track categorized changes on each FlowRevision
+
+v26.1.103 (2026-05-04)
+-------------------------
+ * Add LLMCount model for tracking daily LLM call and token usage
+
+v26.1.102 (2026-04-29)
+-------------------------
+ * Update dependencies
+ * Use python 3.14
+
+v26.1.101 (2026-04-29)
+-------------------------
+ * Add urn_path field to messages Elasticsearch index template
+
+v26.1.100 (2026-04-29)
+-------------------------
+ * Remove auto_translate as an org feature flag
+ * Update @nyaruka/temba-components to 0.156.15
+
+v26.1.99 (2026-04-29)
+-------------------------
+ * Pass brand name to temba-store component
+
+v26.1.98 (2026-04-28)
+-------------------------
+ * Update @nyaruka/temba-components to 0.156.14
+ * Bump serialize-javascript from 7.0.3 to 7.0.5
+ * Upgrade to elasticsearch 9
+
+v26.1.97 (2026-04-27)
+-------------------------
+ * Prevent editing and deleting LLMs with is_system=True
+ * Remove unused React references from static config and CSS
+ * Bump postcss from 8.4.38 to 8.5.10
+ * Update @nyaruka/temba-components to 0.156.13
+ * Add auto_translate org feature to enable AI translation in flow editor
+
+v26.1.96 (2026-04-23)
+-------------------------
+ * Add max_output_tokens field to LLM with backfill from settings
+ * Switch LLM types back to explicit model allow-lists keyed by max output tokens
+
+v26.1.95 (2026-04-23)
+-------------------------
+ * Update @nyaruka/temba-components to 0.156.12
+ * Update mailroom client llm_translate to use batched shape
+
 v26.1.94 (2026-04-22)
 -------------------------
  * Update @nyaruka/temba-components to 0.156.11

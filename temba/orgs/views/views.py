@@ -28,9 +28,9 @@ from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
-from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.encoding import DjangoUnicodeDecodeError, force_str
 from django.utils.functional import cached_property
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext_lazy as _
 
 from temba.api.models import Resthook
@@ -774,7 +774,7 @@ class OrgCRUDL(SmartCRUDL):
 
             try:
                 flows = [int(elt) for elt in flows]
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 return JsonResponse({"error": _("'flows' must be a list of integers.")}, status=400)
 
             if not isinstance(campaigns, list):
@@ -782,7 +782,7 @@ class OrgCRUDL(SmartCRUDL):
 
             try:
                 campaigns = [int(elt) for elt in campaigns]
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 return JsonResponse({"error": _("'campaigns' must contain only integers.")}, status=400)
 
             flow_ids = [elt for elt in flows if elt]
@@ -1745,7 +1745,7 @@ class OrgImportCRUDL(SmartCRUDL):
                 data = self.cleaned_data["file"].read()
                 try:
                     json_data = json.loads(force_str(data))
-                except (DjangoUnicodeDecodeError, ValueError):
+                except DjangoUnicodeDecodeError, ValueError:
                     raise ValidationError(_("This file is not a valid flow definition file."))
 
                 if Version(str(json_data.get("version", 0))) < Version(Org.EARLIEST_IMPORT_VERSION):
