@@ -21,7 +21,7 @@ OUTGOING_REQUEST_HEADERS = {"User-agent": "RapidPro"}
 
 # SECURITY WARNING: This is a placeholder! In production, use a cryptographically
 # secure secret key and never commit it to version control.
-SECRET_KEY = "Jdo59sl2eMntjbdRtpzXejoe84nfOhdw"
+SECRET_KEY = "CHANGEME"
 
 # XOR mask values used to obfuscate IDs (e.g., contact IDs) in anonymous workspaces
 # Provides a simple way to hide sequential IDs without full encryption
@@ -1041,7 +1041,7 @@ ACCOUNT_SIGNUP_FIELDS = ["email*", "password1"]  # Email (required) and password
 # ===============================================================================
 
 # Wuzapi Configuration
-WUZAPI_ADMIN_TOKEN = "KkgTyrbl85bdlUnglMg34nfldOprmegt"
+WUZAPI_ADMIN_TOKEN = "CHANGEME"
 
 # Custom AI Configuration
-CUSTOM_AI_ADMIN_TOKEN = "sk-1Y-S3gn-P4VdEbnFVDys2BVvtgGywR3SY0ll9FI8NI0"
+CUSTOM_AI_ADMIN_TOKEN = "CHANGEME"
