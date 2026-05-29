@@ -11,7 +11,6 @@ from django.urls import reverse
 from temba import mailroom
 from temba.api.models import Resthook
 from temba.campaigns.models import Campaign, CampaignEvent
-from temba.classifiers.models import Classifier
 from temba.contacts.models import URN
 from temba.flows.models import Flow, FlowLabel, FlowRun, FlowStart, FlowUserConflictException, ResultsExport
 from temba.mailroom.client.types import Exclusions
@@ -1137,27 +1136,23 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         Resthook.objects.create(org=flow.org, created_by=self.admin, modified_by=self.admin)
         assert_features({"auto_translate", "resthook"})
 
-        # add an NLP classifier
-        Classifier.objects.create(org=flow.org, config="", created_by=self.admin, modified_by=self.admin)
-        assert_features({"auto_translate", "classifier", "resthook"})
-
         # add a DT One integration
         DTOneType().connect(flow.org, self.admin, "login", "token")
-        assert_features({"auto_translate", "airtime", "classifier", "resthook"})
+        assert_features({"auto_translate", "airtime", "resthook"})
 
         # change our channel to use a whatsapp scheme
         self.channel.schemes = [URN.WHATSAPP_SCHEME]
         self.channel.save()
-        assert_features({"auto_translate", "whatsapp", "airtime", "classifier", "resthook"})
+        assert_features({"auto_translate", "whatsapp", "airtime", "resthook"})
 
         # change our channel to use a facebook scheme
         self.channel.schemes = [URN.FACEBOOK_SCHEME]
         self.channel.save()
-        assert_features({"auto_translate", "optins", "airtime", "classifier", "resthook"})
+        assert_features({"auto_translate", "optins", "airtime", "resthook"})
 
         self.setUpLocations()
 
-        assert_features({"auto_translate", "optins", "airtime", "classifier", "resthook", "locations"})
+        assert_features({"auto_translate", "optins", "airtime", "resthook", "locations"})
 
     @mock_mailroom
     def test_template_warnings(self, mr_mocks):
@@ -1986,7 +1981,7 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
                 actual_payload = json.loads(mock_post.call_args_list[0][1]["data"])
                 actual_headers = mock_post.call_args_list[0][1]["headers"]
 
-                self.assertEqual(actual_url, "https://mailroom.temba.io/mr/sim/start")
+                self.assertEqual(actual_url, "https://mailroom.temba.io/mi/sim/start")
                 self.assertEqual(actual_payload["org_id"], flow.org_id)
                 self.assertEqual(
                     {"type": "manual", "user": {"uuid": str(self.admin.uuid), "name": "Andy"}},
@@ -2019,7 +2014,7 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
                 actual_payload = json.loads(mock_post.call_args_list[0][1]["data"])
                 actual_headers = mock_post.call_args_list[0][1]["headers"]
 
-                self.assertEqual(actual_url, "https://mailroom.temba.io/mr/sim/resume")
+                self.assertEqual(actual_url, "https://mailroom.temba.io/mi/sim/resume")
                 self.assertEqual(actual_payload["org_id"], flow.org_id)
                 self.assertEqual(len(actual_payload["assets"]["channels"]), 1)  # fake channel
                 self.assertEqual(actual_headers["Authorization"], "Token sesame")

@@ -1,3 +1,89 @@
+v26.1.127 (2026-05-29)
+-------------------------
+ * Restore active contact tab on browser back by keeping ?tab in history url
+ * Replace contact scheduled view with full event timeline
+
+v26.1.126 (2026-05-28)
+-------------------------
+ * Update @nyaruka/temba-components to 0.159.1
+ * Remove classifiers app
+ * Make components dev URL configurable via COMPONENTS_DEV_URL setting
+ * Hide PO translation export/import menu items in flow editor
+ * Add new cookie-gated message list backed by internal messages API
+
+v26.1.125 (2026-05-28)
+-------------------------
+ * Expand AirtimeTransfer status choices
+ * Update @nyaruka/temba-components to 0.159.0
+
+v26.1.124 (2026-05-27)
+-------------------------
+ * Update dev MAILROOM_URL default to use new internal listener port 8091
+ * Update mailroom version used in CI tests to 26.1.126
+ * Bump Flow.CURRENT_SPEC_VERSION to 14.4.1
+
+v26.1.123 (2026-05-27)
+-------------------------
+ * Add Pending and Reversed statuses to AirtimeTransfer
+
+v26.1.122 (2026-05-27)
+-------------------------
+ * Update @nyaruka/temba-components to 0.158.3
+
+v26.1.121 (2026-05-26)
+-------------------------
+ * Require Python 3.14.5+
+
+v26.1.120 (2026-05-26)
+-------------------------
+ * Run gc.collect() after each export
+
+v26.1.119 (2026-05-25)
+-------------------------
+ * Remove KN insecure HTTP requests config
+ * Simplify Infobip and SignalWire claim forms
+ * Bump idna from 3.13 to 3.15
+ * Drop unused channel types
+
+v26.1.118 (2026-05-18)
+-------------------------
+ * Cleanup of types
+
+v26.1.117 (2026-05-15)
+-------------------------
+ * Swap order of When and Field columns on campaign read page
+
+v26.1.116 (2026-05-15)
+-------------------------
+ * Render campaign event field as a clickable pill
+ * Restore onclick=goto on non-anchor clickable rows
+
+v26.1.115 (2026-05-14)
+-------------------------
+ * Reorder webhook log columns to put URL first and Flow fourth
+
+v26.1.114 (2026-05-14)
+-------------------------
+ * Update @nyaruka/temba-components to 0.158.1
+
+v26.1.113 (2026-05-14)
+-------------------------
+ * Tidy contact/ticket detail layouts and remove notepad tab styling overrides
+
+v26.1.112 (2026-05-14)
+-------------------------
+ * Fix list-view UI nits across messages, login, and clickable pills
+
+v26.1.111 (2026-05-13)
+-------------------------
+ * Add TextIt design system tokens, components, and style guide
+
+v26.1.110 (2026-05-12)
+-------------------------
+ * Update mailroom client to use new /mi/ path for internal endpoints
+ * Bump urllib3 from 2.6.3 to 2.7.0
+ * Bump django from 5.2.13 to 5.2.14
+
 v26.1.109 (2026-05-07)
 -------------------------
  * Simplify trim to keep MAX_REVISIONS most recent

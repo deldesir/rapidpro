@@ -14,8 +14,6 @@ from temba.api.models import Resthook, WebHookEvent
 from temba.archives.models import Archive
 from temba.campaigns.models import Campaign, CampaignEvent
 from temba.channels.models import SyncEvent
-from temba.classifiers.models import Classifier
-from temba.classifiers.types.wit import WitType
 from temba.contacts.models import ContactExport, ContactField, ContactFire, ContactImport, ContactImportBatch
 from temba.flows.models import FlowLabel, FlowRun, FlowSession, FlowStart, FlowStartCount, ResultsExport
 from temba.globals.models import Global
@@ -561,9 +559,6 @@ class OrgDeleteTest(TembaTest):
         global1 = add(Global.get_or_create(org, user, "org_name", "Org Name", "Acme Ltd"))
         flow1.global_dependencies.add(global1)
 
-        classifier1 = add(Classifier.create(org, user, WitType.slug, "Booker", {}, sync=False))
-        flow1.classifier_dependencies.add(classifier1)
-
         llm1 = add(LLM.create(org, user, OpenAIType(), "gpt-4o", "GPT-4", {}))
         flow1.llm_dependencies.add(llm1)
 
@@ -865,7 +860,9 @@ class AnonOrgTest(TembaTest):
         self.assertNotContains(response, "788 123 123")
         self.assertContains(response, contact.ref)
 
-        # create an incoming message, check number doesn't appear in inbox
+        # create an incoming message - by default (preview off) the inbox renders the legacy template which prints
+        # the contact via name_or_urn, so URN masking still needs coverage on that path. In preview mode the temba-msg-list
+        # component fetches messages from the internal API (separately covered in temba/api/internal/tests.py).
         msg2 = self.create_incoming_msg(contact, "ok")
 
         response = self.client.get(reverse("msgs.msg_inbox"))

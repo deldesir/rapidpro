@@ -1,15 +1,15 @@
 [project]
 name = "temba"
-version = "26.1.109"
+version = "26.1.127"
 description = "Hosted service for visually building interactive messaging applications"
 authors = [
     {"name" = "Nyaruka", "email" = "code@nyaruka.com"}
 ]
 readme = "README.md"
-requires-python = ">=3.14,<3.15"
+requires-python = ">=3.14.5,<3.15"
 dependencies = [
     "psycopg[pool] ~= 3.2.9",
-    "django ~= 5.2.13",
+    "django~=5.2.14",
     "django-allauth[mfa]>=65.8.1,<66.0.0",
     "django-compressor ~= 4.5.1",
     "django-countries ~= 7.6.1",
