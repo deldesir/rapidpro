@@ -9,7 +9,7 @@ var pendingRequests = [];
 // it issues its own spaRequest for cross-URL back/forward).
 var currentSpaUrl = location.href;
 
-const OMIT_ORG_URLS = ['/rp/staff/', '/rp/org/choose/'];
+const OMIT_ORG_URLS = [window.URLS.staff_org_list, window.URLS.orgs_org_choose];
 
 function onSpload(fn) {
   var container = document.querySelector('.spa-container');
@@ -492,7 +492,7 @@ function showModax(header, endpoint, modaxOptions) {
 }
 
 function handleWorkspaceChanged(orgId) {
-  posterize(`/rp/org/choose/?organization=${orgId}`);
+  posterize(`${window.URLS.orgs_org_choose}?organization=${orgId}`);
 }
 
 document.addEventListener('temba-redirected', function (event) {
@@ -572,7 +572,7 @@ document.addEventListener('DOMContentLoaded', function () {
         evt.stopPropagation();
         evt.preventDefault();
 
-        if (url.indexOf('/rp/org/service') > -1) {
+        if (url.indexOf(window.URLS.staff_org_service) > -1) {
           formEle.submit();
         } else {
           spaPost(url, { postData: new FormData(formEle) });
@@ -638,7 +638,7 @@ function formatContact(item) {
 function handleNewWorkspaceClicked(evt) {
   var modal = getModax();
   modal.header = 'New Workspace';
-  modal.setAttribute('endpoint', '/rp/org/create');
+  modal.setAttribute('endpoint', window.URLS.orgs_org_create);
   modal.open = true;
 
   evt.preventDefault();
