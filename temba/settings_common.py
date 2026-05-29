@@ -883,26 +883,42 @@ CHANNEL_TYPES = [
 # Large Language Model (LLM) providers for AI features
 LLM_TYPES = {
     "temba.ai.types.anthropic.type.AnthropicType": {
-        "models": [
-            "claude-3-7-sonnet-20250219",
-            "claude-3-5-sonnet-20241022",
-            "claude-3-5-haiku-20241022",
-            "claude-3-opus-20240229",
-        ],
+        # model id -> max output tokens
+        "models": {
+            "claude-opus-4-7": 128_000,
+            "claude-opus-4-5-20251101": 64_000,
+            "claude-sonnet-4-6": 64_000,
+            "claude-3-7-sonnet-20250219": 64_000,
+            "claude-haiku-4-5-20251001": 64_000,
+            "claude-3-5-haiku-20241022": 8_192,
+        },
     },
     "temba.ai.types.google.type.GoogleType": {
-        "models": ["gemini-2.0-flash", "gemini-1.5-flash"],
+        "models": {
+            "gemini-2.5-flash": 65_536,
+            "gemini-2.0-flash": 8_192,
+            "gemini-1.5-flash": 8_192,
+        },
     },
     "temba.ai.types.openai.type.OpenAIType": {
-        "models": ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"],
+        "models": {
+            "gpt-5.5": 128_000,
+            "gpt-5.4": 128_000,
+            "gpt-5.4-mini": 128_000,
+            "gpt-4.1": 32_768,
+            "gpt-4.1-mini": 32_768,
+            "gpt-4.1-nano": 32_768,
+            "gpt-4o": 16_384,
+            "gpt-4o-mini": 16_384,
+            "gpt-3.5-turbo": 4_096,
+        },
     },
     "temba.ai.types.custom_ai.type.CustomAIType": {
-        "models": ["custom_ai"],
+        "models": {"custom_ai": 8_192},
     },
 }
 if TESTING:
-    # Add Azure OpenAI for testing
-    LLM_TYPES["temba.ai.types.openai_azure.type.OpenAIAzureType"] = {"models": ["gpt-35-turbo", "gpt-4"]}
+    LLM_TYPES["temba.ai.types.openai_azure.type.OpenAIAzureType"] = {"models": {"gpt-35-turbo": 4_096}}
 
 # ISO-639-3 language codes to allow in addition to standard ISO-639-1 languages
 NON_ISO6391_LANGUAGES = {"mul", "und"}
@@ -941,6 +957,7 @@ RETENTION_PERIODS = {
     "export": timedelta(days=90),
     "flowsession": timedelta(days=7),
     "httplog": timedelta(days=3),
+    "llmcount": timedelta(days=30),
     "notification": timedelta(days=30),
     "syncevent": timedelta(days=7),
     "webhookevent": timedelta(hours=48),
