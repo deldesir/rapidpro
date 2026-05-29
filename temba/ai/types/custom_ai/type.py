@@ -10,7 +10,7 @@ class CustomAIType(LLMType):
 
     # Allows configuring any OpenAI-compatible endpoint and api_key
     settings = {
-        "models": ["custom_ai"],  # Default model name
+        "models": {"custom_ai": 8_192},  # Default model name → max output tokens
         "exclusions": [],
     }
 
