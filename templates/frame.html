@@ -109,7 +109,7 @@
       });
 
       document.addEventListener("temba-workspace-settings", function(event) {
-        spaGet('/org/workspace');
+        spaGet(window.URLS.orgs_org_workspace);
         var menu = document.querySelector('temba-menu');
         if (menu) {
           menu.click();
@@ -173,14 +173,14 @@
         {% endcompress %}
       {% endif %}
       {% if user_org %}
-        <temba-store {% if org_perms.globals.global_list %}globals="/api/v2/globals.json"{% endif %}
-                     completion="/mr/docs/{{ LANGUAGE_CODE }}/editor.json"
-                     languages="/org/languages/"
-                     fields="/api/v2/fields.json"
-                     groups="/api/v2/groups.json"
-                     workspace="/api/v2/workspace.json"
-                     shortcuts="/api/internal/shortcuts.json"
-                     users="/api/v2/users.json"
+        <temba-store {% if org_perms.globals.global_list %}globals="{% url 'api.v2.globals' %}.json"{% endif %}
+                     completion="{{ FORCE_SCRIPT_NAME }}mr/docs/{{ LANGUAGE_CODE }}/editor.json"
+                     languages="{% url 'orgs.org_languages' %}"
+                     fields="{% url 'api.v2.fields' %}.json"
+                     groups="{% url 'api.v2.groups' %}.json"
+                     workspace="{% url 'api.v2.workspace' %}.json"
+                     shortcuts="{% url 'api.internal.shortcuts' %}.json"
+                     users="{% url 'api.v2.users' %}.json"
                      brand="{{ branding.name }}">
         </temba-store>
       {% else %}
