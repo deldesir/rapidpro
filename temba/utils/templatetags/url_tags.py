@@ -84,4 +84,15 @@ def get_urls():
         # Django I18n
         "django_js_cat": reverse("django.views.i18n.javascript_catalog"),
     }
+    # Safety net: prepend subpath when reverse() doesn't include FORCE_SCRIPT_NAME
+    # (e.g. fresh threads, celery workers, certain WSGI edge cases).
+    # The guard on "not v.startswith(subpath)" prevents double-prefixing.
+    subpath = "/rp"
+    if subpath and subpath != "/":
+        if subpath.endswith("/"):
+            subpath = subpath[:-1]
+        for k, v in urls.items():
+            if isinstance(v, str) and v.startswith("/") and not v.startswith(subpath):
+                urls[k] = subpath + v
+
     return mark_safe(json.dumps(urls))

@@ -13,8 +13,7 @@ orca.yaml
 venv
 .coverage
 coverage.xml
-celerybeat-schedule.db
-celerybeat-schedule
+celerybeat-schedule*
 deploy
 fabfile.py
 node_modules

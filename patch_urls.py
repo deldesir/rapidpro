@@ -10,6 +10,12 @@ elif SUBPATH.endswith("/"):
 # --------------------------------------------------------------------------
 # custom_ai LLM icon patch
 # --------------------------------------------------------------------------
+# The upstream @nyaruka/flow-editor (temba-components) contains a hardcoded
+# regex array that maps LLM model names to brand icons:
+#   wu = [[/claude|anthropic/i,"anthropic"],[/gpt|openai|o1|o3|o4/i,"openai"],...]
+# If a provider's model name doesn't match any entry, it's silently excluded
+# from the "Call AI" dropdown.  Our Custom AI (LiteLLM proxy) uses the slug
+# "custom_ai" which matches nothing, so we inject an extra entry here.
 CUSTOM_AI_LLM_PATCH_BEFORE = '[/deepseek/i,"deepseek"]]'
 CUSTOM_AI_LLM_PATCH_AFTER  = '[/deepseek/i,"deepseek"],[/custom_ai/i,"openai"]]'
 
@@ -56,6 +62,10 @@ def patch_file(filepath):
             ("/org/", f"{SUBPATH}/org/"),
             ("'/org/", f"'{SUBPATH}/org/"),
             # Additional paths for missing 404s
+            ("`/contact/chat_search/", f"`{SUBPATH}/contact/chat_search/"),
+            ("`/contact/chat/", f"`{SUBPATH}/contact/chat/"),
+            ('"/contact/chat/', f'"{SUBPATH}/contact/chat/'),
+            ("'/contact/chat/", f"'{SUBPATH}/contact/chat/"),
             ("/contact/", f"{SUBPATH}/contact/"),
             ("'/contact/", f"'{SUBPATH}/contact/"),
             ('"/contact/', f'"{SUBPATH}/contact/'),
