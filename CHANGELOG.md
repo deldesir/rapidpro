@@ -1,3 +1,54 @@
+v26.2.2 (2026-06-18)
+-------------------------
+ * Bump cryptography from 46.0.7 to 48.0.1
+ * Bump aiohttp from 3.14.0 to 3.14.1
+
+v26.2.1 (2026-06-16)
+-------------------------
+ * Remove dead MailroomClient.version() method
+ * Bump pyjwt from 2.12.1 to 2.13.0
+
+v26.2.0 (2026-06-15)
+-------------------------
+ * Standardize WhatsApp Graph API calls on v22.0 via a shared base URL constant
+ * Use a distinct retry-able error when the senders API fails during claim
+ * Support claiming Twilio WhatsApp senders that aren't incoming numbers
+
+v26.1.134 (2026-06-11)
+-------------------------
+ * Make Turn.io channel type available to all orgs
+ * Relax WhatsApp scope check to business_management across all claim steps
+
+v26.1.133 (2026-06-11)
+-------------------------
+ * Include debug_token response in WhatsApp connect failure logs
+
+v26.1.132 (2026-06-11)
+-------------------------
+ * Merge pull request #6663 from nyaruka/whatsapp-connect-logging
+ * Redact app credentials from WhatsApp connect failure logs
+ * Log underlying exception when WhatsApp Cloud connect fails
+
+v26.1.131 (2026-06-10)
+-------------------------
+ * Fix flow start read modal for URN-only starts and split creator/date
+
+v26.1.130 (2026-06-10)
+-------------------------
+ * Redesign flow starts list as single-line rows with a details modal
+ * Add preview-mode contact list backed by internal contacts API
+
+v26.1.129 (2026-06-04)
+-------------------------
+ * Update @nyaruka/temba-components to 0.159.3
+ * Use full name instead of first name in user chat ref
+ * Bump aiohttp from 3.13.5 to 3.14.0
+ * Fix two-way messaging in msg_console across containers
+
+v26.1.128 (2026-06-01)
+-------------------------
+ * Refresh airtime transfers list page
+
 v26.1.127 (2026-05-29)
 -------------------------
  * Restore active contact tab on browser back by keeping ?tab in history url
