@@ -1,3 +1,22 @@
+v26.3.5 (2026-06-25)
+-------------------------
+ * Authorize notifications channel via the subscribe proxy
+ * Update @nyaruka/temba-components to 0.159.6
+
+v26.3.4 (2026-06-25)
+-------------------------
+ * Authorize ticket history subscriptions by team topic access
+ * Add JSON endpoint for changing a flow's base language
+
+v26.3.3 (2026-06-25)
+-------------------------
+ * Add subscribe and sub_refresh proxy endpoints to websockets API
+
+v26.3.2 (2026-06-24)
+-------------------------
+ * Use precomputed group count in preview contact list endpoint
+ * Add connect and refresh endpoints for sockets
+
 v26.2.2 (2026-06-18)
 -------------------------
  * Bump cryptography from 46.0.7 to 48.0.1
