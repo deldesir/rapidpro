@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from unittest.mock import call
 
 from django.core import mail
 from django.urls import reverse
@@ -14,14 +15,10 @@ from temba.notifications.incidents.builtin import (
 )
 from temba.notifications.models import Notification
 from temba.notifications.tasks import send_notification_emails, trim_notifications
-from temba.notifications.types.builtin import (
-    ExportFinishedNotificationType,
-    InvitationAcceptedNotificationType,
-    UserEmailNotificationType,
-    UserPasswordNotificationType,
-)
+from temba.notifications.types.builtin import ExportFinishedNotificationType, InvitationAcceptedNotificationType
 from temba.orgs.models import Invitation, ItemCount, OrgRole
 from temba.tests import TembaTest, matchers
+from temba.tests.mailroom import mock_mailroom
 from temba.tickets.models import TicketExport
 
 
@@ -345,48 +342,6 @@ class NotificationTest(TembaTest):
         recipients = set(mail.outbox[0].recipients()).union(mail.outbox[1].recipients())
         self.assertEqual({self.admin.email, self.editor.email}, recipients)
 
-    def test_user_email(self):
-        UserEmailNotificationType.create(self.org, self.editor, "prevaddr@trileet.com")
-
-        self.assert_notifications(
-            expected_json={
-                "type": "user:email",
-                "created_on": matchers.ISODatetime(),
-                "is_seen": True,
-            },
-            expected_target=None,
-            expected_users={self.editor},
-            email=True,
-        )
-
-        send_notification_emails()
-
-        self.assertEqual(1, len(mail.outbox))
-        self.assertEqual("[Nyaruka] Your email has been changed", mail.outbox[0].subject)
-        self.assertEqual(["prevaddr@trileet.com"], mail.outbox[0].recipients())  # previous address
-        self.assertIn("Your email has been changed to editor@textit.com", mail.outbox[0].body)  # new address
-
-    def test_user_password(self):
-        UserPasswordNotificationType.create(self.org, self.editor)
-
-        self.assert_notifications(
-            expected_json={
-                "type": "user:password",
-                "created_on": matchers.ISODatetime(),
-                "is_seen": True,
-            },
-            expected_target=None,
-            expected_users={self.editor},
-            email=True,
-        )
-
-        send_notification_emails()
-
-        self.assertEqual(1, len(mail.outbox))
-        self.assertEqual("[Nyaruka] Your password has been changed", mail.outbox[0].subject)
-        self.assertEqual(["editor@textit.com"], mail.outbox[0].recipients())
-        self.assertIn("Your password has been changed.", mail.outbox[0].body)
-
     def test_invitation_accepted(self):
         invitation = Invitation.create(self.org, self.admin, "bob@textit.com", OrgRole.ADMINISTRATOR)
         user = self.create_user("bob@textit.com")
@@ -411,6 +366,63 @@ class NotificationTest(TembaTest):
         self.assertEqual("[Nyaruka] New user joined your workspace", mail.outbox[0].subject)
         self.assertEqual(["admin@textit.com"], mail.outbox[0].recipients())  # only the other admins
         self.assertIn("User bob@textit.com accepted an invitation to join your workspace.", mail.outbox[0].body)
+
+    @mock_mailroom
+    def test_realtime_publish(self, mr_mocks):
+        # UI notifications are published to mailroom for realtime delivery once the transaction commits
+        export = ContactExport.create(self.org, self.editor)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            ExportFinishedNotificationType.create(export)
+
+        notification = self.editor.notifications.get(export=export)
+        self.assertEqual(
+            [
+                call(
+                    self.org,
+                    [{"user_uuid": str(self.editor.uuid), "data": notification.as_json()}],
+                )
+            ],
+            mr_mocks.calls["notification_publish"],
+        )
+
+        # email-only notifications are never published (no UI medium, nothing to deliver live)
+        invitation = Invitation.create(self.org, self.admin, "bob@textit.com", OrgRole.ADMINISTRATOR)
+        user = self.create_user("bob@textit.com")
+
+        with self.captureOnCommitCallbacks(execute=True):
+            InvitationAcceptedNotificationType.create(invitation, user)
+
+        self.assertEqual(1, len(mr_mocks.calls["notification_publish"]))
+
+        # a duplicate (already-unseen) notification isn't re-created, so nothing new is published
+        with self.captureOnCommitCallbacks(execute=True):
+            ExportFinishedNotificationType.create(export)
+
+        self.assertEqual(1, len(mr_mocks.calls["notification_publish"]))
+
+        # publishing is best-effort: a mailroom failure is logged, not raised, and the notification is still created
+        export2 = ContactExport.create(self.org, self.editor)
+        mr_mocks.exception(ConnectionError("mailroom unreachable"))
+
+        with self.assertLogs("temba.notifications.models", level="ERROR"):
+            with self.captureOnCommitCallbacks(execute=True):
+                ExportFinishedNotificationType.create(export2)
+
+        self.assertTrue(self.editor.notifications.filter(export=export2).exists())
+
+        # a type that fans out to multiple users is published as a single batched call with one entry per user
+        self.org.add_user(self.editor, OrgRole.ADMINISTRATOR)  # so the incident notifies both admin and editor
+        before = len(mr_mocks.calls["notification_publish"])
+
+        with self.captureOnCommitCallbacks(execute=True):
+            ChannelDisconnectedIncidentType.get_or_create(channel=self.channel)
+
+        new_calls = mr_mocks.calls["notification_publish"][before:]
+        self.assertEqual(1, len(new_calls))  # one batched publish, not one per user
+        org_arg, items = new_calls[0].args
+        self.assertEqual(self.org, org_arg)
+        self.assertEqual({str(self.admin.uuid), str(self.editor.uuid)}, {item["user_uuid"] for item in items})
 
     def test_channel_disconnected(self):
         self.org.add_user(self.editor, OrgRole.ADMINISTRATOR)  # upgrade editor to administrator

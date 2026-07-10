@@ -2,6 +2,7 @@ import logging
 from dataclasses import asdict
 
 import requests
+from packaging.version import Version
 
 from django.conf import settings
 
@@ -203,6 +204,14 @@ class MailroomClient:
         if not to_version:  # pragma: no cover
             to_version = Flow.CURRENT_SPEC_VERSION
 
+        # in tests fixtures are kept at the current spec (see the migrate_bundled_flows command), so skip the HTTP
+        # round-trip when the definition is already at or beyond the target. in production we always defer to
+        # mailroom, which may apply newer patch migrations within the same version that this client isn't aware of.
+        if settings.TESTING:
+            current = definition.get("spec_version")
+            if current and Version(current) >= Version(to_version):
+                return definition
+
         return self._request("flow/migrate", {"flow": definition, "to_version": to_version}, encode_json=True)
 
     def flow_start(
@@ -363,6 +372,13 @@ class MailroomClient:
                 "ticket_uuid": str(ticket.uuid) if ticket else None,
             },
         )
+
+    def notification_publish(self, org, notifications: list[dict]):
+        """
+        Publishes already-created notifications to their users' realtime sockets. Each item is
+        {"user_uuid": str, "data": dict} where data is the notification's rendered JSON.
+        """
+        return self._request("notification/publish", {"org_id": org.id, "notifications": notifications})
 
     def org_deindex(self, org):
         return self._request("org/deindex", {"org_id": org.id})

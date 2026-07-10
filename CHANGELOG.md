@@ -1,3 +1,37 @@
+v26.3.11 (2026-07-09)
+-------------------------
+ * Update @nyaruka/temba-components to 0.163.0
+ * Drop redundant inline-block from CSS-based buttons
+
+v26.3.10 (2026-07-08)
+-------------------------
+ * Backfill Org.suspended_on and add constraint that it's set iff org is suspended
+ * Add 'workspace suspended' as a call error reason
+ * Ensure WhatsApp Cloud embedded signup runs only once per attempt
+ * Stop sending deprecated user_id to mailroom's notification/publish endpoint
+
+v26.3.9 (2026-07-06)
+-------------------------
+ * Include user UUID when publishing notifications to mailroom
+ * Include ticket lifecycle events from other tickets when fetching history for a ticket
+
+v26.3.8 (2026-07-02)
+-------------------------
+ * Update @nyaruka/temba-components to 0.162.0
+
+v26.3.7 (2026-07-02)
+-------------------------
+ * Update @nyaruka/temba-components to 0.161.0
+ * Publish locally-created UI notifications to realtime sockets via mailroom
+ * Remove redundant user:email and user:password notification types
+
+v26.3.6 (2026-06-30)
+-------------------------
+ * Update @nyaruka/temba-components to 0.160.1
+ * Bump CLA Assistant action to v2.6.1 to fix Node 24 incompatibility
+ * Guard tests against reaching a live mailroom via the production client
+ * Use django.conf.settings instead of importing the settings module directly
+
 v26.3.5 (2026-06-25)
 -------------------------
  * Authorize notifications channel via the subscribe proxy

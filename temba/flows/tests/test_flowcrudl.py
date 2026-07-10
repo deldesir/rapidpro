@@ -15,6 +15,7 @@ from temba.contacts.models import URN
 from temba.flows.models import (
     Flow,
     FlowLabel,
+    FlowRevision,
     FlowRun,
     FlowStart,
     FlowUserConflictException,
@@ -564,7 +565,8 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         flow.refresh_from_db()
         self.assertEqual("New Name", flow.name)
 
-    def test_list_views(self):
+    @mock_mailroom
+    def test_list_views(self, mr_mocks):
         flow1 = self.create_flow("Flow 1")
         flow2 = self.create_flow("Flow 2")
 
@@ -623,7 +625,7 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertNotContains(response, flow1.name)
         self.assertContains(response, flow3.name)
 
-        self.assertEqual(("archive", "label", "export-results"), response.context["actions"])
+        self.assertEqual(("label", "export-results", "archive"), response.context["actions"])
 
         # but does appear in archived list
         response = self.client.get(reverse("flows.flow_archived"))
@@ -697,8 +699,93 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual(f"/flow/labels/{label2.uuid}", response.headers.get(TEMBA_MENU_SELECTION))
 
     @mock_mailroom
+    def test_preview_list(self, mr_mocks):
+        flow1 = self.create_flow("Flow 1")
+        flow2 = self.create_flow("Flow 2")
+        label = FlowLabel.create(self.org, self.admin, "Important")
+        label.toggle_label([flow2], add=True)
+
+        list_url = reverse("flows.flow_list")
+
+        self.login(self.admin)
+
+        # default render is still the legacy table
+        response = self.client.get(list_url)
+        self.assertNotContains(response, "temba-flow-list")
+
+        # entering preview mode swaps in the temba-flow-list component, pointed at the internal flows api
+        self.client.cookies["temba-preview"] = "1"
+
+        response = self.client.get(list_url)
+        self.assertContains(response, "temba-flow-list")
+        self.assertEqual(f"{reverse('api.internal.flows')}.json?folder=active", response.context["new_list_endpoint"])
+
+        # export-results is clientOnly (it opens the export modal); the label dropdown carries a labelsEndpoint of
+        # the workspace's flow labels; the rest post to the action endpoint
+        actions = {a["key"]: a for a in response.context["new_list_bulk_actions"]}
+        self.assertEqual(["label", "export-results", "archive"], list(actions.keys()))
+        self.assertTrue(actions["export-results"]["clientOnly"])
+        self.assertNotIn("clientOnly", actions["archive"])
+        self.assertEqual("/api/internal/flow_labels.json", actions["label"]["labelsEndpoint"])
+        # the label dropdown carries the create affordance for viewers who can create labels
+        self.assertTrue(actions["label"]["allowCreate"])
+
+        # the archived view selects the archived folder
+        response = self.client.get(reverse("flows.flow_archived"))
+        self.assertEqual(f"{reverse('api.internal.flows')}.json?folder=archived", response.context["new_list_endpoint"])
+        self.assertNotEqual("", response.context["new_list_subtitle"])
+
+        # a label filter view is selected by uuid rather than a folder
+        response = self.client.get(reverse("flows.flow_filter", args=[label.uuid]))
+        self.assertEqual(
+            f"{reverse('api.internal.flows')}.json?label={label.uuid}", response.context["new_list_endpoint"]
+        )
+
+        # the component posts flow uuids in `objects`; the view translates them to ids so the bulk action applies
+        self.client.post(list_url, {"action": "archive", "objects": str(flow1.uuid)})
+        flow1.refresh_from_db()
+        self.assertTrue(flow1.is_archived)
+
+        # the label dropdown adds the selection to a label (label posted by uuid; omitting `add` means add)
+        self.client.post(list_url, {"action": "label", "objects": str(flow2.uuid), "label": str(label.uuid)})
+        self.assertEqual({label}, set(flow2.labels.all()))
+
+        # ...and removes it when add=false
+        self.client.post(
+            list_url, {"action": "label", "objects": str(flow2.uuid), "label": str(label.uuid), "add": "false"}
+        )
+        self.assertEqual(set(), set(flow2.labels.all()))
+
+        # a label posted as a numeric id (a legacy form post rather than the component) is passed through untranslated
+        self.client.post(list_url, {"action": "label", "objects": str(flow2.uuid), "label": str(label.id)})
+        self.assertEqual({label}, set(flow2.labels.all()))
+        label.toggle_label([flow2], add=False)
+
+        # a malformed flow uuid in `objects` is ignored rather than raising (no 500 on hostile/garbage input)
+        response = self.client.post(list_url, {"action": "archive", "objects": "not-a-uuid"})
+        self.assertEqual(200, response.status_code)
+        flow2.refresh_from_db()
+        self.assertFalse(flow2.is_archived)
+
+        # a malformed label uuid is likewise ignored rather than raising
+        response = self.client.post(list_url, {"action": "label", "objects": str(flow2.uuid), "label": "not-a-uuid"})
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(set(), set(flow2.labels.all()))
+
+        # the export modal accepts the component's uuids as well as the legacy table's ids
+        export_url = reverse("flows.flow_export_results")
+        response = self.client.get(f"{export_url}?ids={flow2.uuid}")
+        self.assertEqual([flow2], list(response.context["form"].initial["flows"]))
+        response = self.client.get(f"{export_url}?ids={flow2.id}")
+        self.assertEqual([flow2], list(response.context["form"].initial["flows"]))
+
+        # ...and ignores values that are neither
+        response = self.client.get(f"{export_url}?ids=foo")
+        self.assertEqual([], list(response.context["form"].initial["flows"]))
+
+    @mock_mailroom
     def test_get_definition(self, mr_mocks):
-        flow = self.get_flow("color_v13")
+        flow = self.get_flow("color")
 
         # if definition is outdated, metadata values are updated from db object
         flow.name = "Amazing Flow"
@@ -707,7 +794,7 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual("Amazing Flow", flow.get_definition()["name"])
 
         # make a flow that looks like a legacy flow
-        flow = self.get_flow("legacy/color_v11")
+        flow = self.create_flow("Color Legacy")
         original_def = self.load_json("test_flows/legacy/color_v11.json")["flows"][0]
 
         flow.version_number = "11.12"
@@ -735,23 +822,27 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
 
     @mock_mailroom
     def test_revisions(self, mr_mocks):
-        flow = self.get_flow("legacy/color_v11")
+        flow = self.create_flow("Color")
 
         revisions_url = reverse("flows.flow_revisions", args=[flow.uuid])
 
+        # rewind the flow's revision to a legacy spec
         original_def = self.load_json("test_flows/legacy/color_v11.json")["flows"][0]
-
-        # rewind definition to legacy spec
         revision = flow.revisions.get()
         revision.definition = original_def
         revision.spec_version = "11.12"
-        revision.save(update_fields=("definition", "spec_version"))
+        revision.changes = {}
+        revision.save(update_fields=("definition", "spec_version", "changes"))
 
-        # create a new migrated revision (rename so the save isn't a no-op)
-        flow_def = revision.get_migrated_definition()
-        flow.name = "Color Renamed"
-        flow.save(update_fields=("name",))
-        flow.save_revision(self.admin, flow_def)
+        # add a second, current-spec revision directly - creating one through migration is goflow's job
+        FlowRevision.objects.create(
+            flow=flow,
+            definition=self.load_json("test_flows/color.json")["flows"][0],
+            spec_version=Flow.CURRENT_SPEC_VERSION,
+            revision=2,
+            changes={"tags": ["routing", "spec"]},
+            created_by=self.admin,
+        )
 
         revisions = list(flow.revisions.all().order_by("-created_on"))
 
@@ -1466,7 +1557,7 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
 
     @mock_mailroom
     def test_copy_view(self, mr_mocks):
-        flow = self.get_flow("color_v13")
+        flow = self.get_flow("color")
 
         self.login(self.admin)
 
@@ -1799,7 +1890,8 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
 
         self.assertEqual(404, response.status_code)
 
-    def test_write_protection(self):
+    @mock_mailroom
+    def test_write_protection(self, mr_mocks):
         flow = self.get_flow("favorites_v13")
         flow_json = flow.get_definition()
         flow_json_copy = flow_json.copy()
@@ -1822,16 +1914,19 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         with self.assertRaises(FlowUserConflictException):
             flow.save_revision(self.admin, flow_json_copy)
 
-        # make flow definition invalid by creating a duplicate node UUID
+        # make flow definition invalid by creating a duplicate node UUID - goflow rejects it on inspect, which we
+        # don't reimplement in tests, so stub the validation failure mailroom would return
         mode0_uuid = flow_json["nodes"][0]["uuid"]
         flow_json["nodes"][1]["uuid"] = mode0_uuid
 
+        mr_mocks.exception(mailroom.FlowValidationException(f"node UUID {mode0_uuid} isn't unique"))
         with self.assertRaises(mailroom.FlowValidationException) as cm:
             flow.save_revision(self.admin, flow_json)
 
         self.assertEqual(f"node UUID {mode0_uuid} isn't unique", str(cm.exception))
 
         # check view converts exception to error response
+        mr_mocks.exception(mailroom.FlowValidationException(f"node UUID {mode0_uuid} isn't unique"))
         response = self.client.post(
             reverse("flows.flow_revisions", args=[flow.uuid]), data=flow_json, content_type="application/json"
         )
@@ -1880,12 +1975,25 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual(400, response.status_code)
         self.assertEqual("Flow is already in this language.", response.json()["description"])
 
-        # changing to a valid language switches the base language and saves a new revision
+        # changing to a valid language switches the base language and saves a new revision. mailroom does the actual
+        # re-basing of the definition so we just mock the definition it returns.
+        changed_def = flow.get_definition()
+        changed_def["language"] = "spa"
+        changed_def["localization"]["eng"] = {}
+        changed_def["nodes"][0]["actions"][0]["text"] = "¿Cuál es tu color favorito?"
+        mr_mocks.flow_change_language(changed_def)
+
         response = self.client.post(change_url, {"language": "spa"}, content_type="application/json")
         self.assertEqual(200, response.status_code)
         self.assertEqual("success", response.json()["status"])
         self.assertEqual(flow.revisions.order_by("-revision").first().revision, response.json()["revision"]["revision"])
 
+        # the flow's current (base-language English) definition was sent to mailroom along with the target language
+        passed_def, passed_lang = mr_mocks.calls["flow_change_language"][-1].args
+        self.assertEqual("eng", passed_def["language"])
+        self.assertEqual("spa", passed_lang)
+
+        # the re-based definition mailroom returned is what we saved
         flow_def = flow.get_definition()
         self.assertEqual("spa", flow_def["language"])
         self.assertIn("eng", flow_def["localization"])
@@ -1910,6 +2018,7 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual("Invalid request.", response.json()["description"])
 
         # a version conflict whilst saving the new revision is converted to an error response
+        mr_mocks.flow_change_language(flow.get_definition())
         with patch("temba.flows.models.Flow.save_revision") as mock_save_revision:
             mock_save_revision.side_effect = FlowVersionConflictException(13)
             response = self.client.post(change_url, {"language": "ara"}, content_type="application/json")
@@ -1925,6 +2034,7 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         )
 
         # a user conflict whilst saving the new revision is converted to an error response
+        mr_mocks.flow_change_language(flow.get_definition())
         with patch("temba.flows.models.Flow.save_revision") as mock_save_revision:
             mock_save_revision.side_effect = FlowUserConflictException("Jim", None)
             response = self.client.post(change_url, {"language": "ara"}, content_type="application/json")

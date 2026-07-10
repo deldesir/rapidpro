@@ -1,12 +1,13 @@
+import copy
 import functools
 import re
 from collections import defaultdict
 from dataclasses import asdict
 from decimal import Decimal
 from functools import wraps
-from unittest.mock import call, patch
+from unittest.mock import NonCallableMock, call, patch
 
-from packaging.version import Version
+import requests
 
 from django.conf import settings
 from django.db import connection
@@ -25,7 +26,7 @@ from temba.schedules.models import Schedule
 from temba.tests.dates import parse_datetime
 from temba.tickets.models import Ticket
 from temba.utils import json
-from temba.utils.uuid import uuid7
+from temba.utils.uuid import is_uuid, uuid7
 
 event_units = {
     CampaignEvent.UNIT_MINUTES: "minutes",
@@ -33,6 +34,203 @@ event_units = {
     CampaignEvent.UNIT_DAYS: "days",
     CampaignEvent.UNIT_WEEKS: "weeks",
 }
+
+_real_mailroom_request = MailroomClient._request
+
+
+def clone_flow_definition(definition: dict, dependency_mapping: dict) -> dict:
+    """
+    Python port of goflow's flow clone (flows/definition/migrations.Clone) for tests. It walks the definition and
+    remaps dependency UUIDs - in "uuid"/"*_uuid" properties, UUID-named keys, and UUID strings in arrays - using
+    the given mapping, so an imported flow references the objects resolved for the target org.
+
+    Unlike goflow it leaves the flow's own element UUIDs untouched rather than assigning fresh random ones: that
+    uniqueness step isn't needed in tests and stable UUIDs are much easier to assert against.
+    """
+
+    def remap(node):
+        if isinstance(node, dict):
+            for key in list(node.keys()):
+                value = node[key]
+                if (key == "uuid" or key.endswith("_uuid")) and isinstance(value, str):
+                    node[key] = dependency_mapping.get(value, value)
+                # test cheap O(1) membership before is_uuid()'s try/except, which runs on every key otherwise
+                elif key in dependency_mapping and is_uuid(key):
+                    node[dependency_mapping[key]] = node.pop(key)
+            for value in node.values():
+                remap(value)
+        elif isinstance(node, list):
+            for i, value in enumerate(node):
+                if isinstance(value, str) and is_uuid(value):
+                    node[i] = dependency_mapping.get(value, value)
+                elif isinstance(value, (dict, list)):
+                    remap(value)
+
+    clone = copy.deepcopy(definition)
+    remap(clone)
+    return clone
+
+
+# maps the action property holding an asset reference to its goflow dependency type. "groups"/"labels" hold lists
+# of references, the rest hold a single reference object. mirrors the reference-typed fields on goflow's actions
+# (flows/actions/*.go); types not consumed by Flow.update_dependencies (e.g. classifier) are intentionally omitted.
+_INSPECT_ACTION_REFS = {
+    "groups": "group",
+    "labels": "label",
+    "field": "field",
+    "flow": "flow",
+    "channel": "channel",
+    "llm": "llm",
+    "optin": "optin",
+    "topic": "topic",
+    "template": "template",
+}
+
+# contact field and global references read out of expressions. goflow resolves a field key as the segment after a
+# "fields" lookup at any of its context paths (fields/contact.fields/parent.fields/child.fields/...), so the key
+# is always what follows "fields." regardless of prefix; "globals.x" is a global. see goflow inspect/templates.go.
+_INSPECT_EXPR_REFS = re.compile(r"\b(fields|globals)\.([a-zA-Z][a-zA-Z0-9_]*)")
+
+# matches goflow's utils.Snakify: collapse runs of non-(letter/digit/underscore) to "_", trim, lowercase.
+_INSPECT_SNAKE = re.compile(r"[^\w]+", re.UNICODE)
+
+
+def _snakify(text: str) -> str:
+    return _INSPECT_SNAKE.sub("_", text.strip()).lower()
+
+
+def inspect_flow(definition: dict) -> dict:
+    """
+    Pragmatic Python stand-in for goflow's flow inspection (flows/inspect), used to fake flow/inspect for the
+    production client during tests instead of reaching a live mailroom. It reproduces the two parts of the
+    analysis that rapidpro consumes or asserts on:
+
+      - dependencies: the typed asset references that goflow's actions/routers enumerate, plus the field/global
+        references in expressions (used by Flow.save_revision / Flow.import_definition to wire up dependencies)
+      - results: the result specs that save-result actions and routers produce (stored on the flow and exposed
+        via the API/editor)
+
+    It is deliberately not a full port: goflow's issue analysis, structural validation, counts and locals aren't
+    reproduced. A test that needs those uses @mock_mailroom and stubs mr_mocks.flow_inspect (or, for validation
+    errors, mr_mocks.exception). During tests mailroom inspects without session assets (flow_inspect omits org_id
+    when settings.TESTING), so every dependency is missing=False and no asset-availability issues fire - matching
+    the empty issues we return here.
+    """
+
+    deps = []
+    deps_seen = set()
+    results = []
+    results_by_key = {}
+
+    def add_dep(dep_type: str, *, uuid: str = None, key: str = None, name: str = ""):
+        identity = uuid if uuid is not None else key
+        if identity is None or (dep_type, identity) in deps_seen:
+            return
+        deps_seen.add((dep_type, identity))
+        ref = {"type": dep_type, "name": name or "", "missing": False}
+        ref["uuid" if uuid is not None else "key"] = identity
+        deps.append(ref)
+
+    def add_typed_ref(dep_type: str, ref):
+        if isinstance(ref, dict):
+            add_dep(dep_type, uuid=ref.get("uuid"), key=ref.get("key"), name=ref.get("name", ""))
+
+    def scan_expressions(value):
+        if isinstance(value, str):
+            for namespace, key in _INSPECT_EXPR_REFS.findall(value):
+                add_dep("field" if namespace == "fields" else "global", key=key.lower())
+        elif isinstance(value, list):
+            for item in value:
+                scan_expressions(item)
+        elif isinstance(value, dict):
+            for item in value.values():
+                scan_expressions(item)
+
+    def add_result(node_uuid: str, name: str, categories: list):
+        # merge by snakified key, accumulating categories and the nodes that save the result (as goflow does)
+        key = _snakify(name)
+        spec = results_by_key.get(key)
+        if spec is None:
+            spec = {"key": key, "name": name, "categories": list(categories), "node_uuids": [node_uuid]}
+            results_by_key[key] = spec
+            results.append(spec)
+        else:
+            for category in categories:
+                if category not in spec["categories"]:
+                    spec["categories"].append(category)
+            if node_uuid not in spec["node_uuids"]:
+                spec["node_uuids"].append(node_uuid)
+
+    for node in definition.get("nodes", []):
+        node_uuid = node.get("uuid")
+        for action in node.get("actions", []):
+            for prop, dep_type in _INSPECT_ACTION_REFS.items():
+                if prop in action:
+                    value = action[prop]
+                    refs = value if isinstance(value, list) else [value]
+                    for ref in refs:
+                        add_typed_ref(dep_type, ref)
+            if action.get("type") == "set_run_result":
+                category = action.get("category")
+                add_result(node_uuid, action["name"], [category] if category else [])
+            scan_expressions(action)
+
+        router = node.get("router")
+        if router:
+            scan_expressions(router.get("operand"))
+            # only a has_group router test produces a dependency: arguments are [group_uuid] or [group_uuid, name]
+            for case in router.get("cases", []):
+                if case.get("type") == "has_group" and case.get("arguments"):
+                    args = case["arguments"]
+                    add_dep("group", uuid=args[0], name=args[1] if len(args) > 1 else "")
+            if router.get("result_name"):
+                add_result(node_uuid, router["result_name"], [c["name"] for c in router.get("categories", [])])
+
+    return {"dependencies": deps, "issues": [], "results": results, "parent_refs": [], "counts": {}, "locals": []}
+
+
+class LiveMailroomError(BaseException):
+    """
+    Raised when a test reaches a live mailroom instead of mocking it. Deliberately subclasses BaseException, not
+    Exception, so that application code wrapping mailroom calls in `except Exception` (e.g. smartmin action
+    handlers) can't swallow it and mask the violation.
+    """
+
+
+def _guarded_mailroom_request(self, endpoint, payload=None, files=None, post=True, encode_json=False):
+    # a patched transport (e.g. patch("requests.post")) means no real network call happens - that's how the
+    # MailroomClient's own request-construction tests work, so let those through to the real _request. this only
+    # detects Mock-based patches; patch("requests.post", new=<plain callable>) would slip past, but that form
+    # isn't used against requests here.
+    transport = requests.post if post else requests.get
+    if isinstance(transport, NonCallableMock):
+        return _real_mailroom_request(self, endpoint, payload=payload, files=files, post=post, encode_json=encode_json)
+
+    # flow/clone and flow/inspect are reached by undecorated import/save tests via the production client; both are
+    # faked from the request payload (see clone_flow_definition / inspect_flow) rather than reaching a live
+    # mailroom. @mock_mailroom tests don't get here - TestClient overrides the high-level client methods.
+    if endpoint == "flow/clone":
+        return clone_flow_definition(payload["flow"], payload["dependency_mapping"])
+    if endpoint == "flow/inspect":
+        return inspect_flow(payload["flow"])
+
+    # any other endpoint reaching here is an un-mocked live mailroom call - fail loudly
+    raise LiveMailroomError(
+        f"test reached live mailroom endpoint /mi/{endpoint}; decorate the test with @mock_mailroom "
+        f"(adding a TestClient fake if needed) or mock the call"
+    )
+
+
+def install_mailroom_guard(test):
+    """
+    Makes any un-mocked call to a live mailroom fail loudly. Patches MailroomClient._request, which covers both
+    the production client and the TestClient used by @mock_mailroom (TestClient fakes most endpoints above this
+    layer, so only un-faked ones reach here).
+    """
+
+    patcher = patch.object(MailroomClient, "_request", _guarded_mailroom_request)
+    patcher.start()
+    test.addCleanup(patcher.stop)
 
 
 def mock_inspect_query(org, query: str, fields=None) -> mailroom.QueryMetadata:
@@ -61,7 +259,9 @@ class Mocks:
         self._contact_parse_query = {}
         self._contact_search = {}
         self._contact_urns = []
+        self._flow_change_language = []
         self._flow_inspect = []
+        self._flow_migrate = []
         self._flow_start_preview = []
         self._llm_translate = []
         self._msg_broadcast_preview = []
@@ -97,6 +297,13 @@ class Mocks:
     def contact_urns(self, urns: dict):
         self._contact_urns.append(urns)
 
+    def flow_change_language(self, definition: dict):
+        """
+        Queues the re-based definition that mailroom should return for the next flow_change_language call.
+        """
+
+        self._flow_change_language.append(definition)
+
     def flow_inspect(self, *, dependencies=(), issues=(), results=(), parent_refs=(), counts=None, locals=None):
         self._flow_inspect.append(
             {
@@ -108,6 +315,14 @@ class Mocks:
                 "locals": locals if locals is not None else [],
             }
         )
+
+    def flow_migrate(self, definition: dict):
+        """
+        Stubs the migrated definition mailroom should return. Only needed for tests that consume the migrated
+        content (e.g. importing the flow); otherwise TestClient.flow_migrate just stamps the given definition.
+        """
+
+        self._flow_migrate.append(definition)
 
     def flow_start_preview(self, query, total):
         def mock(org):
@@ -335,9 +550,13 @@ class TestClient(MailroomClient):
         return results
 
     @_client_method
+    def flow_change_language(self, definition: dict, language):
+        assert self.mocks._flow_change_language, "missing flow_change_language mock"
+        return self.mocks._flow_change_language.pop(0)
+
+    @_client_method
     def flow_clone(self, definition: dict, dependency_mapping):
-        # we replace UUIDs in production to ensure uniqueness but for tests it's nicer to know the UUIDs
-        return definition
+        return clone_flow_definition(definition, dependency_mapping)
 
     @_client_method
     def flow_inspect(self, org, definition: dict, is_import=False):
@@ -354,21 +573,18 @@ class TestClient(MailroomClient):
         }
 
     @_client_method
-    def flow_migrate(self, definition: dict, to_version=None):
-        # fast-path: if the definition is already at the target version, skip the HTTP call.
-        # for older fixtures we fall through to real mailroom since we'd need to actually migrate.
-        if not to_version:
-            to_version = Flow.CURRENT_SPEC_VERSION
-
-        current = definition.get("spec_version")
-        if current and Version(current) >= Version(to_version):
-            return definition
-
-        return super().flow_migrate(definition, to_version=to_version)
-
-    @_client_method
     def flow_interrupt(self, org, flow):
         pass
+
+    @_client_method
+    def flow_migrate(self, definition: dict, to_version=None):
+        # migration is goflow's job and we don't reimplement it. by default just stamp the given definition with
+        # the requested spec version - enough to verify that rapidpro requests/handles migration without caring
+        # how migration itself works. a test that actually consumes the migrated *content* (e.g. importing and
+        # saving the resulting flow) can stub a real current-spec definition via mr_mocks.flow_migrate.
+        migrated = dict(self.mocks._flow_migrate[-1] if self.mocks._flow_migrate else definition)
+        migrated["spec_version"] = to_version or Flow.CURRENT_SPEC_VERSION
+        return migrated
 
     @_client_method
     def flow_start(self, org, user, typ, flow, groups, contacts, urns, query, exclude, params):
@@ -476,6 +692,10 @@ class TestClient(MailroomClient):
             "modified_on": msg.modified_on.isoformat(),
             "id": msg.id,  # deprecated
         }
+
+    @_client_method
+    def notification_publish(self, org, notifications: list[dict]):
+        return {}
 
     @_client_method
     def org_deindex(self, org):
