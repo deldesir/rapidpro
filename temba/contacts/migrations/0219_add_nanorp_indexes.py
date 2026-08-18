@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("contacts", "0216_remove_contact_contacts_contact_org_modified_and_more"),
+        ("contacts", "0218_alter_contactgroup_uuid"),
     ]
 
     operations = [
