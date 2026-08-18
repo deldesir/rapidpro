@@ -1,31 +1,20 @@
 from django.utils.translation import gettext_lazy as _
 
 from temba.ai.models import LLMType
-from .views import ConnectView
 
 
 class CustomAIType(LLMType):
-    slug = "custom_ai"
+    """
+    Type for any OpenAI-compatible endpoint, e.g. a local AI gateway. The endpoint lives in the
+    model's config (read by mailroom's openai service alongside api_key) and is set when the model
+    is registered via the ORM; the generic connect wizard only collects the API key.
+    """
+
     name = "Custom AI"
+    slug = "custom_ai"
+    api_key_help = _("The API token of your OpenAI-compatible endpoint.")
 
-    # Allows configuring any OpenAI-compatible endpoint and api_key
-    settings = {
-        "models": {"custom_ai": 8_192},  # Default model name → max output tokens
-        "exclusions": [],
-    }
-
-    connect_view = ConnectView
-    form_blurb = _(
-        """
-        <div class="mb-4">
-            <p>Connect to any <b>OpenAI-compatible</b> endpoint to use it as an AI provider.</p>
-            <div class="mt-3 p-3 bg-gray-100 border border-gray-300 rounded text-sm">
-                <strong>IIAB AI Gateway:</strong><br/>
-                Set the endpoint to <code>http://localhost:8086/v1</code> and use your LiteLLM master key as the API token.
-                <div class="mt-2 text-gray-500">
-                    Find your key in <code>/etc/iiab/local_vars.yml</code> under <code>litellm_master_key</code>.
-                </div>
-            </div>
-        </div>
-        """
-    )
+    def get_model_choices(self, api_key):
+        # the endpoint isn't known at credential-validation time so there is nothing to probe —
+        # offer the deployment-configured model names
+        return [(m, m) for m in self.settings.get("models", {})]
