@@ -16,6 +16,11 @@ def cron_task(*task_args, **task_kwargs):
     Decorator to create an task suitable for a cron schedule, whose executions are prevented from overlapping by a lock.
     """
 
+    # lock timeout can be provided or defaults to task hard time limit
+    lock_timeout = task_kwargs.pop("lock_timeout", None)
+    if lock_timeout is None:
+        lock_timeout = task_kwargs.get("time_limit", DEFAULT_TASK_LOCK_TIMEOUT)
+
     def _cron_task(task_func):
         @wraps(task_func)
         def wrapper(*exec_args, **exec_kwargs):
@@ -24,24 +29,21 @@ def cron_task(*task_args, **task_kwargs):
             task_name = task_kwargs.get("name", task_func.__name__)
             lock_key = "celery-task-lock:" + task_name
 
-            # lock timeout can be provided or defaults to task hard time limit
-            lock_timeout = task_kwargs.pop("lock_timeout", None)
-            if lock_timeout is None:
-                lock_timeout = task_kwargs.get("time_limit", DEFAULT_TASK_LOCK_TIMEOUT)
-
             start = timezone.now()
             result = None
 
-            if r.get(lock_key):
-                result = {"skipped": True}
-            else:
+            # non-blocking acquire so that a duplicate invocation is skipped rather than waiting to run again
+            lock = r.lock(lock_key, timeout=lock_timeout, blocking=False)
+            if lock.acquire():
                 try:
-                    with r.lock(lock_key, timeout=lock_timeout):
-                        result = task_func(*exec_args, **exec_kwargs)
+                    result = task_func(*exec_args, **exec_kwargs)
                 finally:
                     post_cron_exec.send(
                         sender=cron_task, task_name=task_name, started=start, ended=timezone.now(), result=result
                     )
+                    lock.release()
+            else:
+                result = {"skipped": True}
 
             return result
 

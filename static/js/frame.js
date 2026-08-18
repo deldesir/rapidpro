@@ -392,6 +392,12 @@ function fetchAjax(url, options, fullPage = false) {
     });
 }
 
+// anything with its own scheme (http:, mailto:, tel:) or protocol relative
+// leaves the app, everything else is an in-app path we can load in the spa
+function isExternalUrl(href) {
+  return /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//');
+}
+
 function handleMenuClicked(event) {
   var items = event.detail;
 
@@ -412,9 +418,16 @@ function handleMenuClicked(event) {
     return;
   }
 
-  // posterize if called for
-  if (item.href && item.posterize) {
-    posterize(item.href);
+  // popup parents open their menu, they don't navigate
+  if (item.href && !item.popup) {
+    // posterize if called for
+    if (item.posterize) {
+      posterize(item.href);
+    } else if (item.target == '_blank' || isExternalUrl(item.href)) {
+      window.open(item.href, '_blank', 'noopener');
+    } else {
+      spaGet(item.href);
+    }
   }
 }
 
@@ -522,11 +535,14 @@ function loadFromState(state) {
       // aborts the first fetch — but fetchAjax resolves with undefined
       // rather than rejecting, so this .then still fires for the aborted
       // target and would otherwise leave currentSpaUrl pointing at the
-      // intermediate URL). Compare to location.href, which popstate has
-      // already updated to the latest state.url, so the in-flight target
-      // only matches when it is still the current truth.
+      // intermediate URL). Compare to the current entry's state.url rather
+      // than location.href: an entry's address can now carry list-state
+      // query params (e.g. ?search=...) that diverge from its bare state.url,
+      // so location.href wouldn't match target even on the right entry.
+      // history.state is the entry popstate landed on, so its url only
+      // equals the in-flight target when that target is still the current truth.
       return pending.then(function () {
-        if (location.href === target) {
+        if (history.state && history.state.url === target) {
           currentSpaUrl = target;
         }
       }).catch(function () {});
@@ -651,14 +667,27 @@ document.addEventListener('DOMContentLoaded', function () {
   if (container) {
     container.classList.remove('initial-load');
 
-    // set initial history state so back button works for the first page
+    // set initial history state so back button works for the first page —
+    // merged into whatever state the entry already carries rather than
+    // overwriting it: components stash their own restorable state on the
+    // entry (e.g. a list's page/sort/search, via temba-history-change) and
+    // browsers preserve history.state across reloads, so clobbering it here
+    // would make that stash survive only a single refresh
     window.history.replaceState(
-      { url: document.location.href },
+      Object.assign({}, window.history.state, {
+        url: document.location.href
+      }),
       '',
       document.location.href
     );
 
     container.addEventListener('click', function (event) {
+      // a click something already claimed is not a navigation - the article editor prevents
+      // default to place the caret in a link's text instead of following it
+      if (event.defaultPrevented) {
+        return;
+      }
+
       // get our immediate path
       const path = event.composedPath().slice(0, 10);
 

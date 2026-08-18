@@ -23,7 +23,7 @@ from temba.contacts.models import Contact, ContactField, ContactGroup, ContactNo
 from temba.flows.models import Flow, FlowRun, FlowStart, FlowStartCount
 from temba.globals.models import Global
 from temba.locations.models import AdminBoundary, BoundaryAlias
-from temba.msgs.models import Broadcast, BroadcastMsgCount, Label, LabelCount, Media, Msg, MsgFolder, OptIn
+from temba.msgs.models import Broadcast, BroadcastMsgCount, Label, LabelCount, Media, Msg, MsgFolder
 from temba.orgs.models import OrgMembership
 from temba.orgs.views.mixins import OrgPermsMixin
 from temba.tickets.models import Ticket, Topic
@@ -77,8 +77,6 @@ from .serializers import (
     MsgBulkActionSerializer,
     MsgReadSerializer,
     MsgWriteSerializer,
-    OptInReadSerializer,
-    OptInWriteSerializer,
     ResthookReadSerializer,
     ResthookSubscriberReadSerializer,
     ResthookSubscriberWriteSerializer,
@@ -1214,7 +1212,10 @@ class ContactsEndpoint(ListAPIMixin, WriteAPIMixin, DeleteAPIMixin, BaseEndpoint
         # filter by group name/uuid (optional)
         group_ref = params.get("group")
         if group_ref:
-            group = ContactGroup.get_groups(org).filter(Q(uuid=group_ref) | Q(name=group_ref)).first()
+            group_filter = Q(name=group_ref)
+            if is_uuid(group_ref):
+                group_filter |= Q(uuid=group_ref)
+            group = ContactGroup.get_groups(org).filter(group_filter).first()
             if group:
                 queryset = queryset.filter(groups=group)
             else:
@@ -1240,9 +1241,17 @@ class ContactsEndpoint(ListAPIMixin, WriteAPIMixin, DeleteAPIMixin, BaseEndpoint
 
         if str_to_bool(self.request.query_params.get("expand_urns")):
             contact_info = Contact.bulk_inspect(object_list)
+            priority_order = self.request.query_params.get("urn_order") == "priority"
 
             for contact in object_list:
-                contact.expanded_urns = contact_info[contact]["urns"]
+                expanded_urns = contact_info[contact]["urns"]
+                if priority_order:
+                    urn_order = {(urn.scheme, urn.path): index for index, urn in enumerate(contact.get_urns())}
+                    expanded_urns = sorted(
+                        expanded_urns,
+                        key=lambda urn: urn_order.get((urn["scheme"], urn["path"]), len(urn_order)),
+                    )
+                contact.expanded_urns = expanded_urns
 
     def get_serializer_context(self):
         """
@@ -1303,7 +1312,7 @@ class ContactsEndpoint(ListAPIMixin, WriteAPIMixin, DeleteAPIMixin, BaseEndpoint
                 {"name": "urn", "required": False, "help": "URN of the contact to be updated. ex: tel:+250788123123"},
             ],
             "fields": [
-                {"name": "name", "required": False, "help": "List of UUIDs of this contact's groups."},
+                {"name": "name", "required": False, "help": "Full name of the contact."},
                 {
                     "name": "language",
                     "required": False,
@@ -2253,7 +2262,11 @@ class MessagesEndpoint(ListAPIMixin, WriteAPIMixin, BaseEndpoint):
      * **contact** - the UUID of the contact (string)
      * **text** - the text of the message (string)
      * **attachments** - the attachments of the message (list of strings, maximum 10)
-     * **quick_replies** - the quick_replies of the message (list of objects, maximum 10)
+     * **quick_replies** - the quick_replies of the message (list of objects, maximum 10). Each is an object with a
+       `type` which can be `text` (default), `form`, `url` or `location`, a `text` value (max. 64 characters) and an
+       `extra` value (max. 1000 characters). For type `text`, `extra` is an optional description, for type `form` it's
+       the channel specific ID of the form to be opened (e.g. a WhatsApp flow ID), and for type `url` it's the URL to
+       be opened.
 
     Example:
 
@@ -2262,7 +2275,7 @@ class MessagesEndpoint(ListAPIMixin, WriteAPIMixin, BaseEndpoint):
             "contact": "d33e9ad5-5c35-414c-abd4-e7451c69ff1d",
             "text": "Burger or pizza?",
             "attachments": [],
-            "quick_repies": [{"text": "Burger", "extra": "With cheese"}, {"text": "Pizza"}]
+            "quick_replies": [{"text": "Burger", "extra": "With cheese"}, {"text": "Pizza"}]
 
         }
 
@@ -2482,69 +2495,6 @@ class MessageActionsEndpoint(BulkWriteAPIMixin, BaseEndpoint):
                 {"name": "action", "required": True, "help": "One of the following strings: " + ", ".join(actions)},
                 {"name": "label", "required": False, "help": "The UUID or name of a message label"},
             ],
-        }
-
-
-class OptInsEndpoint(ListAPIMixin, WriteAPIMixin, BaseEndpoint):
-    """
-    This endpoint allows you to list the opt-ins in your workspace and create new ones.
-
-    ## Listing Opt-Ins
-
-    A **GET** returns the opt-ins for your organization, most recent first.
-
-     * **uuid** - the UUID of the opt-in (string).
-     * **name** - the name of the opt-in (string).
-     * **created_on** - when this opt-in was created (datetime).
-
-    Example:
-
-        GET /api/v2/optins.json
-
-    Response:
-
-        {
-            "next": null,
-            "previous": null,
-            "results": [
-            {
-                "uuid": "9a8b001e-a913-486c-80f4-1356e23f582e",
-                "name": "Jokes",
-                "created_on": "2013-02-27T09:06:15.456"
-            },
-            ...
-
-    ## Adding a New Opt-In
-
-    By making a `POST` request with a unique name you can create a new opt-in.
-
-     * **name** - the name of the opt-in to create (string)
-
-    Example:
-
-        POST /api/v2/optins.json
-        {
-            "name": "Weather Updates"
-        }
-    """
-
-    model = OptIn
-    serializer_class = OptInReadSerializer
-    write_serializer_class = OptInWriteSerializer
-    pagination_class = CreatedOnCursorPagination
-
-    @classmethod
-    def get_read_explorer(cls):  # pragma: no cover
-        return {"method": "GET", "title": "List Opt-Ins", "url": reverse("api.v2.optins"), "slug": "optin-list"}
-
-    @classmethod
-    def get_write_explorer(cls):  # pragma: no cover
-        return {
-            "method": "POST",
-            "title": "Add New Opt-Ins",
-            "url": reverse("api.v2.optins"),
-            "slug": "optin-write",
-            "fields": [{"name": "name", "required": True, "help": "The name of the opt-in"}],
         }
 
 
@@ -3196,7 +3146,7 @@ class StatisticsEndpoint(BaseEndpoint):
         by_day = defaultdict(lambda: defaultdict(lambda: {"type": None}))
         for row in counts:
             day = row["day"]
-            ch_uuid = row["channel__uuid"]
+            ch_uuid = str(row["channel__uuid"])
             entry = by_day[day][ch_uuid]
             entry["type"] = Channel.get_type_from_code(row["channel__channel_type"]).slug
             entry[row["scope"]] = row["count_sum"]
@@ -3224,7 +3174,7 @@ class TicketsEndpoint(ListAPIMixin, BaseEndpoint):
     A **GET** returns the tickets for your organization, most recent first.
 
      * **uuid** - the UUID of the ticket, filterable as `uuid`.
-     * **contact** - the UUID and name of the contact (object), filterable as `contact` with UUID.
+     * **contact** - the UUID and name of the contact (object).
      * **status** - the status of the ticket, either `open` or `closed`.
      * **topic** - the topic of the ticket (object).
      * **assignee** - the user assigned to the ticket (object).
@@ -3278,7 +3228,7 @@ class TicketsEndpoint(ListAPIMixin, BaseEndpoint):
             else:
                 queryset = queryset.filter(id=-1)
 
-        uuid = params.get("uuid") or params.get("ticket")
+        uuid = params.get("uuid")
         if uuid:
             queryset = queryset.filter(uuid=uuid)
 
@@ -3301,9 +3251,9 @@ class TicketsEndpoint(ListAPIMixin, BaseEndpoint):
             "slug": "ticket-list",
             "params": [
                 {
-                    "name": "contact",
+                    "name": "uuid",
                     "required": False,
-                    "help": "A contact UUID to filter by, ex: 09d23a05-47fe-11e4-bfe9-b8f6b119e9ab",
+                    "help": "A ticket UUID to filter by, ex: 09d23a05-47fe-11e4-bfe9-b8f6b119e9ab",
                 },
             ],
         }

@@ -1,5 +1,5 @@
 from datetime import date, timedelta
-from unittest.mock import call, patch
+from unittest.mock import call
 
 from django.urls import reverse
 from django.utils import timezone
@@ -44,33 +44,30 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
         msg1 = self.create_incoming_msg(contact1, "message number 1")
         msg2 = self.create_incoming_msg(contact1, "message number 2")
         msg3 = self.create_incoming_msg(contact2, "message number 3")
-        msg4 = self.create_incoming_msg(contact2, "message number 4")
+        self.create_incoming_msg(contact2, "message number 4")
         msg5 = self.create_incoming_msg(contact2, "message number 5", visibility="A")
         self.create_incoming_msg(contact2, "message number 6", status=Msg.STATUS_PENDING)
 
         inbox_url = reverse("msgs.msg_inbox")
 
-        # check query count on the legacy list (the default until the viewer enters preview mode)
         self.login(self.admin)
-        with self.assertNumQueries(11):
+
+        # the temba-msg-list component fetches messages itself so rendering the page shouldn't hit the msgs table
+        # or folder counts
+        with self.assertNumQueries(7):
             self.client.get(inbox_url)
 
-        # the inbox renders the temba-msg-list component when the viewer is in preview mode; the default render is
-        # still the legacy list backed by this view's queryset
         self.assertRequestDisallowed(inbox_url, [None, self.agent])
-        response = self.assertListFetch(inbox_url, [self.editor, self.admin], context_objects=[msg4, msg3, msg2, msg1])
-        self.client.cookies["temba-preview"] = "1"
-        preview_response = self.client.get(inbox_url)
-        self.assertContains(preview_response, "temba-msg-list")
+        response = self.assertListFetch(inbox_url, [self.editor, self.admin])
+        self.assertContains(response, "temba-msg-list")
+        self.assertEqual("/api/internal/messages.json?folder=inbox", response.context["list_url"])
 
         # the label bulk action carries the create affordance for viewers who can create labels
-        preview_actions = {a["key"]: a for a in preview_response.context["new_list_bulk_actions"]}
-        self.assertTrue(preview_actions["label"]["allowCreate"])
-
-        del self.client.cookies["temba-preview"]
+        new_actions = {a["key"]: a for a in response.context["list_bulk_actions"]}
+        self.assertTrue(new_actions["label"]["allowCreate"])
 
         # check that we have the appropriate bulk actions
-        self.assertEqual(("archive", "label"), response.context["actions"])
+        self.assertBulkActions(response, ["label", "archive"])
 
         # error response if search query too long
         self.assertListFetch(inbox_url + "?search=" + "x" * 1001, [self.editor], status=413)
@@ -80,11 +77,16 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
         self.create_label("label2")
         label3 = self.create_label("label3")
 
-        # editors can label messages - the component posts the label by uuid
+        # editors can label messages - the component posts both the messages and the label by uuid
         response = self.requestView(
             inbox_url,
             self.editor,
-            post_data={"action": "label", "objects": [msg1.id, msg2.id], "label": str(label1.uuid), "add": True},
+            post_data={
+                "action": "label",
+                "objects": [str(msg1.uuid), str(msg2.uuid)],
+                "label": str(label1.uuid),
+                "add": True,
+            },
         )
         self.assertEqual(200, response.status_code)
         self.assertEqual({msg1, msg2}, set(label1.msgs.all()))
@@ -93,7 +95,7 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
         self.requestView(
             inbox_url,
             self.editor,
-            post_data={"action": "label", "objects": [msg2.id], "label": str(label1.uuid), "add": False},
+            post_data={"action": "label", "objects": [str(msg2.uuid)], "label": str(label1.uuid), "add": False},
         )
         self.assertEqual({msg1}, set(label1.msgs.all()))
 
@@ -101,21 +103,38 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
         response = self.requestView(
             inbox_url,
             self.editor,
-            post_data={"action": "label", "objects": [msg2.id], "add": False},
+            post_data={"action": "label", "objects": [str(msg2.uuid)], "add": False},
         )
         self.assertEqual({msg1}, set(label1.msgs.all()))
 
-        # labels can also be posted by id, as the other message folders still do
+        # a label posted by id is rejected
         self.requestView(
             inbox_url,
             self.admin,
-            post_data={"action": "label", "objects": [msg1.id, msg2.id, msg3.id], "label": label3.id, "add": True},
+            post_data={
+                "action": "label",
+                "objects": [str(msg1.uuid), str(msg2.uuid), str(msg3.uuid)],
+                "label": label3.id,
+                "add": True,
+            },
+        )
+        self.assertEqual(set(), set(label3.msgs.all()))
+
+        self.requestView(
+            inbox_url,
+            self.admin,
+            post_data={
+                "action": "label",
+                "objects": [str(msg1.uuid), str(msg2.uuid), str(msg3.uuid)],
+                "label": str(label3.uuid),
+                "add": True,
+            },
         )
         self.assertEqual({msg1}, set(label1.msgs.all()))
         self.assertEqual({msg1, msg2, msg3}, set(label3.msgs.all()))
 
         # test archiving a msg
-        self.client.post(inbox_url, {"action": "archive", "objects": msg1.id})
+        self.client.post(inbox_url, {"action": "archive", "objects": str(msg1.uuid)})
         self.assertEqual({msg1, msg5}, set(Msg.objects.filter(visibility=Msg.VISIBILITY_ARCHIVED)))
 
         # archiving doesn't remove labels
@@ -128,8 +147,8 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
     def test_flows(self):
         flow = self.create_flow("Test")
         contact1 = self.create_contact("Joe Blow", phone="+250788000001")
-        msg1 = self.create_incoming_msg(contact1, "test 1", status="H", flow=flow)
-        msg2 = self.create_incoming_msg(contact1, "test 2", status="H", flow=flow)
+        self.create_incoming_msg(contact1, "test 1", status="H", flow=flow)
+        self.create_incoming_msg(contact1, "test 2", status="H", flow=flow)
         self.create_incoming_msg(contact1, "test 3", status="H", flow=None)
         self.create_incoming_msg(contact1, "test 4", status="P", flow=None)
 
@@ -137,13 +156,13 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
 
         # check query count
         self.login(self.admin)
-        with self.assertNumQueries(11):
+        with self.assertNumQueries(7):
             self.client.get(flows_url)
 
         self.assertRequestDisallowed(flows_url, [None, self.agent])
-        response = self.assertListFetch(flows_url, [self.editor, self.admin], context_objects=[msg2, msg1])
+        response = self.assertListFetch(flows_url, [self.editor, self.admin])
 
-        self.assertEqual(("archive", "label"), response.context["actions"])
+        self.assertBulkActions(response, ["label", "archive"])
 
     @mock_mailroom
     def test_archived(self, mr_mocks):
@@ -159,30 +178,24 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
 
         # check query count
         self.login(self.admin)
-        with self.assertNumQueries(11):
+        with self.assertNumQueries(7):
             self.client.get(archived_url)
 
         self.assertRequestDisallowed(archived_url, [None, self.agent])
-        response = self.assertListFetch(
-            archived_url + "?refresh=10000", [self.editor, self.admin], context_objects=[msg3, msg2, msg1]
-        )
-        self.assertEqual(("restore", "label", "delete"), response.context["actions"])
-
-        # test searching by message text
-        response = self.client.get(archived_url + "?search=number+1")
-        self.assertEqual([msg1], list(response.context_data["object_list"]))
-
-        # test searching by contact name
-        response = self.client.get(archived_url + "?search=joe")
-        self.assertEqual([msg2, msg1], list(response.context_data["object_list"]))
+        response = self.assertListFetch(archived_url + "?refresh=10000", [self.editor, self.admin])
+        self.assertBulkActions(response, ["restore", "label", "delete"])
 
         # editors can restore messages
-        response = self.requestView(archived_url, self.editor, post_data={"action": "restore", "objects": [msg1.id]})
+        response = self.requestView(
+            archived_url, self.editor, post_data={"action": "restore", "objects": [str(msg1.uuid)]}
+        )
         self.assertEqual(200, response.status_code)
         self.assertEqual({msg2, msg3}, set(Msg.objects.filter(visibility=Msg.VISIBILITY_ARCHIVED)))
 
         # can also delete messages
-        response = self.requestView(archived_url, self.admin, post_data={"action": "delete", "objects": [msg2.id]})
+        response = self.requestView(
+            archived_url, self.admin, post_data={"action": "delete", "objects": [str(msg2.uuid)]}
+        )
         self.assertEqual(200, response.status_code)
         self.assertEqual([call(self.org, self.admin, [msg2])], mr_mocks.calls["msg_delete"])
 
@@ -199,19 +212,18 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
             status=Broadcast.STATUS_COMPLETED,
             msg_status=Msg.STATUS_INITIALIZING,
         )
-        msg1 = broadcast1.msgs.get()
+        broadcast1.msgs.get()
 
         outbox_url = reverse("msgs.msg_outbox")
 
         # check query count
         self.login(self.admin)
-        with self.assertNumQueries(11):
+        with self.assertNumQueries(7):
             self.client.get(outbox_url)
 
-        # messages sorted by created_on
         self.assertRequestDisallowed(outbox_url, [None, self.agent])
-        response = self.assertListFetch(outbox_url, [self.editor, self.admin], context_objects=[msg1])
-        self.assertEqual((), response.context["actions"])
+        response = self.assertListFetch(outbox_url, [self.editor, self.admin])
+        self.assertBulkActions(response, [])
 
         # create another broadcast this time with 3 messages
         contact4 = self.create_contact("Kevin", phone="+250788000003")
@@ -223,45 +235,31 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
             groups=[group],
             msg_status=Msg.STATUS_QUEUED,
         )
-        msg4, msg3, msg2 = broadcast2.msgs.order_by("-id")
+        broadcast2.msgs.order_by("-id")
 
-        response = self.assertListFetch(outbox_url, [self.admin], context_objects=[msg4, msg3, msg2, msg1])
-
-        # no outbox warning when under threshold
-        response = self.client.get(outbox_url)
-        self.assertFalse(response.context["outbox_warning"])
-        self.assertNotContains(response, "Your channels are taking a while")
-
-        # outbox warning shown when over threshold
-        with patch("temba.msgs.models.MsgFolder.OUTBOX.get_count", return_value=10_001):
-            response = self.client.get(outbox_url)
-            self.assertTrue(response.context["outbox_warning"])
-            self.assertContains(response, "Your channels are taking a while")
+        self.assertListFetch(outbox_url, [self.admin])
 
     def test_sent(self):
         contact1 = self.create_contact("Joe Blow", phone="+250788000001")
         contact2 = self.create_contact("Frank Blow", phone="+250788000002")
-        msg1 = self.create_outgoing_msg(contact1, "Hi 1", status="W", sent_on=timezone.now() - timedelta(hours=1))
-        msg2 = self.create_outgoing_msg(contact1, "Hi 2", status="S", sent_on=timezone.now() - timedelta(hours=3))
-        msg3 = self.create_outgoing_msg(contact2, "Hi 3", status="D", sent_on=timezone.now() - timedelta(hours=2))
+        self.create_outgoing_msg(contact1, "Hi 1", status="W", sent_on=timezone.now() - timedelta(hours=1))
+        self.create_outgoing_msg(contact1, "Hi 2", status="S", sent_on=timezone.now() - timedelta(hours=3))
+        self.create_outgoing_msg(contact2, "Hi 3", status="D", sent_on=timezone.now() - timedelta(hours=2))
 
         sent_url = reverse("msgs.msg_sent")
 
         # check query count
         self.login(self.admin)
-        with self.assertNumQueries(9):
+        with self.assertNumQueries(7):
             self.client.get(sent_url)
 
-        # messages sorted by sent_on
         self.assertRequestDisallowed(sent_url, [None, self.agent])
-        response = self.assertListFetch(sent_url, [self.editor, self.admin], context_objects=[msg1, msg3, msg2])
-
-        self.assertContains(response, reverse("channels.channel_logs_read", args=[msg1.channel.uuid, "msg", msg1.uuid]))
+        self.assertListFetch(sent_url, [self.editor, self.admin])
 
     @mock_mailroom
     def test_failed(self, mr_mocks):
         contact1 = self.create_contact("Joe Blow", phone="+250788000001")
-        msg1 = self.create_outgoing_msg(contact1, "message number 1", status="F")
+        self.create_outgoing_msg(contact1, "message number 1", status="F")
 
         failed_url = reverse("msgs.msg_failed")
 
@@ -271,21 +269,20 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
         msg2 = broadcast.get_messages()[0]
 
         # message without a broadcast
-        msg3 = self.create_outgoing_msg(contact1, "messsage number 3", status="F")
+        self.create_outgoing_msg(contact1, "messsage number 3", status="F")
 
         # check query count
         self.login(self.admin)
-        with self.assertNumQueries(9):
+        with self.assertNumQueries(7):
             self.client.get(failed_url)
 
         self.assertRequestDisallowed(failed_url, [None, self.agent])
-        response = self.assertListFetch(failed_url, [self.editor, self.admin], context_objects=[msg3, msg2, msg1])
+        response = self.assertListFetch(failed_url, [self.editor, self.admin])
 
-        self.assertEqual(("resend",), response.context["actions"])
-        self.assertContains(response, reverse("channels.channel_logs_read", args=[msg1.channel.uuid, "msg", msg1.uuid]))
+        self.assertBulkActions(response, ["resend"])
 
         # resend some messages
-        self.client.post(failed_url, {"action": "resend", "objects": [msg2.id]})
+        self.client.post(failed_url, {"action": "resend", "objects": [str(msg2.uuid)]})
 
         self.assertEqual([call(self.org, self.admin, [msg2])], mr_mocks.calls["msg_resend"])
 
@@ -293,7 +290,7 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
         self.org.suspend()
 
         response = self.client.get(failed_url)
-        self.assertNotIn("resend", response.context["actions"])
+        self.assertNotIn("resend", [a["key"] for a in response.context["list_bulk_actions"]])
 
     def test_filter(self):
         flow = self.create_flow("Flow")
@@ -329,33 +326,16 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
         response = self.requestView(label3_url, self.editor, HTTP_X_TEMBA_SPA=1)
         self.assertEqual(f"/msg/labels/{label3.uuid}", response.headers[TEMBA_MENU_SELECTION])
         self.assertEqual(200, response.status_code)
-        self.assertEqual(("archive", "label"), response.context["actions"])
-
-        # check that non-visible messages are excluded, and messages and ordered newest to oldest
-        self.assertEqual([msg6, msg3, msg2, msg1], list(response.context["object_list"]))
-
-        # search on label by message text
-        response = self.client.get(f"{label3_url}?search=test1")
-        self.assertEqual([msg1], list(response.context_data["object_list"]))
-
-        # search on label by contact name
-        response = self.client.get(f"{label3_url}?search=joe")
-        self.assertEqual({msg1, msg6}, set(response.context_data["object_list"]))
+        self.assertBulkActions(response, ["label", "archive"])
 
         self.assertContentMenu(label3_url, self.editor, ["Edit", "Delete", "-", "Export", "Usages"])
         self.assertContentMenu(label1_url, self.admin, ["Edit", "Delete", "-", "Export", "Usages"])
 
-        # in preview mode the filter view renders the new list and exposes a label-scoped endpoint and label-name subtitle
-        self.client.cookies["temba-preview"] = "1"
-        try:
-            preview_response = self.client.get(label1_url)
-            self.assertContains(preview_response, "temba-msg-list")
-            self.assertEqual(
-                f"/api/internal/messages.json?label={label1.uuid}", preview_response.context["new_list_endpoint"]
-            )
-            self.assertIn("label1", preview_response.context["new_list_subtitle"])
-        finally:
-            del self.client.cookies["temba-preview"]
+        # the filter view exposes a label-scoped endpoint and a label-name subtitle
+        new_response = self.client.get(label1_url)
+        self.assertContains(new_response, "temba-msg-list")
+        self.assertEqual(f"/api/internal/messages.json?label={label1.uuid}", new_response.context["list_url"])
+        self.assertIn("label1", new_response.context["list_subtitle"])
 
     def test_export(self):
         export_url = reverse("msgs.msg_export")

@@ -10,6 +10,7 @@ from temba.channels.models import Channel
 from temba.contacts.models import Contact, ContactGroup
 from temba.flows.models import Flow
 from temba.orgs.models import Org
+from temba.utils.models import TembaUUIDMixin
 
 
 class TriggerType:
@@ -72,7 +73,7 @@ class ChannelTriggerType(TriggerType):
     export_fields = TriggerType.export_fields + ("channel",)
 
 
-class Trigger(SmartModel):
+class Trigger(TembaUUIDMixin, SmartModel):
     """
     A Trigger is used to start a user in a flow based on an event. For example, triggers might fire for missed calls,
     inbound messages starting with a keyword, or on a repeating schedule.
@@ -86,8 +87,6 @@ class Trigger(SmartModel):
     TYPE_REFERRAL = "R"
     TYPE_CLOSED_TICKET = "T"
     TYPE_CATCH_ALL = "C"
-    TYPE_OPT_IN = "I"
-    TYPE_OPT_OUT = "O"
 
     KEYWORD_MAX_LEN = 16
 
@@ -380,6 +379,49 @@ class Trigger(SmartModel):
         """
 
         return self.type.export_def(self)
+
+    def as_json(self, context=None) -> dict:
+        """
+        Internal API shape, consumed by the temba-trigger-list component. The type slug drives the row icon and
+        which of the per-type fields (keywords, schedule, referrer) the details cell renders; channel/groups/contacts
+        render as filter pills. The numeric id is included alongside the uuid for the page's update modal, whose URL
+        is still pk based.
+        """
+
+        return {
+            "uuid": str(self.uuid),
+            "id": self.id,
+            "type": self.type.slug,
+            "flow": {"uuid": str(self.flow.uuid), "name": self.flow.name},
+            "channel": (
+                {"uuid": str(self.channel.uuid), "name": self.channel.name, "icon": self.channel.type.icon}
+                if self.channel
+                else None
+            ),
+            "groups": [{"uuid": str(g.uuid), "name": g.name} for g in self.groups.all()],
+            "exclude_groups": [{"uuid": str(g.uuid), "name": g.name} for g in self.exclude_groups.all()],
+            "contacts": [{"uuid": str(c.uuid), "name": c.name} for c in self.contacts.all()],
+            "keywords": self.keywords or [],
+            "match_type": self.match_type,
+            "referrer_id": self.referrer_id,
+            "schedule": (
+                {
+                    "repeat_period": self.schedule.repeat_period,
+                    "display": self.schedule.get_display(),
+                    # a paused schedule (archiving pauses it, and it can be paused independently) can carry a
+                    # stale next_fire — null it so the trigger reads as not scheduled
+                    "next_fire": (
+                        self.schedule.next_fire.isoformat()
+                        if self.schedule.next_fire and not self.schedule.is_paused and not self.is_archived
+                        else None
+                    ),
+                }
+                if self.schedule
+                else None
+            ),
+            "priority": self.priority,
+            "created_on": self.created_on.isoformat(),
+        }
 
     @classmethod
     def get_type(cls, *, code: str = None, slug: str = None):

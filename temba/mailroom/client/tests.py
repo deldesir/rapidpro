@@ -668,7 +668,6 @@ class MailroomClientTest(TembaTest):
         ann = self.create_contact("Ann", urns=["tel:+12340000001"])
         bob = self.create_contact("Bob", urns=["tel:+12340000002"])
         group = self.create_group("Doctors", contacts=[])
-        optin = self.create_optin("Cat Facts")
         bcast = self.create_broadcast(self.admin, {"eng": {"text": "Hello"}}, groups=[group])
         template = self.create_template("reminder", [])
 
@@ -684,7 +683,6 @@ class MailroomClientTest(TembaTest):
             "age > 20",
             "",
             Exclusions(in_a_flow=True),
-            optin,
             template,
             ["@contact"],
             ScheduleSpec(start="2024-06-20T16:23:30Z", repeat_period=Schedule.REPEAT_DAILY),
@@ -711,7 +709,6 @@ class MailroomClientTest(TembaTest):
                     "not_seen_since_days": 0,
                     "started_previously": False,
                 },
-                "optin_id": optin.id,
                 "template_id": template.id,
                 "template_variables": ["@contact"],
                 "schedule": {"start": "2024-06-20T16:23:30Z", "repeat_period": "D", "repeat_days_of_week": None},
@@ -945,6 +942,23 @@ class MailroomClientTest(TembaTest):
         )
 
     @patch("requests.post")
+    def test_org_publish(self, mock_post):
+        mock_post.return_value = MockJsonResponse(200, {})
+        event = {
+            "type": "asset_changed",
+            "asset": {"type": "flow", "uuid": "flow-1", "name": "Registration"},
+        }
+
+        response = self.client.org_publish(self.org, event)
+
+        self.assertEqual({}, response)
+        mock_post.assert_called_once_with(
+            "http://localhost:8090/mi/org/publish",
+            headers={"User-Agent": "Temba", "Authorization": "Token sesame"},
+            json={"org_id": self.org.id, "event": event},
+        )
+
+    @patch("requests.post")
     def test_org_deindex(self, mock_post):
         mock_post.return_value = MockJsonResponse(200, {})
         response = self.client.org_deindex(self.org)
@@ -955,39 +969,6 @@ class MailroomClientTest(TembaTest):
             "http://localhost:8090/mi/org/deindex",
             headers={"User-Agent": "Temba", "Authorization": "Token sesame"},
             json={"org_id": self.org.id},
-        )
-
-    def test_po_export(self):
-        flow1 = self.create_flow("Flow 1")
-        flow2 = self.create_flow("Flow 2")
-
-        with patch("requests.post") as mock_post:
-            mock_post.return_value = MockResponse(200, 'msgid "Red"\nmsgstr "Rojo"\n\n')
-            response = self.client.po_export(self.org, [flow1, flow2], "spa")
-
-        self.assertEqual(b'msgid "Red"\nmsgstr "Rojo"\n\n', response)
-
-        mock_post.assert_called_once_with(
-            "http://localhost:8090/mi/po/export",
-            headers={"User-Agent": "Temba", "Authorization": "Token sesame"},
-            json={"org_id": self.org.id, "flow_ids": [flow1.id, flow2.id], "language": "spa"},
-        )
-
-    def test_po_import(self):
-        flow1 = self.create_flow("Flow 1")
-        flow2 = self.create_flow("Flow 2")
-
-        with patch("requests.post") as mock_post:
-            mock_post.return_value = MockJsonResponse(200, {"flows": []})
-            response = self.client.po_import(self.org, [flow1, flow2], "spa", b'msgid "Red"\nmsgstr "Rojo"\n\n')
-
-        self.assertEqual({"flows": []}, response)
-
-        mock_post.assert_called_once_with(
-            "http://localhost:8090/mi/po/import",
-            headers={"User-Agent": "Temba", "Authorization": "Token sesame"},
-            data={"org_id": self.org.id, "flow_ids": [flow1.id, flow2.id], "language": "spa"},
-            files={"po": b'msgid "Red"\nmsgstr "Rojo"\n\n'},
         )
 
     @patch("requests.post")
@@ -1240,6 +1221,10 @@ class QueryExceptionTest(TembaTest):
             (
                 QueryValidationException("cannot query on redacted URNs", "redacted_urns", {}),
                 "Can't query on URNs in an anonymous workspace.",
+            ),
+            (
+                QueryValidationException("query is too complex", "too_complex", {}),
+                "This query is too complex. Please simplify it and try again.",
             ),
             (QueryValidationException("no code here", "", {}), "no code here"),
         )

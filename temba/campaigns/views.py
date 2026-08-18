@@ -1,7 +1,9 @@
 from smartmin.views import SmartCreateView, SmartCRUDL
 
 from django import forms
+from django.contrib.humanize.templatetags.humanize import intcomma
 from django.db.models.functions import Lower
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils.functional import cached_property
@@ -14,13 +16,13 @@ from temba.flows.models import Flow
 from temba.msgs.models import Msg
 from temba.orgs.views.base import (
     BaseDeleteModal,
-    BaseListView,
+    BaseListComponentView,
     BaseMenuView,
     BaseReadView,
     BaseUpdateModal,
     BaseUpdateView,
 )
-from temba.orgs.views.mixins import BulkActionMixin, OrgPermsMixin
+from temba.orgs.views.mixins import OrgPermsMixin
 from temba.templates.models import Template, TemplateTranslation
 from temba.utils import json, languages
 from temba.utils.compose import compose_deserialize, compose_serialize
@@ -53,7 +55,7 @@ class CampaignForm(forms.ModelForm):
 
 class CampaignCRUDL(SmartCRUDL):
     model = Campaign
-    actions = ("create", "read", "update", "list", "delete", "archived", "archive", "activate", "menu")
+    actions = ("create", "read", "update", "list", "delete", "archived", "archive", "activate", "menu", "events")
 
     class Menu(BaseMenuView):
         def derive_menu(self):
@@ -109,6 +111,9 @@ class CampaignCRUDL(SmartCRUDL):
     class Read(SpaMixin, ContextMenuMixin, BaseReadView):
         menu_path = "/campaign/active"
 
+        # the temba-campaign-events component fetches the event schedule itself from the campaign events endpoint
+        template_name = "campaigns/campaign_read.html"
+
         def derive_title(self):
             return self.object.name
 
@@ -152,10 +157,26 @@ class CampaignCRUDL(SmartCRUDL):
                 if self.has_org_perm("campaigns.campaign_archive"):
                     menu.add_url_post(_("Archive"), reverse("campaigns.campaign_archive", args=[obj.uuid]))
 
-        def get_context_data(self, **kwargs):
-            context = super().get_context_data(**kwargs)
-            context["events"] = self.object.get_sorted_events()
-            return context
+    class Events(BaseReadView):
+        """
+        The event schedule of a campaign as JSON, consumed by the temba-campaign-events component on the read page.
+        """
+
+        permission = "campaigns.campaign_read"
+
+        def render_to_response(self, context, **response_kwargs):
+            return JsonResponse(
+                {
+                    # the campaign gives the event detail modal its context on any page
+                    "campaign": {"uuid": str(self.object.uuid), "name": self.object.name},
+                    "events": [e.as_json() for e in self.object.get_sorted_events()],
+                    # there is no per-event edit flag: the component combines this campaign-level can_edit with
+                    # each event's status (scheduling-state events stay locked until mailroom finishes).
+                    # deletion stays available on archived campaigns, matching the event read page.
+                    "can_edit": self.has_org_perm("campaigns.campaignevent_update") and not self.object.is_archived,
+                    "can_delete": self.has_org_perm("campaigns.campaignevent_delete"),
+                }
+            )
 
     class Create(ModalFormMixin, OrgPermsMixin, SmartCreateView):
         fields = ("name", "group")
@@ -172,11 +193,16 @@ class CampaignCRUDL(SmartCRUDL):
             kwargs["org"] = self.request.org
             return kwargs
 
-    class BaseList(SpaMixin, ContextMenuMixin, BulkActionMixin, BaseListView):
+    class BaseList(BaseListComponentView):
         permission = "campaigns.campaign_list"
-        fields = ("name", "group")
         default_template = "campaigns/campaign_list.html"
         default_order = ("-modified_on",)
+        list_endpoint = "api.internal.campaigns"
+
+        BULK_ACTION_CONFIG = {
+            "archive": {"label": _("Archive"), "icon": "archive"},
+            "restore": {"label": _("Restore"), "icon": "restore"},
+        }
 
     class List(BaseList):
         title = _("Active")
@@ -201,6 +227,10 @@ class CampaignCRUDL(SmartCRUDL):
         title = _("Archived")
         bulk_actions = ("restore",)
         menu_path = "/campaign/archived"
+        subtitle = _("These campaigns have been archived and their events are no longer fired.")
+
+        def derive_list_query(self) -> str:
+            return "folder=archived"
 
         def get_queryset(self, *args, **kwargs):
             return super().get_queryset(*args, **kwargs).filter(is_archived=True)
@@ -351,9 +381,21 @@ class CampaignEventForm(forms.ModelForm):
                     text = values.get("text", "")
                     attachments = values.get("attachments", [])
                     if text and len(text) > Msg.MAX_TEXT_LEN:
-                        self.add_error("compose", _(f"Maximum allowed text is {Msg.MAX_TEXT_LEN} characters."))
+                        self.add_error(
+                            "compose",
+                            forms.ValidationError(
+                                _("Maximum allowed text is %(limit)s characters."),
+                                params={"limit": intcomma(Msg.MAX_TEXT_LEN)},
+                            ),
+                        )
                     if attachments and len(attachments) > Msg.MAX_ATTACHMENTS:
-                        self.add_error("compose", _(f"Maximum allowed attachments is {Msg.MAX_ATTACHMENTS} files."))
+                        self.add_error(
+                            "compose",
+                            forms.ValidationError(
+                                _("Maximum allowed attachments is %(limit)d files."),
+                                params={"limit": Msg.MAX_ATTACHMENTS},
+                            ),
+                        )
 
             primary_values = compose.get(primary_language) or compose.get(base_language, {})
             template = primary_values.get("template", None)
@@ -518,7 +560,7 @@ class CampaignEventForm(forms.ModelForm):
 
 class CampaignEventCRUDL(SmartCRUDL):
     model = CampaignEvent
-    actions = ("create", "delete", "read", "update")
+    actions = ("create", "delete", "read", "update", "fires")
 
     BACKGROUND_WARNING = _(
         "This is a background flow. When it triggers, it will run it for all contacts without interruption."
@@ -591,6 +633,33 @@ class CampaignEventCRUDL(SmartCRUDL):
                     reverse("campaigns.campaignevent_delete", args=[obj.uuid]),
                     title=_("Delete Event"),
                 )
+
+    class Fires(BaseReadView):
+        """
+        The most recent contacts an event fired for, consumed by the recent-contacts popup on the campaign read
+        page.
+        """
+
+        permission = "campaigns.campaignevent_read"
+        model_org_lookup = "campaign__org"
+
+        def get_object_org(self):
+            return self.get_object().campaign.org
+
+        def render_to_response(self, context, **response_kwargs):
+            org = self.object.campaign.org
+            fires = [
+                {
+                    "contact": {
+                        "uuid": str(f["contact"].uuid),
+                        "name": f["contact"].get_display(org),
+                        "url": reverse("contacts.contact_read", args=[f["contact"].uuid]),
+                    },
+                    "time": f["time"].isoformat(),
+                }
+                for f in self.object.get_recent_fires()
+            ]
+            return JsonResponse({"fires": fires})
 
     class Delete(BaseDeleteModal):
         model_org_lookup = "campaign__org"
@@ -679,7 +748,8 @@ class CampaignEventCRUDL(SmartCRUDL):
             return obj
 
         def get_success_url(self):
-            return reverse("campaigns.campaignevent_read", args=[self.object.campaign.uuid, self.object.uuid])
+            # the campaign read page has no event read page - the edit modal returns to the campaign
+            return reverse("campaigns.campaign_read", args=[self.object.campaign.uuid])
 
     class Create(ModalFormMixin, OrgPermsMixin, SmartCreateView):
         fields = (

@@ -20,7 +20,6 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from django.test import override_settings
-from django.urls import reverse
 from django.utils import timezone
 
 from temba.archives.models import Archive, jsonlgz_encode
@@ -30,7 +29,7 @@ from temba.flows.models import Flow, FlowRun, FlowSession, FlowStart
 from temba.ivr.models import Call
 from temba.locations.models import AdminBoundary, BoundaryAlias
 from temba.mailroom.events import Event
-from temba.msgs.models import Broadcast, Label, Msg, OptIn
+from temba.msgs.models import Broadcast, Label, Msg
 from temba.orgs.models import Org, OrgRole
 from temba.templates.models import Template
 from temba.tickets.models import Ticket
@@ -58,54 +57,52 @@ class TembaTest(SmartminTest):
     databases = ("default", "readonly")
     default_password = "Qwerty123"
 
-    def setUp(self):
-        super().setUp()
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
 
-        # fail loudly if a test reaches a live mailroom instead of mocking it
-        install_mailroom_guard(self)
-
-        self.superuser = User.objects.create_user("super@user.com", self.default_password, is_superuser=True)
+        cls.superuser = User.objects.create_user("super@user.com", cls.default_password, is_superuser=True)
 
         # create different user types
-        self.non_org_user = self.create_user("nonorg@textit.com")
-        self.admin = self.create_user("admin@textit.com", first_name="Andy")
-        self.editor = self.create_user("editor@textit.com", first_name="Ed", last_name="McEdits")
-        self.agent = self.create_user("agent@textit.com", first_name="Agnes")
-        self.customer_support = self.create_user("support@textit.com", is_staff=True)
+        cls.non_org_user = cls.create_user("nonorg@textit.com")
+        cls.admin = cls.create_user("admin@textit.com", first_name="Andy")
+        cls.editor = cls.create_user("editor@textit.com", first_name="Ed", last_name="McEdits")
+        cls.agent = cls.create_user("agent@textit.com", first_name="Agnes")
+        cls.customer_support = cls.create_user("support@textit.com", is_staff=True)
 
         # mark all of their emails as verified
         for user in User.objects.all():
             EmailAddress.objects.create(user=user, email=user.email, verified=True, primary=True)
 
-        self.org = Org.objects.create(
+        cls.org = Org.objects.create(
             name="Nyaruka",
             timezone=ZoneInfo("Africa/Kigali"),
             flow_languages=["eng", "kin"],
-            created_by=self.admin,
-            modified_by=self.admin,
+            created_by=cls.admin,
+            modified_by=cls.admin,
         )
-        self.org.initialize()
-        self.org.add_user(self.admin, OrgRole.ADMINISTRATOR)
-        self.org.add_user(self.editor, OrgRole.EDITOR)
-        self.org.add_user(self.agent, OrgRole.AGENT)
+        cls.org.initialize()
+        cls.org.add_user(cls.admin, OrgRole.ADMINISTRATOR)
+        cls.org.add_user(cls.editor, OrgRole.EDITOR)
+        cls.org.add_user(cls.agent, OrgRole.AGENT)
 
         # setup a second org with a single admin
-        self.admin2 = self.create_user("administrator@trileet.com")
-        EmailAddress.objects.create(user=self.admin2, email=self.admin2.email, verified=True, primary=True)
-        self.org2 = Org.objects.create(
+        cls.admin2 = cls.create_user("administrator@trileet.com")
+        EmailAddress.objects.create(user=cls.admin2, email=cls.admin2.email, verified=True, primary=True)
+        cls.org2 = Org.objects.create(
             name="Trileet Inc.",
             timezone=ZoneInfo("US/Pacific"),
             flow_languages=["eng"],
-            created_by=self.admin2,
-            modified_by=self.admin2,
+            created_by=cls.admin2,
+            modified_by=cls.admin2,
         )
-        self.org2.initialize()
-        self.org2.add_user(self.admin2, OrgRole.ADMINISTRATOR)
+        cls.org2.initialize()
+        cls.org2.add_user(cls.admin2, OrgRole.ADMINISTRATOR)
 
         # a single Android channel
-        self.channel = Channel.create(
-            self.org,
-            self.admin,
+        cls.channel = Channel.create(
+            cls.org,
+            cls.admin,
             "RW",
             "A",
             name="Test Channel",
@@ -115,6 +112,12 @@ class TembaTest(SmartminTest):
             config={Channel.CONFIG_FCM_ID: "123"},
             normalize_urns=False,
         )
+
+    def setUp(self):
+        super().setUp()
+
+        # fail loudly if a test reaches a live mailroom instead of mocking it
+        install_mailroom_guard(self)
 
         # OrgRole.group and OrgRole.permissions are cached properties so get those cached before test starts to avoid
         # query count differences when a test is first to request it and when it's not.
@@ -196,8 +199,9 @@ class TembaTest(SmartminTest):
         flow.org = self.org
         return flow
 
-    def create_user(self, email, group_names=(), **kwargs):
-        user = User.objects.create_user(email=email, password=self.default_password, **kwargs)
+    @classmethod
+    def create_user(cls, email, group_names=(), **kwargs):
+        user = User.objects.create_user(email=email, password=cls.default_password, **kwargs)
         user.save()
 
         for group in group_names:
@@ -374,7 +378,6 @@ class TembaTest(SmartminTest):
         high_priority=False,
         flow=None,
         broadcast=None,
-        optin=None,
         locale=None,
         next_attempt=None,
         failed_reason=None,
@@ -414,7 +417,6 @@ class TembaTest(SmartminTest):
             modified_on=timezone.now(),
             sent_on=sent_on,
             broadcast=broadcast,
-            optin=optin,
             flow=flow,
             next_attempt=next_attempt,
             failed_reason=failed_reason,
@@ -428,7 +430,6 @@ class TembaTest(SmartminTest):
         groups=(),
         contacts=(),
         urns=(),
-        optin=None,
         exclude=None,
         status=Broadcast.STATUS_COMPLETED,
         msg_status=Msg.STATUS_SENT,
@@ -448,7 +449,6 @@ class TembaTest(SmartminTest):
             query=None,
             node_uuid=None,
             exclude=exclude,
-            optin=optin,
             template=None,
             template_variables=None,
             schedule=schedule,
@@ -487,7 +487,6 @@ class TembaTest(SmartminTest):
                     msg_type=Msg.TYPE_TEXT,
                     attachments=(),
                     quick_replies=(),
-                    optin=optin,
                     status=msg_status,
                     created_on=timezone.now(),
                     created_by=user,
@@ -718,7 +717,7 @@ class TembaTest(SmartminTest):
 
         return ChannelLog._from_item(channel, item)
 
-    def create_channel_event(self, channel, urn, event_type, occurred_on=None, optin=None, extra=None):
+    def create_channel_event(self, channel, urn, event_type, occurred_on=None, extra=None):
         urn_obj = contact_urn_lookup(channel.org, urn)
         if urn_obj:
             contact = urn_obj.contact
@@ -733,7 +732,6 @@ class TembaTest(SmartminTest):
             contact_urn=urn_obj,
             occurred_on=occurred_on or timezone.now(),
             event_type=event_type,
-            optin=optin,
             extra=extra,
         )
 
@@ -781,9 +779,6 @@ class TembaTest(SmartminTest):
             closed_on=closed_on,
         )
 
-    def create_optin(self, name: str, org=None):
-        return OptIn.create(org or self.org, self.admin, name)
-
     def set_contact_field(self, contact, key, value):
         update_field_locally(self.admin, contact, key, value)
 
@@ -802,9 +797,6 @@ class TembaTest(SmartminTest):
                 "Data": data,
             }
         )
-
-    def assertLoginRedirectLegacy(self, response, msg=None):
-        self.assertRedirect(response, reverse("orgs.login"), msg=msg)
 
     def assertToast(self, response, level, text):
         toasts = json.loads(response.get("X-Temba-Toasts", []))
@@ -884,9 +876,6 @@ class TembaTest(SmartminTest):
     def upload(self, path: str, content_type="text/plain", name=None):
         with open(path, "rb") as f:
             return SimpleUploadedFile(name or path, content=f.read(), content_type=content_type)
-
-    def make_beta(self, user):
-        user.groups.add(Group.objects.get(name="Beta"))
 
     def anonymous(self, org: Org):
         """
@@ -1040,7 +1029,7 @@ def cleanup(*, valkey=False, dynamodb=False, s3=False):
                 dynamo_truncate(dynamo.MAIN)
             if s3:
                 s3client = s3_utils.client()
-                for bucket_name in ["test-default", "test-archives"]:
+                for bucket_name in (f"{settings.BUCKET_PREFIX}-default", f"{settings.BUCKET_PREFIX}-archives"):
                     objects = s3client.list_objects_v2(Bucket=bucket_name)
                     for obj in objects.get("Contents", []):
                         s3client.delete_object(Bucket=bucket_name, Key=obj["Key"])

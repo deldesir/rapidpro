@@ -1,4 +1,3 @@
-import io
 from datetime import date, datetime, timedelta, timezone as tzone
 from decimal import Decimal
 from unittest.mock import call, patch
@@ -212,15 +211,7 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertContentMenu(list_url, self.editor, ["New Flow", "New Label", "Import", "Export"])
         self.assertContentMenu(list_url, self.admin, ["New Flow", "New Label", "Import", "Export"])
 
-        # list, should have only one flow (the one created in setUp)
-        response = self.client.get(list_url)
-        self.assertEqual(1, len(response.context["object_list"]))
-
-        # inactive list shouldn't have any flows
-        response = self.client.get(reverse("flows.flow_archived"))
-        self.assertEqual(0, len(response.context["object_list"]))
-
-        # also shouldn't be able to view other flow
+        # shouldn't be able to view another org's flow
         response = self.client.get(reverse("flows.flow_editor", args=[other_flow.uuid]))
         self.assertEqual(404, response.status_code)
 
@@ -321,10 +312,6 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         # can see results for a flow
         response = self.client.get(reverse("flows.flow_results", args=[flow.uuid]))
         self.assertEqual(200, response.status_code)
-
-        # check flow listing
-        response = self.client.get(list_url)
-        self.assertEqual(list(response.context["object_list"]), [flow3, voice_flow, flow1, flow])  # by saved_on
 
         # test update view
         response = self.client.post(reverse("flows.flow_update", args=[flow.uuid]))
@@ -586,10 +573,10 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         list_url = reverse("flows.flow_list")
 
         self.assertRequestDisallowed(list_url, [None, self.agent])
-        self.assertListFetch(list_url, [self.editor, self.admin], context_objects=[flow3, flow1])
+        self.assertListFetch(list_url, [self.editor, self.admin])
 
         # try to archive flow used by campaign
-        response = self.client.post(list_url, {"action": "archive", "objects": flow3.id})
+        response = self.client.post(list_url, {"action": "archive", "objects": str(flow3.uuid)})
         self.assertToast(
             response,
             "info",
@@ -605,7 +592,7 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         flow4.counts.create(scope=f"status:{FlowRun.STATUS_WAITING}", count=10)
 
         # try to archive flow with ongoing runs
-        response = self.client.post(list_url, {"action": "archive", "objects": flow4.id})
+        response = self.client.post(list_url, {"action": "archive", "objects": str(flow4.uuid)})
         self.assertToast(
             response,
             "info",
@@ -617,43 +604,30 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertFalse(flow4.is_archived)
 
         # archive first flow
-        response = self.client.post(list_url, {"action": "archive", "objects": flow1.id})
+        response = self.client.post(list_url, {"action": "archive", "objects": str(flow1.uuid)})
         self.assertEqual(200, response.status_code)
 
-        # should no longer appear in list
+        flow1.refresh_from_db()
+        self.assertTrue(flow1.is_archived)
+
         response = self.client.get(reverse("flows.flow_list"))
-        self.assertNotContains(response, flow1.name)
-        self.assertContains(response, flow3.name)
-
-        self.assertEqual(("label", "export-results", "archive"), response.context["actions"])
-
-        # but does appear in archived list
-        response = self.client.get(reverse("flows.flow_archived"))
-        self.assertContains(response, flow1.name)
-
-        # flow2 should appear before flow since it was created later
-        self.assertTrue(flow2, response.context["object_list"][0])
-        self.assertTrue(flow1, response.context["object_list"][1])
+        self.assertBulkActions(response, ["label", "export-results", "archive"])
 
         # unarchive it
-        response = self.client.post(reverse("flows.flow_archived"), {"action": "restore", "objects": flow1.id})
+        response = self.client.post(reverse("flows.flow_archived"), {"action": "restore", "objects": str(flow1.uuid)})
         self.assertEqual(200, response.status_code)
 
-        # flow should no longer appear in archived list
-        response = self.client.get(reverse("flows.flow_archived"))
-        self.assertNotContains(response, flow1.name)
-        self.assertEqual(("restore",), response.context["actions"])
+        flow1.refresh_from_db()
+        self.assertFalse(flow1.is_archived)
 
-        # but does appear in normal list
-        response = self.client.get(reverse("flows.flow_list"))
-        self.assertContains(response, flow1.name)
-        self.assertContains(response, flow3.name)
+        response = self.client.get(reverse("flows.flow_archived"))
+        self.assertBulkActions(response, ["restore"])
 
         # can label flows
         label1 = FlowLabel.create(self.org, self.admin, "Important")
 
         response = self.client.post(
-            reverse("flows.flow_list"), {"action": "label", "objects": flow1.id, "label": label1.id}
+            reverse("flows.flow_list"), {"action": "label", "objects": str(flow1.uuid), "label": str(label1.uuid)}
         )
 
         self.assertEqual(200, response.status_code)
@@ -662,19 +636,14 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
 
         # and unlabel
         response = self.client.post(
-            reverse("flows.flow_list"), {"action": "label", "objects": flow1.id, "label": label1.id, "add": False}
+            reverse("flows.flow_list"),
+            {"action": "label", "objects": str(flow1.uuid), "label": str(label1.uuid), "add": False},
         )
 
         self.assertEqual(200, response.status_code)
 
         flow1.refresh_from_db()
         self.assertEqual(set(), set(flow1.labels.all()))
-
-        # voice flows should be included in the count
-        Flow.objects.filter(id=flow1.id).update(flow_type=Flow.TYPE_VOICE)
-
-        response = self.client.get(reverse("flows.flow_list"))
-        self.assertContains(response, flow1.name)
 
     def test_filter(self):
         flow1 = self.create_flow("Flow 1")
@@ -689,17 +658,13 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         self.login(self.admin)
 
         response = self.client.get(reverse("flows.flow_filter", args=[label1.uuid]))
-        self.assertEqual([flow2, flow1], list(response.context["object_list"]))
-        self.assertEqual(("label", "export-results"), response.context["actions"])
-
-        response = self.client.get(reverse("flows.flow_filter", args=[label2.uuid]))
-        self.assertEqual([flow2], list(response.context["object_list"]))
+        self.assertBulkActions(response, ["label", "export-results"])
 
         response = self.client.get(reverse("flows.flow_filter", args=[label2.uuid]))
         self.assertEqual(f"/flow/labels/{label2.uuid}", response.headers.get(TEMBA_MENU_SELECTION))
 
     @mock_mailroom
-    def test_preview_list(self, mr_mocks):
+    def test_list_component(self, mr_mocks):
         flow1 = self.create_flow("Flow 1")
         flow2 = self.create_flow("Flow 2")
         label = FlowLabel.create(self.org, self.admin, "Important")
@@ -709,20 +674,14 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
 
         self.login(self.admin)
 
-        # default render is still the legacy table
-        response = self.client.get(list_url)
-        self.assertNotContains(response, "temba-flow-list")
-
-        # entering preview mode swaps in the temba-flow-list component, pointed at the internal flows api
-        self.client.cookies["temba-preview"] = "1"
-
+        # the temba-flow-list component is pointed at the internal flows api
         response = self.client.get(list_url)
         self.assertContains(response, "temba-flow-list")
-        self.assertEqual(f"{reverse('api.internal.flows')}.json?folder=active", response.context["new_list_endpoint"])
+        self.assertEqual(f"{reverse('api.internal.flows')}.json?folder=active", response.context["list_url"])
 
         # export-results is clientOnly (it opens the export modal); the label dropdown carries a labelsEndpoint of
         # the workspace's flow labels; the rest post to the action endpoint
-        actions = {a["key"]: a for a in response.context["new_list_bulk_actions"]}
+        actions = {a["key"]: a for a in response.context["list_bulk_actions"]}
         self.assertEqual(["label", "export-results", "archive"], list(actions.keys()))
         self.assertTrue(actions["export-results"]["clientOnly"])
         self.assertNotIn("clientOnly", actions["archive"])
@@ -732,16 +691,14 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
 
         # the archived view selects the archived folder
         response = self.client.get(reverse("flows.flow_archived"))
-        self.assertEqual(f"{reverse('api.internal.flows')}.json?folder=archived", response.context["new_list_endpoint"])
-        self.assertNotEqual("", response.context["new_list_subtitle"])
+        self.assertEqual(f"{reverse('api.internal.flows')}.json?folder=archived", response.context["list_url"])
+        self.assertNotEqual("", response.context["list_subtitle"])
 
         # a label filter view is selected by uuid rather than a folder
         response = self.client.get(reverse("flows.flow_filter", args=[label.uuid]))
-        self.assertEqual(
-            f"{reverse('api.internal.flows')}.json?label={label.uuid}", response.context["new_list_endpoint"]
-        )
+        self.assertEqual(f"{reverse('api.internal.flows')}.json?label={label.uuid}", response.context["list_url"])
 
-        # the component posts flow uuids in `objects`; the view translates them to ids so the bulk action applies
+        # the component posts flow uuids in `objects`
         self.client.post(list_url, {"action": "archive", "objects": str(flow1.uuid)})
         flow1.refresh_from_db()
         self.assertTrue(flow1.is_archived)
@@ -756,23 +713,22 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         )
         self.assertEqual(set(), set(flow2.labels.all()))
 
-        # a label posted as a numeric id (a legacy form post rather than the component) is passed through untranslated
+        # a label posted as a numeric id is rejected
         self.client.post(list_url, {"action": "label", "objects": str(flow2.uuid), "label": str(label.id)})
-        self.assertEqual({label}, set(flow2.labels.all()))
-        label.toggle_label([flow2], add=False)
+        self.assertEqual(set(), set(flow2.labels.all()))
 
-        # a malformed flow uuid in `objects` is ignored rather than raising (no 500 on hostile/garbage input)
+        # a malformed flow uuid in `objects` fails form validation rather than raising (no 500 on garbage input)
         response = self.client.post(list_url, {"action": "archive", "objects": "not-a-uuid"})
         self.assertEqual(200, response.status_code)
         flow2.refresh_from_db()
         self.assertFalse(flow2.is_archived)
 
-        # a malformed label uuid is likewise ignored rather than raising
+        # a malformed label uuid is likewise a form error rather than a raise
         response = self.client.post(list_url, {"action": "label", "objects": str(flow2.uuid), "label": "not-a-uuid"})
         self.assertEqual(200, response.status_code)
         self.assertEqual(set(), set(flow2.labels.all()))
 
-        # the export modal accepts the component's uuids as well as the legacy table's ids
+        # the export modal accepts uuids as well as ids
         export_url = reverse("flows.flow_export_results")
         response = self.client.get(f"{export_url}?ids={flow2.uuid}")
         self.assertEqual([flow2], list(response.context["form"].initial["flows"]))
@@ -906,6 +862,25 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         # check 404 for invalid revision number
         response = self.requestView(f"{revisions_url}12345678/", self.admin)
         self.assertEqual(404, response.status_code)
+
+    @mock_mailroom
+    def test_revision_uses_freshly_inspected_dependencies(self, mr_mocks):
+        flow = self.create_flow("Parent")
+        child1 = self.create_flow("Child One")
+        child2 = self.create_flow("Child Two")
+
+        dependencies = [
+            {"type": "flow", "uuid": str(child1.uuid), "name": child1.name, "missing": False},
+            {"type": "flow", "uuid": str(child2.uuid), "name": child2.name, "missing": False},
+        ]
+        mr_mocks.flow_inspect(dependencies=dependencies)
+
+        self.login(self.editor)
+        response = self.client.get(f"{reverse('flows.flow_revisions', args=[flow.uuid])}latest/")
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(dependencies, response.json()["info"]["dependencies"])
+        self.assertEqual(response.json()["metadata"], response.json()["info"])
 
     def test_save_revisions(self):
         flow = self.create_flow("Go Flow")
@@ -1247,11 +1222,11 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         # change our channel to use a facebook scheme
         self.channel.schemes = [URN.FACEBOOK_SCHEME]
         self.channel.save()
-        assert_features({"auto_translate", "optins", "airtime", "resthook"})
+        assert_features({"auto_translate", "airtime", "resthook"})
 
         self.setUpLocations()
 
-        assert_features({"auto_translate", "optins", "airtime", "resthook", "locations"})
+        assert_features({"auto_translate", "airtime", "resthook", "locations"})
 
     @mock_mailroom
     def test_template_warnings(self, mr_mocks):
@@ -1290,7 +1265,7 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         # no warning, we don't have a whatsapp channel that requires a message template
         self.assertEqual(response.json()["warnings"], [])
 
-        self.channel.channel_type = "WA"
+        self.channel.channel_type = "WAC"
         self.channel.save()
 
         # clear dependencies, this will cause our flow to look like it isn't using templates
@@ -1526,6 +1501,93 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
                 params={},
             ),
         )
+
+    @mock_mailroom
+    def test_start_seeded_contact(self, mr_mocks):
+        contact = self.create_contact("Bob", phone="+593979099111")
+        other = self.create_contact("Jim", phone="+593979099222")
+        flow = self.create_flow("Test")
+        current = self.create_flow("Current")
+
+        start_url = f"{reverse('flows.flow_start', args=[])}?c={contact.uuid}"
+
+        # seeded with a single contact, the recipients are fixed
+        response = self.assertUpdateFetch(start_url, [self.editor, self.admin], form_fields=["flow", "contact_search"])
+        attrs = response.context["form"].fields["contact_search"].widget.attrs
+        self.assertTrue(attrs.get("fixed"))
+        self.assertNotIn("current_flow", attrs)
+
+        # if the contact is in a flow, that's passed to the widget so it can ask for confirmation
+        contact.current_flow = current
+        contact.save(update_fields=("current_flow",))
+
+        response = self.assertUpdateFetch(start_url, [self.admin], form_fields=["flow", "contact_search"])
+        attrs = response.context["form"].fields["contact_search"].widget.attrs
+        self.assertTrue(attrs.get("fixed"))
+        self.assertEqual("Current", attrs.get("current_flow"))
+
+        # submitted recipients are ignored - the start is locked to the seeded contact
+        self.assertUpdateSubmit(
+            start_url,
+            self.admin,
+            {"flow": flow.id, "contact_search": get_contact_search(contacts=[other])},
+        )
+
+        self.assertEqual(
+            mr_mocks.calls["flow_start"][-1],
+            call(
+                self.org,
+                self.admin,
+                typ="M",
+                flow=flow,
+                groups=[],
+                contacts=[contact],
+                urns=[],
+                query=None,
+                exclude=Exclusions(),
+                params={},
+            ),
+        )
+
+        # a submitted in_a_flow exclusion is ignored - the user has already confirmed interrupting
+        # the contact's current flow
+        contact_search = dict(
+            recipients=[{"id": str(contact.uuid), "name": contact.name, "type": "contact"}],
+            advanced=False,
+            exclusions={"in_a_flow": True, "non_active": True},
+        )
+        self.assertUpdateSubmit(
+            start_url,
+            self.admin,
+            {"flow": flow.id, "contact_search": json.dumps(contact_search)},
+        )
+
+        self.assertEqual(
+            mr_mocks.calls["flow_start"][-1],
+            call(
+                self.org,
+                self.admin,
+                typ="M",
+                flow=flow,
+                groups=[],
+                contacts=[contact],
+                urns=[],
+                query=None,
+                exclude=Exclusions(non_active=True),
+                params={},
+            ),
+        )
+
+        # seeding with multiple contacts doesn't lock the recipients
+        multi_url = f"{reverse('flows.flow_start', args=[])}?c={contact.uuid},{other.uuid}"
+        response = self.assertUpdateFetch(multi_url, [self.admin], form_fields=["flow", "contact_search"])
+        self.assertNotIn("fixed", response.context["form"].fields["contact_search"].widget.attrs)
+
+        # seeding with another org's contact doesn't lock the recipients
+        other_org_contact = self.create_contact("Hans", phone="+593979099333", org=self.org2)
+        other_org_url = f"{reverse('flows.flow_start', args=[])}?c={other_org_contact.uuid}"
+        response = self.assertUpdateFetch(other_org_url, [self.admin], form_fields=["flow", "contact_search"])
+        self.assertNotIn("fixed", response.context["form"].fields["contact_search"].widget.attrs)
 
     @mock_mailroom
     def test_start_background_flow(self, mr_mocks):
@@ -2285,164 +2347,6 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
 
         # can't delete already released flow
         self.assertEqual(response.status_code, 404)
-
-    @mock_mailroom
-    def test_export_and_download_translation(self, mr_mocks):
-        self.org.set_flow_languages(self.admin, ["spa"])
-
-        flow = self.get_flow("favorites")
-        export_url = reverse("flows.flow_export_translation", args=[flow.id])
-
-        self.assertRequestDisallowed(export_url, [None, self.agent, self.admin2])
-        self.assertUpdateFetch(export_url, [self.editor, self.admin], form_fields=["language"])
-
-        # submit with no language
-        response = self.assertUpdateSubmit(export_url, self.admin, {}, success_status=200)
-
-        download_url = response["X-Temba-Success"]
-        self.assertEqual(f"/flow/download_translation/?flow={flow.id}&language=", download_url)
-
-        # check fetching the PO from the download link
-        with patch("temba.mailroom.client.client.MailroomClient.po_export") as mock_po_export:
-            mock_po_export.return_value = b'msgid "Red"\nmsgstr "Roja"\n\n'
-            self.assertRequestDisallowed(download_url, [None, self.agent, self.admin2])
-            response = self.assertReadFetch(download_url, [self.editor, self.admin])
-
-            self.assertEqual(b'msgid "Red"\nmsgstr "Roja"\n\n', response.content)
-            self.assertEqual('attachment; filename="favorites.po"', response["Content-Disposition"])
-            self.assertEqual("text/x-gettext-translation", response["Content-Type"])
-
-        # submit with a language
-        response = self.assertUpdateSubmit(export_url, self.admin, {"language": "spa"}, success_status=200)
-
-        download_url = response["X-Temba-Success"]
-        self.assertEqual(f"/flow/download_translation/?flow={flow.id}&language=spa", download_url)
-
-        # check fetching the PO from the download link
-        with patch("temba.mailroom.client.client.MailroomClient.po_export") as mock_po_export:
-            mock_po_export.return_value = b'msgid "Red"\nmsgstr "Roja"\n\n'
-            response = self.requestView(download_url, self.admin)
-
-            # filename includes language now
-            self.assertEqual('attachment; filename="favorites.spa.po"', response["Content-Disposition"])
-
-    @mock_mailroom
-    def test_import_translation(self, mr_mocks):
-        self.org.set_flow_languages(self.admin, ["eng", "spa"])
-
-        flow = self.get_flow("favorites_v13")
-        step1_url = reverse("flows.flow_import_translation", args=[flow.id])
-
-        # check step 1 is just a file upload
-        self.assertRequestDisallowed(step1_url, [None, self.agent, self.admin2])
-        self.assertUpdateFetch(step1_url, [self.editor, self.admin], form_fields=["po_file"])
-
-        # submit with no file
-        self.assertUpdateSubmit(
-            step1_url, self.admin, {}, form_errors={"po_file": "This field is required."}, object_unchanged=flow
-        )
-
-        # submit with something that's empty
-        response = self.requestView(step1_url, self.admin, post_data={"po_file": io.BytesIO(b"")})
-        self.assertFormError(response.context["form"], "po_file", "The submitted file is empty.")
-
-        # submit with something that's not a valid PO file
-        response = self.requestView(step1_url, self.admin, post_data={"po_file": io.BytesIO(b"msgid")})
-        self.assertFormError(response.context["form"], "po_file", "File doesn't appear to be a valid PO file.")
-
-        # submit with something that's in the base language of the flow
-        po_file = io.BytesIO(b"""
-#, fuzzy
-msgid ""
-msgstr ""
-"POT-Creation-Date: 2018-07-06 12:30+0000\\n"
-"Language: en\\n"
-"Language-3: eng\\n"
-
-msgid "Blue"
-msgstr "Bluuu"
-        """)
-        response = self.requestView(step1_url, self.admin, post_data={"po_file": po_file})
-        self.assertFormError(
-            response.context["form"],
-            "po_file",
-            "Contains translations in English which is the base language of this flow.",
-        )
-
-        # submit with something that's in the base language of the flow
-        po_file = io.BytesIO(b"""
-#, fuzzy
-msgid ""
-msgstr ""
-"POT-Creation-Date: 2018-07-06 12:30+0000\\n"
-"Language: fr\\n"
-"Language-3: fra\\n"
-
-msgid "Blue"
-msgstr "Bleu"
-        """)
-        response = self.requestView(step1_url, self.admin, post_data={"po_file": po_file})
-        self.assertFormError(
-            response.context["form"],
-            "po_file",
-            "Contains translations in French which is not a supported translation language.",
-        )
-
-        # submit with something that doesn't have an explicit language
-        po_file = io.BytesIO(b"""
-msgid "Blue"
-msgstr "Azul"
-        """)
-        response = self.requestView(step1_url, self.admin, post_data={"po_file": po_file})
-
-        self.assertEqual(302, response.status_code)
-        self.assertIn(f"/flow/import_translation/{flow.id}/?po=", response.url)
-
-        response = self.assertUpdateFetch(response.url, [self.admin], form_fields=["language"])
-        self.assertContains(response, "Unknown")
-
-        # submit a different PO that does have language set
-        po_file = io.BytesIO(b"""
-#, fuzzy
-msgid ""
-msgstr ""
-"POT-Creation-Date: 2018-07-06 12:30+0000\\n"
-"Language: es\\n"
-"MIME-Version: 1.0\\n"
-"Content-Type: text/plain; charset=UTF-8\\n"
-"Language-3: spa\\n"
-
-#: Favorites/8720f157-ca1c-432f-9c0b-2014ddc77094/name:0
-#: Favorites/a4d15ed4-5b24-407f-b86e-4b881f09a186/arguments:0
-msgid "Blue"
-msgstr "Azul"
-""")
-        response = self.requestView(step1_url, self.admin, post_data={"po_file": po_file})
-
-        self.assertEqual(302, response.status_code)
-        self.assertIn(f"/flow/import_translation/{flow.id}/?po=", response.url)
-
-        step2_url = response.url
-
-        response = self.assertUpdateFetch(step2_url, [self.admin], form_fields=["language"])
-        self.assertContains(response, "Spanish (spa)")
-        self.assertEqual({"language": "spa"}, response.context["form"].initial)
-
-        # confirm the import — the imported definition has new Spanish localization
-        # so it's a real change (no-op imports don't create a new revision)
-        imported_def = flow.get_definition()
-        imported_def["localization"] = {"spa": {"a4d15ed4-5b24-407f-b86e-4b881f09a186": {"arguments": ["Azul"]}}}
-        with patch("temba.mailroom.client.client.MailroomClient.po_import") as mock_po_import:
-            mock_po_import.return_value = {"flows": [imported_def]}
-
-            response = self.requestView(step2_url, self.admin, post_data={"language": "spa"})
-
-        # should redirect back to editor
-        self.assertEqual(302, response.status_code)
-        self.assertEqual(f"/flow/editor/{flow.uuid}/", response.url)
-
-        # should have a new revision
-        self.assertEqual(2, flow.revisions.count())
 
     def test_open_ended_no_chart(self):
         flow = self.create_flow("Open Ended Flow")

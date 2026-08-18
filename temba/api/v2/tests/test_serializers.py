@@ -191,6 +191,18 @@ class FieldsTest(APITest):
             field.run_validation([{"type": "location", "text": "Click"}]),
             {"eng": [{"type": "location", "text": "Click"}]},
         )
+        self.assertEqual(
+            field.run_validation([{"type": "form", "text": "Book now", "extra": "123456"}]),
+            {"eng": [{"type": "form", "text": "Book now", "extra": "123456"}]},
+        )
+        self.assertEqual(
+            field.run_validation([{"type": "url", "text": "Create Quotation", "extra": "https://example.com/quote"}]),
+            {"eng": [{"type": "url", "text": "Create Quotation", "extra": "https://example.com/quote"}]},
+        )
+        self.assertEqual(
+            field.run_validation([{"text": "Red", "extra": "x" * 1000}]),
+            {"eng": [{"type": "text", "text": "Red", "extra": "x" * 1000}]},
+        )
 
         self.assertRaises(serializers.ValidationError, field.run_validation, {"eng": ""})  # empty
         self.assertRaises(serializers.ValidationError, field.run_validation, "")  # empty
@@ -202,11 +214,20 @@ class FieldsTest(APITest):
         self.assertRaises(serializers.ValidationError, field.run_validation, {"base": [{"text": "Red"}]})  # not a lang
         self.assertRaises(serializers.ValidationError, field.run_validation, {"eng": [{"text": "1"}] * 11})  # too many
         self.assertRaises(serializers.ValidationError, field.run_validation, {"eng": [{"text": "a" * 65}]})  # too long
+        self.assertRaises(
+            serializers.ValidationError, field.run_validation, {"eng": [{"text": "Red", "extra": "x" * 1001}]}
+        )  # extra too long
         self.assertRaises(serializers.ValidationError, field.run_validation, {"eng": [{"foo": "??"}]})
         self.assertRaises(serializers.ValidationError, field.run_validation, {"eng": [{"text": {}}]})  # invalid text
         self.assertRaises(
             serializers.ValidationError, field.run_validation, {"eng": [{"type": "text"}]}
         )  # missing text
+        self.assertRaises(
+            serializers.ValidationError, field.run_validation, {"eng": [{"type": "form", "text": "Book now"}]}
+        )  # missing extra for form type
+        self.assertRaises(
+            serializers.ValidationError, field.run_validation, {"eng": [{"type": "url", "extra": "http://x.com"}]}
+        )  # missing text for url type
         self.assertRaises(
             serializers.ValidationError, field.run_validation, {"eng": [{"type": "location", "extra": "what?"}]}
         )  # can't have extra for location type
@@ -310,13 +331,13 @@ class FieldsTest(APITest):
 
         self.assert_field(
             fields.ChannelField(source="test"),
-            submissions={self.channel.uuid: self.channel, deleted_channel.uuid: serializers.ValidationError},
+            submissions={str(self.channel.uuid): self.channel, str(deleted_channel.uuid): serializers.ValidationError},
             representations={self.channel: {"uuid": str(self.channel.uuid), "name": "Test Channel"}},
         )
 
         self.assert_field(
             fields.ContactGroupField(source="test"),
-            submissions={group.uuid: group},
+            submissions={str(group.uuid): group},
             representations={group: {"uuid": str(group.uuid), "name": "Customers"}},
         )
 
@@ -330,7 +351,7 @@ class FieldsTest(APITest):
 
         self.assert_field(
             fields.FlowField(source="test"),
-            submissions={flow.uuid: flow},
+            submissions={str(flow.uuid): flow},
             representations={flow: {"uuid": str(flow.uuid), "name": flow.name}},
         )
 

@@ -23,9 +23,10 @@ venv
 coverage.xml
 
 # Project specific
+locale/*/LC_MESSAGES/*.mo
 node_modules
 screenshots
-sitestatic
+/sitestatic
 celerybeat-schedule*
 spool/
 dynamo/
@@ -34,3 +35,4 @@ temba/settings_common.py
 temba/settings_local.py
 manage.sh
 rp.sh
+/media/emails/

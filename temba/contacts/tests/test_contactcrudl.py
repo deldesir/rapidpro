@@ -10,7 +10,7 @@ from django.utils import timezone
 
 from temba import mailroom
 from temba.campaigns.models import Campaign, CampaignEvent
-from temba.contacts.models import Contact, ContactExport, ContactField
+from temba.contacts.models import Contact, ContactExport, ContactField, ContactGroup
 from temba.locations.models import AdminBoundary
 from temba.mailroom.client.types import Exclusions
 from temba.msgs.models import Media
@@ -140,73 +140,27 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
         self.assertRequestDisallowed(list_url, [None, self.agent])
 
         joe = self.create_contact("Joe", phone="123", fields={"age": "20", "home": "Kigali"})
-        frank = self.create_contact("Frank", phone="124", fields={"age": "18"})
+        self.create_contact("Frank", phone="124", fields={"age": "18"})
 
         mr_mocks.contact_search('name != ""', contacts=[])
         self.create_group("No Name", query='name = ""')
 
         self.login(self.editor)
 
-        with self.assertNumQueries(15):
-            response = self.client.get(list_url)
-
-        self.assertEqual([frank, joe], list(response.context["object_list"]))
-        self.assertIsNone(response.context["search_error"])
-        self.assertEqual(["block", "archive", "send", "start-flow"], list(response.context["actions"]))
+        response = self.client.get(list_url)
+        self.assertBulkActions(response, ["label", "block", "send", "start-flow", "archive"])
         self.assertContentMenu(list_url, self.editor, ["New Contact", "New Group", "Export"])
 
-        active_contacts = self.org.active_contacts_group
+        # a saveable search in the query string adds Create Smart Group to the content menu
+        mr_mocks.contact_search("age > 50", cleaned="age > 50")
 
-        # test with search query
-        mr_mocks.contact_search("age = 18", contacts=[frank])
-
-        response = self.assertListFetch(list_url + "?search=age+%3D+18", [self.editor], context_objects=[frank])
-        self.assertEqual(response.context["search"], "age = 18")
-        self.assertEqual(response.context["search_is_saveable"], True)
-        self.assertIsNone(response.context["search_error"])
-        self.assertEqual(
-            [f.name for f in response.context["contact_fields"]], ["Home", "Age", "Last Seen On", "Created On"]
+        self.assertContentMenu(
+            list_url + "?search=age%20%3E%2050",
+            self.editor,
+            ["Create Smart Group", "New Contact", "New Group", "Export"],
         )
 
-        mr_mocks.contact_search("age = 18", contacts=[frank], total=10020)
-
-        # we return up to 10000 contacts when searching with ES, so last page is 200
-        self.assertListFetch(list_url + "?search=age+%3D+18&page=200", [self.editor], status=200)
-        self.assertListFetch(list_url + "?search=age+%3D+18&page=201", [self.editor], status=404)
-
-        mr_mocks.contact_search('age > 18 and home = "Kigali"', cleaned='age > 18 AND home = "Kigali"', contacts=[joe])
-
-        response = self.assertListFetch(
-            list_url + '?search=age+>+18+and+home+%3D+"Kigali"', [self.editor], context_objects=[joe]
-        )
-        self.assertEqual(response.context["search"], 'age > 18 AND home = "Kigali"')
-        self.assertEqual(response.context["search_is_saveable"], True)
-        self.assertIsNone(response.context["search_error"])
-
-        mr_mocks.contact_search("Joe", cleaned='name ~ "Joe"', contacts=[joe])
-
-        response = self.assertListFetch(list_url + "?search=Joe", [self.editor], context_objects=[joe])
-        self.assertEqual(response.context["search"], 'name ~ "Joe"')
-        self.assertEqual(response.context["search_is_saveable"], True)
-        self.assertIsNone(response.context["search_error"])
-
-        with self.anonymous(self.org):
-            mr_mocks.contact_search(f"{joe.id}", cleaned=f"id = {joe.id}", contacts=[joe])
-
-            response = self.client.get(list_url + f"?search={joe.id}")
-            self.assertEqual(list(response.context["object_list"]), [joe])
-            self.assertIsNone(response.context["search_error"])
-            self.assertEqual(response.context["search"], f"id = {joe.id}")
-            self.assertEqual(response.context["search_is_saveable"], False)
-
-        # try with invalid search string
-        mr_mocks.exception(mailroom.QueryValidationException("mismatched input at (((", "syntax"))
-
-        response = self.client.get(list_url + "?search=(((")
-        self.assertEqual(list(response.context["object_list"]), [])
-        self.assertEqual(response.context["search_error"], "Invalid query syntax.")
-        self.assertContains(response, "Invalid query syntax.")
-
+        # an invalid search leaves out the export option
         mr_mocks.exception(mailroom.QueryValidationException("mismatched input at (((", "syntax"))
 
         self.assertContentMenu(list_url + "?search=(((", self.editor, ["New Contact", "New Group"])  # no export
@@ -217,53 +171,16 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
 
         self.login(self.admin)
 
-        # admins can see bulk actions
-        age_query = "?search=age%20%3E%2050"
-        response = self.client.get(list_url)
-        self.assertEqual([frank, joe], list(response.context["object_list"]))
-        self.assertEqual(["block", "archive", "send", "start-flow"], list(response.context["actions"]))
+        self.assertContentMenu(list_url, self.admin, ["New Contact", "New Group", "Export"])
 
-        self.assertContentMenu(
-            list_url,
-            self.admin,
-            ["New Contact", "New Group", "Export"],
-        )
-        self.assertContentMenu(
-            list_url + age_query,
-            self.admin,
-            ["Create Smart Group", "New Contact", "New Group", "Export"],
-        )
-
-        # TODO: group labeling as a feature is on probation
-        # self.client.post(list_url, {"action": "label", "objects": frank.id, "label": survey_audience.id})
-        # self.assertIn(frank, survey_audience.contacts.all())
-
-        # try label bulk action against search results
-        # self.client.post(list_url + "?search=Joe", {"action": "label", "objects": joe.id, "label": survey_audience.id})
-        # self.assertIn(joe, survey_audience.contacts.all())
-
-        # self.assertEqual(
-        #    call(self.org.id, group_uuid=str(active_contacts.uuid), query="Joe", sort="", offset=0, exclude_ids=[]),
-        #    mr_mocks.calls["contact_search"][-1],
-        # )
-
-        # try archive bulk action
-        self.client.post(list_url + "?search=Joe", {"action": "archive", "objects": joe.id})
-
-        # we re-run the search for the response, but exclude Joe
-        self.assertEqual(
-            call(self.org, active_contacts, "Joe", sort="", offset=0, exclude=[joe]),
-            mr_mocks.calls["contact_search"][-1],
-        )
-
-        response = self.client.get(list_url)
-        self.assertEqual([frank], list(response.context["object_list"]))
+        # bulk actions apply to the posted contacts
+        self.client.post(list_url, {"action": "archive", "objects": str(joe.uuid)})
 
         joe.refresh_from_db()
         self.assertEqual(Contact.STATUS_ARCHIVED, joe.status)
 
     @mock_mailroom
-    def test_preview_list(self, mr_mocks):
+    def test_list_component(self, mr_mocks):
         joe = self.create_contact("Joe", phone="123")
         frank = self.create_contact("Frank", phone="124")
         group = self.create_group("Crew", contacts=[joe, frank])
@@ -273,23 +190,22 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
 
         self.login(self.admin)
 
-        # default render is still the legacy table
-        response = self.client.get(list_url)
-        self.assertNotContains(response, "temba-contact-list")
+        # the temba-contact-list component is pointed at the internal contacts api — check the query count too since
+        # the component fetches contacts itself so rendering shouldn't hit the contacts table
+        self.admin.settings["list_columns"] = {"contacts": {"name": 240}}
+        self.admin.save(update_fields=("settings",))
 
-        # entering preview mode swaps in the temba-contact-list component, pointed at the internal contacts api
-        self.client.cookies["temba-preview"] = "1"
-
-        response = self.client.get(list_url)
+        with self.assertNumQueries(7):
+            response = self.client.get(list_url)
         self.assertContains(response, "temba-contact-list")
-        self.assertEqual(
-            f"{reverse('api.internal.contacts')}.json?folder=active", response.context["new_list_endpoint"]
-        )
+        self.assertContains(response, 'column-width-settings="{&quot;contacts&quot;: {&quot;name&quot;: 240}}"')
+        self.assertContains(response, f'settings-endpoint="{reverse("users.user_settings")}"')
+        self.assertEqual(f"{reverse('api.internal.contacts')}.json?folder=active", response.context["list_url"])
 
         # send / start-flow are clientOnly (they open a modal); the group dropdown carries a labelsEndpoint of the
         # workspace's static groups; the rest post to the action endpoint
-        actions = {a["key"]: a for a in response.context["new_list_bulk_actions"]}
-        self.assertEqual(["label", "block", "archive", "send", "start-flow"], list(actions.keys()))
+        actions = {a["key"]: a for a in response.context["list_bulk_actions"]}
+        self.assertEqual(["label", "block", "send", "start-flow", "archive"], list(actions.keys()))
         self.assertTrue(actions["send"]["clientOnly"])
         self.assertTrue(actions["start-flow"]["clientOnly"])
         self.assertNotIn("clientOnly", actions["archive"])
@@ -297,18 +213,16 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
 
         # a user group is selected by uuid rather than a status folder
         response = self.client.get(group_url)
-        self.assertEqual(
-            f"{reverse('api.internal.contacts')}.json?group={group.uuid}", response.context["new_list_endpoint"]
-        )
+        self.assertEqual(f"{reverse('api.internal.contacts')}.json?group={group.uuid}", response.context["list_url"])
         # a manual group has no subtitle
-        self.assertEqual("", response.context["new_list_subtitle"])
+        self.assertEqual("", response.context["list_subtitle"])
 
         # a smart (dynamic) group surfaces its query as the list subtitle
         smart = self.create_group("Females", query="gender = F")
         response = self.client.get(reverse("contacts.contact_group", args=[smart.uuid]))
-        self.assertEqual(smart.query, response.context["new_list_subtitle"])
+        self.assertEqual(smart.query, response.context["list_subtitle"])
 
-        # the component posts contact uuids in `objects`; the view translates them to ids so the bulk action applies
+        # the component posts contact uuids in `objects`
         self.client.post(list_url, {"action": "archive", "objects": str(joe.uuid)})
         joe.refresh_from_db()
         self.assertEqual(Contact.STATUS_ARCHIVED, joe.status)
@@ -324,27 +238,24 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
         )
         self.assertNotIn(frank, newsletter.contacts.all())
 
-        # a label posted as a numeric id (a legacy form post rather than the component) is passed through untranslated
+        # a group posted as a numeric id is rejected
         self.client.post(list_url, {"action": "label", "objects": str(frank.uuid), "label": str(newsletter.id)})
-        self.assertIn(frank, newsletter.contacts.all())
+        self.assertNotIn(frank, newsletter.contacts.all())
+
+        # on a group page, an "unlabel" with a group we can't resolve is rejected rather than falling back to the
+        # current group - only an absent group means "Remove from group"
+        smart = self.create_group("Smart", query="tel is 1234")
+        group.contacts.add(frank)
+        self.client.post(group_url, {"action": "unlabel", "objects": str(frank.uuid), "label": str(smart.uuid)})
+        self.assertIn(frank, group.contacts.all())
 
         # on a group page, an "unlabel" with no group falls back to the current group ("Remove from group")
         self.client.post(group_url, {"action": "unlabel", "objects": str(frank.uuid)})
         self.assertNotIn(frank, group.contacts.all())
 
-        # a malformed contact uuid in `objects` is ignored rather than raising (no 500 on hostile/garbage input)
+        # a malformed contact uuid in `objects` fails form validation rather than raising (no 500 on garbage input)
         response = self.client.post(list_url, {"action": "archive", "objects": "not-a-uuid"})
         self.assertEqual(200, response.status_code)
-
-        del self.client.cookies["temba-preview"]
-
-        # back on the legacy (non-preview) list, the content menu still surfaces Create Smart Group when the search is
-        # saveable as a group — build_context_menu reads the search straight off the request query string here
-        self.assertContentMenu(
-            list_url + "?search=age+%3E+30",
-            self.admin,
-            ["Create Smart Group", "New Contact", "New Group", "Export"],
-        )
 
     @mock_mailroom
     def test_blocked(self, mr_mocks):
@@ -360,24 +271,18 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
         blocked_url = reverse("contacts.contact_blocked")
 
         self.assertRequestDisallowed(blocked_url, [None, self.agent])
-        response = self.assertListFetch(blocked_url, [self.editor, self.admin], context_objects=[billy, frank, joe])
-        self.assertEqual(["restore", "archive"], list(response.context["actions"]))
+        response = self.assertListFetch(blocked_url, [self.editor, self.admin])
+        self.assertBulkActions(response, ["restore", "archive"])
         self.assertContentMenu(blocked_url, self.admin, ["Export"])
 
         # try restore bulk action
-        self.client.post(blocked_url, {"action": "restore", "objects": billy.id})
-
-        response = self.client.get(blocked_url)
-        self.assertEqual([frank, joe], list(response.context["object_list"]))
+        self.client.post(blocked_url, {"action": "restore", "objects": str(billy.uuid)})
 
         billy.refresh_from_db()
         self.assertEqual(Contact.STATUS_ACTIVE, billy.status)
 
         # try archive bulk action
-        self.client.post(blocked_url, {"action": "archive", "objects": frank.id})
-
-        response = self.client.get(blocked_url)
-        self.assertEqual([joe], list(response.context["object_list"]))
+        self.client.post(blocked_url, {"action": "archive", "objects": str(frank.uuid)})
 
         frank.refresh_from_db()
         self.assertEqual(Contact.STATUS_ARCHIVED, frank.status)
@@ -396,24 +301,18 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
         stopped_url = reverse("contacts.contact_stopped")
 
         self.assertRequestDisallowed(stopped_url, [None, self.agent])
-        response = self.assertListFetch(stopped_url, [self.editor, self.admin], context_objects=[billy, frank, joe])
-        self.assertEqual(["restore", "archive"], list(response.context["actions"]))
+        response = self.assertListFetch(stopped_url, [self.editor, self.admin])
+        self.assertBulkActions(response, ["restore", "archive"])
         self.assertContentMenu(stopped_url, self.admin, ["Export"])
 
         # try restore bulk action
-        self.client.post(stopped_url, {"action": "restore", "objects": billy.id})
-
-        response = self.client.get(stopped_url)
-        self.assertEqual([frank, joe], list(response.context["object_list"]))
+        self.client.post(stopped_url, {"action": "restore", "objects": str(billy.uuid)})
 
         billy.refresh_from_db()
         self.assertEqual(Contact.STATUS_ACTIVE, billy.status)
 
         # try archive bulk action
-        self.client.post(stopped_url, {"action": "archive", "objects": frank.id})
-
-        response = self.client.get(stopped_url)
-        self.assertEqual([joe], list(response.context["object_list"]))
+        self.client.post(stopped_url, {"action": "archive", "objects": str(frank.uuid)})
 
         frank.refresh_from_db()
         self.assertEqual(Contact.STATUS_ARCHIVED, frank.status)
@@ -432,25 +331,21 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
 
         archived_url = reverse("contacts.contact_archived")
 
+        archived_group = self.org.groups.get(group_type=ContactGroup.TYPE_DB_ARCHIVED)
+
         self.assertRequestDisallowed(archived_url, [None, self.agent])
-        response = self.assertListFetch(archived_url, [self.editor, self.admin], context_objects=[billy, frank, joe])
-        self.assertEqual(["restore", "delete"], list(response.context["actions"]))
+        response = self.assertListFetch(archived_url, [self.editor, self.admin])
+        self.assertBulkActions(response, ["restore", "delete"])
         self.assertContentMenu(archived_url, self.admin, ["Export", "Delete All"])
 
         # try restore bulk action
-        self.client.post(archived_url, {"action": "restore", "objects": billy.id})
-
-        response = self.client.get(archived_url)
-        self.assertEqual([frank, joe], list(response.context["object_list"]))
+        self.client.post(archived_url, {"action": "restore", "objects": str(billy.uuid)})
 
         billy.refresh_from_db()
         self.assertEqual(Contact.STATUS_ACTIVE, billy.status)
 
         # try delete bulk action
-        self.client.post(archived_url, {"action": "delete", "objects": frank.id})
-
-        response = self.client.get(archived_url)
-        self.assertEqual([joe], list(response.context["object_list"]))
+        self.client.post(archived_url, {"action": "delete", "objects": str(frank.uuid)})
 
         frank.refresh_from_db()
         self.assertFalse(frank.is_active)
@@ -458,8 +353,7 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
         # the archived view also supports deleting all
         self.client.post(archived_url, {"action": "delete", "all": "true"})
 
-        response = self.client.get(archived_url)
-        self.assertEqual([], list(response.context["object_list"]))
+        self.assertEqual(0, archived_group.contacts.filter(is_active=True).count())
 
         # only archived contacts affected
         self.assertEqual(2, Contact.objects.filter(is_active=False, status=Contact.STATUS_ARCHIVED).count())
@@ -470,13 +364,11 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
             contact = self.create_contact(f"Bob{c}", urns=[f"twitter:bob{c}"])
             contact.archive(self.admin)
 
-        response = self.client.get(archived_url)
-        self.assertEqual(6, len(response.context["object_list"]))
+        self.assertEqual(6, archived_group.contacts.filter(is_active=True).count())
 
         self.client.post(archived_url, {"action": "delete", "all": "true"})
 
-        response = self.client.get(archived_url)
-        self.assertEqual(0, len(response.context["object_list"]))
+        self.assertEqual(0, archived_group.contacts.filter(is_active=True).count())
 
     @mock_mailroom
     def test_group(self, mr_mocks):
@@ -500,11 +392,8 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
         self.assertRequestDisallowed(group1_url, [None, self.agent, self.admin2])
         response = self.assertReadFetch(group1_url, [self.editor, self.admin])
 
-        self.assertEqual([frank, joe], list(response.context["object_list"]))
-        self.assertEqual(["unlabel", "block", "send", "start-flow"], list(response.context["actions"]))
-        self.assertEqual(
-            [f.name for f in response.context["contact_fields"]], ["Home", "Age", "Last Seen On", "Created On"]
-        )
+        self.assertBulkActions(response, ["unlabel", "block", "send", "start-flow"])
+        self.assertEqual(f"/api/internal/contacts.json?group={group1.uuid}", response.context["list_url"])
 
         self.assertContentMenu(
             group1_url,
@@ -514,20 +403,15 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
 
         response = self.assertReadFetch(group2_url, [self.editor])
 
-        self.assertEqual([frank], list(response.context["object_list"]))
-        self.assertEqual(["block", "archive", "send", "start-flow"], list(response.context["actions"]))
-        self.assertContains(response, "age &gt; 40")
+        self.assertBulkActions(response, ["block", "send", "start-flow", "archive"])
 
         # try unlabel bulk action
-        self.client.post(group1_url, {"action": "unlabel", "objects": frank.id, "label": group1.id})
-        response = self.client.get(group1_url)
-        self.assertEqual([joe], list(response.context["object_list"]))
+        self.client.post(group1_url, {"action": "unlabel", "objects": str(frank.uuid), "label": str(group1.uuid)})
+        self.assertEqual({joe}, set(group1.contacts.all()))
 
         # can access system group like any other except no options to edit or delete
         response = self.assertReadFetch(open_tickets_url, [self.editor])
-        self.assertEqual([], list(response.context["object_list"]))
-        self.assertEqual(["block", "archive", "send", "start-flow"], list(response.context["actions"]))
-        self.assertContains(response, "tickets &gt; 0")
+        self.assertBulkActions(response, ["block", "send", "start-flow", "archive"])
         self.assertContentMenu(open_tickets_url, self.admin, ["Export", "Usages"])
 
         # if a user tries to access a non-existent group, that's a 404
@@ -551,25 +435,27 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
 
         self.assertRequestDisallowed(read_url, [None, self.agent])
 
-        self.assertContentMenu(read_url, self.editor, ["Edit", "Start Flow", "Open Ticket"])
-        self.assertContentMenu(read_url, self.admin, ["Edit", "Start Flow", "Open Ticket"])
+        self.assertContentMenu(read_url, self.editor, ["Start Flow", "Open Ticket"])
+        self.assertContentMenu(read_url, self.admin, ["Start Flow", "Open Ticket"])
 
         # if there's an open ticket already, don't show open ticket option
         self.create_ticket(joe)
-        self.assertContentMenu(read_url, self.editor, ["Edit", "Start Flow"])
+        self.assertContentMenu(read_url, self.editor, ["Start Flow"])
 
         # login as admin
         self.login(self.admin)
 
         response = self.client.get(read_url)
         self.assertContains(response, "Joe")
+        self.assertContains(response, '-temba-button-clicked="handleFieldSearch"')
+        self.assertContains(response, "evt.detail.key === undefined")
         self.assertEqual("/contact/active", response.headers[TEMBA_MENU_SELECTION])
 
         # block the contact
         joe.block(self.admin)
         self.assertTrue(Contact.objects.get(pk=joe.id, status="B"))
 
-        self.assertContentMenu(read_url, self.admin, ["Edit"])
+        self.assertContentMenu(read_url, self.admin, [])
 
         response = self.client.get(read_url)
         self.assertContains(response, "Joe")
@@ -589,11 +475,38 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
         # contact without name or urn
         nameless = Contact.objects.create(org=self.org)
         response = self.client.get(reverse("contacts.contact_read", args=[nameless.uuid]))
-        self.assertContains(response, "Contact Details")
+        self.assertEqual(200, response.status_code)
 
         # invalid uuid should return 404
         response = self.client.get(reverse("contacts.contact_read", args=["invalid-uuid"]))
         self.assertEqual(response.status_code, 404)
+
+    @mock_mailroom
+    def test_read_component(self, mr_mocks):
+        joe = self.create_contact("Joe", phone="123")
+
+        read_url = reverse("contacts.contact_read", args=[joe.uuid])
+
+        self.login(self.admin)
+
+        # the read page uses the chat + card column layout
+        response = self.client.get(read_url)
+        self.assertContains(response, "temba-card-layout")
+        self.assertContains(response, "temba-page-header")
+        self.assertContains(response, '-temba-button-clicked="handleFieldSearch"')
+        self.assertContains(response, "evt.detail.key === undefined")
+        self.assertNotContains(response, "temba-tabs")
+
+        # card state defaults to empty
+        self.assertEqual("{}", response.context["card_settings"])
+
+        # saved card state is serialized for temba-card-layout, which applies order and collapse itself
+        self.admin.settings = {"contact_cards": {"order": ["card-fields"], "collapsed": ["card-nextup"]}}
+        self.admin.save(update_fields=("settings",))
+
+        response = self.client.get(read_url)
+        self.assertEqual('{"order": ["card-fields"], "collapsed": ["card-nextup"]}', response.context["card_settings"])
+        self.assertContains(response, 'id="card-nextup"')
 
     @patch("django.utils.timezone.now")
     @mock_mailroom
@@ -841,6 +754,7 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
     @mock_mailroom
     def test_chat_search(self, mr_mocks):
         contact = self.create_contact("Joe Blow", urns=["tel:+250781111111"])
+        ticket = self.create_ticket(contact)
 
         chat_search_url = reverse("contacts.contact_chat_search", args=[contact.uuid])
 
@@ -858,47 +772,25 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
         self.assertEqual(200, response.status_code)
         self.assertEqual({"results": []}, response.json())
 
+        event1 = {
+            "uuid": "019a9935-022e-7bb3-9d6f-03d773be623e",
+            "type": "msg_received",
+            "created_on": "2025-11-17T16:00:00+00:00",
+            "ticket_uuid": str(ticket.uuid),
+        }
+        event2 = {
+            "uuid": "019a9935-022e-7bb3-9d6f-03d773be624e",
+            "type": "msg_created",
+            "created_on": "2025-11-17T16:01:00+00:00",
+        }
+
         # with results from mailroom
-        mr_mocks.msg_search(
-            [
-                (
-                    contact,
-                    {
-                        "uuid": "019a9935-022e-7bb3-9d6f-03d773be623e",
-                        "type": "msg_received",
-                        "created_on": "2025-11-17T16:00:00+00:00",
-                    },
-                ),
-                (
-                    contact,
-                    {
-                        "uuid": "019a9935-022e-7bb3-9d6f-03d773be624e",
-                        "type": "msg_created",
-                        "created_on": "2025-11-17T16:01:00+00:00",
-                    },
-                ),
-            ]
-        )
+        mr_mocks.msg_search([(contact, event1), (contact, event2)])
 
         response = self.client.get(chat_search_url + "?text=hello")
         self.assertEqual(200, response.status_code)
-        self.assertEqual(
-            {
-                "results": [
-                    {
-                        "uuid": "019a9935-022e-7bb3-9d6f-03d773be623e",
-                        "type": "msg_received",
-                        "created_on": "2025-11-17T16:00:00+00:00",
-                    },
-                    {
-                        "uuid": "019a9935-022e-7bb3-9d6f-03d773be624e",
-                        "type": "msg_created",
-                        "created_on": "2025-11-17T16:01:00+00:00",
-                    },
-                ]
-            },
-            response.json(),
-        )
+        self.assertEqual({"results": [event1, event2]}, response.json())
+        self.assertEqual([call(self.org, "hello", contact=contact)], mr_mocks.calls["msg_search"])
 
     @mock_mailroom
     def test_update(self, mr_mocks):
@@ -1015,7 +907,9 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
         self.assertEqual("Bobby", contact.name)
         self.assertEqual(Contact.STATUS_BLOCKED, contact.status)
         self.assertEqual("spa", contact.language)
-        self.assertEqual({testers}, set(contact.get_groups()))
+
+        # contact is no longer in the group because blocking removes contacts from all groups
+        self.assertEqual(set(), set(contact.get_groups()))
         self.assertEqual(
             ["tel:+593979333333", "telegram:78686776", "facebook:9898989"],
             [u.identity for u in contact.urns.order_by("-priority")],
@@ -1859,7 +1753,7 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
         self.assertIsNone(ticket.assignee)
 
         # and we're redirected to that ticket
-        self.assertRedirect(response, f"/ticket/all/open/{ticket.uuid}/")
+        self.assertRedirect(response, f"/ticket/all/{ticket.uuid}/")
 
     @mock_mailroom
     def test_interrupt(self, mr_mocks):
@@ -1873,13 +1767,14 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
 
         # should see start flow option
         response = self.client.get(read_url)
-        self.assertContentMenu(read_url, self.admin, ["Edit", "Start Flow", "Open Ticket"])
+        self.assertContentMenu(read_url, self.admin, ["Start Flow", "Open Ticket"])
 
         MockSessionWriter(contact, self.create_flow("Test")).wait().save()
         MockSessionWriter(other_org_contact, self.create_flow("Test", org=self.org2)).wait().save()
 
-        # start option should be gone
-        self.assertContentMenu(read_url, self.admin, ["Edit", "Open Ticket"])
+        # start option is still present even for a contact in a flow - the start modal handles
+        # confirming the interruption
+        self.assertContentMenu(read_url, self.admin, ["Start Flow", "Open Ticket"])
 
         # can't interrupt if not logged in
         self.client.logout()
@@ -1964,7 +1859,7 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
             object_unchanged=contact,
         )
 
-        # submit with flow...
+        # submit with flow... the start is locked to the seeded contact so the query is ignored
         contact_search = dict(query=f"uuid='{contact.uuid}'", advanced=True)
         self.assertUpdateSubmit(
             start_url, self.admin, {"flow": background_flow.id, "contact_search": json.dumps(contact_search)}
@@ -1979,9 +1874,9 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
                     typ="M",
                     flow=background_flow,
                     groups=[],
-                    contacts=[],
+                    contacts=[contact],
                     urns=[],
-                    query=f"uuid='{contact.uuid}'",
+                    query=None,
                     exclude=Exclusions(),
                     params={},
                 )

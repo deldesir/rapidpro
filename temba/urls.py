@@ -25,6 +25,7 @@ urlpatterns += [
     re_path(r"^", include("temba.dashboard.urls")),
     re_path(r"^", include("temba.flows.urls")),
     re_path(r"^", include("temba.globals.urls")),
+    re_path(r"^", include("temba.knowledge.urls")),
     re_path(r"^", include("temba.ivr.urls")),
     re_path(r"^", include("temba.locations.urls")),
     re_path(r"^", include("temba.msgs.urls")),
@@ -44,4 +45,14 @@ urlpatterns += [
 ]
 
 if settings.DEBUG:
+    import os
+
+    from django.views.static import serve as serve_static
+
+    def serve_components_demo(request, path):
+        if not path or path.endswith("/"):
+            path += "index.html"
+        return serve_static(request, path, document_root=os.path.join(settings.COMPONENTS_DIR, "demo"))
+
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    urlpatterns += [re_path(r"^demo/(?P<path>.*)$", serve_components_demo)]

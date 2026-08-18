@@ -14,6 +14,7 @@ from openpyxl import load_workbook
 from smartmin.models import SmartModel
 
 from django.conf import settings
+from django.contrib.humanize.templatetags.humanize import intcomma
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import models, transaction
@@ -28,9 +29,10 @@ from temba.channels.models import Channel
 from temba.locations.models import AdminBoundary
 from temba.mailroom import ContactSpec, modifiers
 from temba.orgs.models import DependencyMixin, Export, ExportType, Org, OrgRole
+from temba.orgs.realtime import AssetNameMixin
 from temba.utils import dynamo, format_number, on_transaction_commit
 from temba.utils.export import MultiSheetExporter
-from temba.utils.models import JSONField, LegacyUUIDMixin, TembaModel, delete_in_batches
+from temba.utils.models import JSONField, LegacyIDMixin, LegacyUUIDMixin, TembaModel, delete_in_batches
 from temba.utils.models.counts import BaseSquashableCount
 from temba.utils.text import obfuscate, unsnakify
 from temba.utils.urns import ParsedURN, parse_number, parse_urn
@@ -97,6 +99,10 @@ class URN:
 
     FACEBOOK_PATH_REF_PREFIX = "ref:"
 
+    # a WhatsApp business-scoped user id: two-letter country code, dot, 1-128 alphanumerics (shared by
+    # the whatsapp and bsuid schemes, matching gocommon's whatsAppBSUIDRegex)
+    BSUID_PATH_REGEX = r"^[A-Z]{2}\.[a-zA-Z0-9]{1,128}$"
+
     def __init__(self):  # pragma: no cover
         raise ValueError("Class shouldn't be instantiated")
 
@@ -134,17 +140,17 @@ class URN:
         """
         scheme, path, query, display = cls.to_parts(urn)
 
-        if scheme in [cls.TEL_SCHEME, cls.WHATSAPP_SCHEME] and formatted:
+        # tel URNs, and legacy all-digit whatsapp URNs, are shown as friendly phone numbers; business-scoped
+        # whatsapp ids (not all digits) fall through and are shown as-is
+        if formatted and (scheme == cls.TEL_SCHEME or (scheme == cls.WHATSAPP_SCHEME and path.isdigit())):
             try:
-                # whatsapp scheme is E164 without a leading +, add it so parsing works
-                if scheme == cls.WHATSAPP_SCHEME:
-                    path = "+" + path
-
-                if path and path[0] == "+":
+                # whatsapp phone paths are E164 without a leading +, add it so parsing works
+                number = path if scheme == cls.TEL_SCHEME else "+" + path
+                if number and number[0] == "+":
                     phone_format = phonenumbers.PhoneNumberFormat.NATIONAL
                     if international:
                         phone_format = phonenumbers.PhoneNumberFormat.INTERNATIONAL
-                    return phonenumbers.format_number(phonenumbers.parse(path, None), phone_format)
+                    return phonenumbers.format_number(phonenumbers.parse(number, None), phone_format)
             except phonenumbers.NumberParseException:  # pragma: no cover
                 pass
 
@@ -203,13 +209,18 @@ class URN:
                 except ValueError:
                     return False
 
-        # telegram, whatsapp and instagram use integer ids
-        elif scheme in [cls.TELEGRAM_SCHEME, cls.WHATSAPP_SCHEME, cls.INSTAGRAM_SCHEME]:
+        # telegram and instagram use integer ids
+        elif scheme in [cls.TELEGRAM_SCHEME, cls.INSTAGRAM_SCHEME]:
             return regex.match(r"^[0-9]+$", path, regex.V0)
 
-        # bsuid (WhatsApp business-scoped user id): two-letter country code, dot, 1-128 alphanumerics
+        # whatsapp holds either a phone number (all digits, legacy) or a business-scoped user id; the digit
+        # form is accepted transitionally for existing/legacy rows and can be dropped once nothing writes it
+        elif scheme == cls.WHATSAPP_SCHEME:
+            return regex.match(r"^[0-9]+$", path, regex.V0) or regex.match(cls.BSUID_PATH_REGEX, path, regex.V0)
+
+        # bsuid is a WhatsApp business-scoped user id
         elif scheme == cls.BSUID_SCHEME:
-            return regex.match(r"^[A-Z]{2}\.[a-zA-Z0-9]{1,128}$", path, regex.V0)
+            return regex.match(cls.BSUID_PATH_REGEX, path, regex.V0)
 
         # validate Viber URNS look right (this is a guess)
         elif scheme == cls.VIBER_SCHEME:  # pragma: needs cover
@@ -253,8 +264,8 @@ class URN:
         elif scheme == cls.EMAIL_SCHEME:
             norm_path = norm_path.lower()
 
-        elif scheme == cls.BSUID_SCHEME:
-            # BSUIDs have format CC.ALPHANUMERIC - uppercase the country code
+        elif scheme in [cls.WHATSAPP_SCHEME, cls.BSUID_SCHEME]:
+            # whatsapp/bsuid have format CC.ALPHANUMERIC - uppercase the country code
             if len(norm_path) > 2 and norm_path[2] == ".":
                 norm_path = norm_path[:2].upper() + norm_path[2:]
 
@@ -494,15 +505,12 @@ class ContactField(TembaModel, DependencyMixin):
         )
 
     @classmethod
-    def get_fields(cls, org: Org, featured=None, viewable_by=None):
+    def get_fields(cls, org: Org, viewable_by=None):
         """
         Gets the fields for the given org
         """
 
         fields = org.fields.filter(is_active=True, is_proxy=False)
-
-        if featured is not None:
-            fields = fields.filter(show_in_table=featured)
 
         if viewable_by and org.get_user_role(viewable_by) == OrgRole.AGENT:
             fields = fields.exclude(agent_access=cls.ACCESS_NONE)
@@ -552,7 +560,7 @@ class ContactField(TembaModel, DependencyMixin):
         self.save(update_fields=("name", "is_active", "modified_on", "modified_by"))
 
 
-class Contact(LegacyUUIDMixin, SmartModel):
+class Contact(LegacyIDMixin, LegacyUUIDMixin, SmartModel):
     """
     A contact represents an individual with which we can communicate and collect data
     """
@@ -616,7 +624,7 @@ class Contact(LegacyUUIDMixin, SmartModel):
     ):
         engine_status = cls.ENGINE_STATUSES[status]
         fields_by_key = {f.key: v for f, v in fields.items()}
-        group_uuids = [g.uuid for g in groups]
+        group_uuids = [str(g.uuid) for g in groups]
 
         return mailroom.get_client().contact_create(
             org,
@@ -981,19 +989,25 @@ class Contact(LegacyUUIDMixin, SmartModel):
         # pre-check the group dropdown against each row's current membership.
         groups = self.prefetched_groups if hasattr(self, "prefetched_groups") else self.get_groups()
 
-        return {
+        data = {
             "uuid": str(self.uuid),
             "name": self.name,
             "status": statuses.get(self.status),
-            # Pre-formatted primary URN for display (the component shows `urn` verbatim); anon orgs are masked by
-            # get_display.
-            "urn": urn.get_display(org=org, international=True) if urn else "",
+            # Primary URN as scheme + pre-formatted display (masked by get_display for anon orgs); structured so the
+            # component can render the scheme if it wants to.
+            "urn": {"scheme": urn.scheme, "display": urn.get_display(org=org, international=True)} if urn else None,
             "urns": [serialize_urn(org, u) for u in self.get_urns()],
             "fields": {f.key: self.get_field_serialized(f) for f in fields},
             "groups": [{"uuid": str(g.uuid), "name": g.name} for g in groups],
             "last_seen_on": self.last_seen_on.isoformat() if self.last_seen_on else None,
             "created_on": self.created_on.isoformat() if self.created_on else None,
         }
+
+        # as in the public API, the ref is only exposed on anon orgs, where it stands in for the masked URNs
+        if org.is_anon:
+            data["ref"] = self.ref
+
+        return data
 
     def update(self, name: str, language: str) -> list[modifiers.Modifier]:
         """
@@ -1405,7 +1419,7 @@ class Contact(LegacyUUIDMixin, SmartModel):
         ]
 
 
-class ContactURN(models.Model):
+class ContactURN(LegacyIDMixin, models.Model):
     """
     A Universal Resource Name used to uniquely identify contacts, e.g. tel:+1234567890 or twitter:example
     """
@@ -1419,7 +1433,6 @@ class ContactURN(models.Model):
         URN.WEBCHAT_SCHEME,
     }
     SCHEMES_SUPPORTING_REFERRALS = {URN.FACEBOOK_SCHEME}  # schemes that support "referral" triggers
-    SCHEMES_SUPPORTING_OPTINS = {URN.FACEBOOK_SCHEME}  # schemes that support opt-in/opt-out triggers
 
     # mailroom sets priorites like 1000, 999, ...
     PRIORITY_HIGHEST = 1000
@@ -1496,10 +1509,12 @@ class ContactURN(models.Model):
         ]
 
 
-class ContactGroup(LegacyUUIDMixin, TembaModel, DependencyMixin):
+class ContactGroup(AssetNameMixin, LegacyIDMixin, TembaModel, DependencyMixin):
     """
     A group of contacts whose membership can be manual or query based
     """
+
+    asset_type = "group"
 
     TYPE_DB_ACTIVE = "A"  # maintained by db trigger on status=A
     TYPE_DB_BLOCKED = "B"  # maintained by db trigger on status=B
@@ -2181,14 +2196,14 @@ class ContactImport(SmartModel):
                 if uuid in seen_uuids:
                     raise ValidationError(
                         _("Import file contains duplicated contact UUID '%(uuid)s' on row %(row)s."),
-                        params={"uuid": uuid, "row": row_num},
+                        params={"uuid": uuid, "row": intcomma(row_num)},
                     )
                 seen_uuids.add(uuid)
             for urn in urns:
                 if urn in seen_urns:
                     raise ValidationError(
                         _("Import file contains duplicated contact URN '%(urn)s' on row %(row)s."),
-                        params={"urn": urn, "row": row_num},
+                        params={"urn": urn, "row": intcomma(row_num)},
                     )
                 seen_urns.add(urn)
 
@@ -2198,8 +2213,8 @@ class ContactImport(SmartModel):
             # check if we exceed record limit
             if num_records > ContactImport.MAX_RECORDS:
                 raise ValidationError(
-                    _("Import files can contain a maximum of %(max)d records."),
-                    params={"max": ContactImport.MAX_RECORDS},
+                    _("Import files can contain a maximum of %(max)s records."),
+                    params={"max": intcomma(ContactImport.MAX_RECORDS)},
                 )
 
         if num_records == 0:

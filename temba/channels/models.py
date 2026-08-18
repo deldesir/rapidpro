@@ -27,7 +27,7 @@ from temba.orgs.models import DependencyMixin, Org
 from temba.utils import dynamo, on_transaction_commit, redact
 from temba.utils.models import (
     JSONAsTextField,
-    LegacyUUIDMixin,
+    LegacyIDMixin,
     TembaModel,
     TembaUUIDMixin,
     delete_in_batches,
@@ -35,7 +35,6 @@ from temba.utils.models import (
 )
 from temba.utils.models.counts import BaseDailyCount
 from temba.utils.text import generate_secret
-from temba.utils.whatsapp import update_api_version
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +91,6 @@ class ChannelType(metaclass=ABCMeta):
     slug = None  # set automatically
     name = None  # display name
     category = None
-    beta_only = False
 
     unique_addresses = False
 
@@ -131,7 +129,7 @@ class ChannelType(metaclass=ABCMeta):
         Determines whether this channel type is available to the given user considering the region and when not considering region, e.g. check timezone
         """
 
-        region_ignore_visible = (not self.beta_only) or user.is_beta
+        region_ignore_visible = True
         region_aware_visible = True
 
         if self.available_timezones is not None:
@@ -234,7 +232,7 @@ def _get_default_channel_scheme():
     return ["tel"]
 
 
-class Channel(LegacyUUIDMixin, TembaModel, DependencyMixin):
+class Channel(LegacyIDMixin, TembaModel, DependencyMixin):
     """
     Notes:
         - we want to reuse keys as much as possible (2018-10-11)
@@ -446,10 +444,6 @@ class Channel(LegacyUUIDMixin, TembaModel, DependencyMixin):
             return
 
         with r.lock(key, 60):
-            # for channels which have version in their config, refresh it
-            if self.config.get("version"):  # pragma: no cover
-                update_api_version(self)
-
             try:
                 raw_templates = self.type.fetch_templates(self)
 
@@ -795,7 +789,6 @@ class ChannelEvent(TembaUUIDMixin, models.Model):
     contact_urn = models.ForeignKey(
         "contacts.ContactURN", on_delete=models.PROTECT, null=True, related_name="channel_events"
     )
-    optin = models.ForeignKey("msgs.OptIn", null=True, on_delete=models.PROTECT, related_name="optins")
     extra = JSONAsTextField(null=True, default=dict)
     occurred_on = models.DateTimeField()
     created_on = models.DateTimeField(default=timezone.now)

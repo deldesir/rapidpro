@@ -6,11 +6,10 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import storages
 from django.db import models
 from django.utils import timezone
-from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 
 from temba.utils.fields import UploadToIdPathAndRename
-from temba.utils.models.base import TembaUUIDMixin
+from temba.utils.models.base import LegacyIDMixin, TembaUUIDMixin
 from temba.utils.uuid import uuid4
 
 
@@ -41,7 +40,7 @@ class UserManager(AuthUserManager):
         return user
 
 
-class User(TembaUUIDMixin, AbstractBaseUser, PermissionsMixin):
+class User(LegacyIDMixin, TembaUUIDMixin, AbstractBaseUser, PermissionsMixin):
     SYSTEM = {"email": "system", "first_name": "System"}
 
     EMAIL_FIELD = "email"
@@ -62,6 +61,9 @@ class User(TembaUUIDMixin, AbstractBaseUser, PermissionsMixin):
     # optional customer support fields
     external_id = models.CharField(max_length=128, null=True)
     verification_token = models.CharField(max_length=64, null=True)
+
+    # generic bucket of UI state, e.g. card order on the contact read page
+    settings = models.JSONField(default=dict)
 
     objects = UserManager()
 
@@ -165,14 +167,6 @@ class User(TembaUUIDMixin, AbstractBaseUser, PermissionsMixin):
         """
 
         self.authenticator_set.all().delete()
-
-    @cached_property
-    def is_alpha(self) -> bool:
-        return self.groups.filter(name="Alpha").exists()
-
-    @cached_property
-    def is_beta(self) -> bool:
-        return self.groups.filter(name="Beta").exists()
 
     def has_org_perm(self, org, permission: str) -> bool:
         """

@@ -75,7 +75,7 @@ class ContactsEndpointTest(APITest):
                 "status": "active",
                 "language": "fra",
                 "urns": ["tel:+250788000004"],
-                "groups": [{"uuid": group.uuid, "name": group.name}],
+                "groups": [{"uuid": str(group.uuid), "name": group.name}],
                 "notes": [],
                 "fields": {"nickname": "Donnie", "gender": "male"},
                 "flow": {"uuid": str(survey.uuid), "name": "Survey"},
@@ -117,7 +117,7 @@ class ContactsEndpointTest(APITest):
                         "display": None,
                     }
                 ],
-                "groups": [{"uuid": group.uuid, "name": group.name}],
+                "groups": [{"uuid": str(group.uuid), "name": group.name}],
                 "notes": [],
                 "fields": {"nickname": "Donnie", "gender": "male"},
                 "flow": {"uuid": str(survey.uuid), "name": "Survey"},
@@ -152,7 +152,7 @@ class ContactsEndpointTest(APITest):
                     "status": "active",
                     "language": "fra",
                     "urns": ["tel:********"],
-                    "groups": [{"uuid": group.uuid, "name": group.name}],
+                    "groups": [{"uuid": str(group.uuid), "name": group.name}],
                     "notes": [],
                     "fields": {"nickname": "Donnie", "gender": "male"},
                     "flow": {"uuid": str(survey.uuid), "name": "Survey"},
@@ -188,7 +188,7 @@ class ContactsEndpointTest(APITest):
                             "display": None,
                         }
                     ],
-                    "groups": [{"uuid": group.uuid, "name": group.name}],
+                    "groups": [{"uuid": str(group.uuid), "name": group.name}],
                     "notes": [],
                     "fields": {"nickname": "Donnie", "gender": "male"},
                     "flow": {"uuid": str(survey.uuid), "name": "Survey"},
@@ -598,6 +598,37 @@ class ContactsEndpointTest(APITest):
         self.assertEqual(
             "Frank is an okay guy (9)",
             response.json()["results"][0]["notes"][-1]["text"],
+        )
+
+    @mock_mailroom
+    def test_expanded_urns_can_preserve_priority_order(self, mr_mocks):
+        contact = self.create_contact(
+            "Reordered",
+            urns=["tel:+250788123456", "facebook:123456789"],
+        )
+        endpoint_url = reverse("api.v2.contacts") + f".json?expand_urns=true&urn_order=priority&uuid={contact.uuid}"
+
+        response = self.assertPost(
+            endpoint_url,
+            self.editor,
+            {"urns": ["facebook:123456789", "tel:+250788123456"]},
+        )
+
+        self.assertEqual(
+            ["facebook:123456789", "tel:+250788123456"],
+            [f"{urn['scheme']}:{urn['path']}" for urn in response.json()["urns"]],
+        )
+        self.assertIsNone(response.json()["urns"][0]["channel"])
+        self.assertIsNotNone(response.json()["urns"][1]["channel"])
+
+        response = self.assertGet(
+            reverse("api.v2.contacts") + f".json?expand_urns=true&uuid={contact.uuid}",
+            [self.editor],
+            results=[contact],
+        )
+        self.assertEqual(
+            ["tel:+250788123456", "facebook:123456789"],
+            [f"{urn['scheme']}:{urn['path']}" for urn in response.json()["results"][0]["urns"]],
         )
 
     @mock_mailroom

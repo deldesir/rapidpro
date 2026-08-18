@@ -283,7 +283,6 @@ class MailroomClient:
         query: str,
         node_uuid: str,
         exclude: Exclusions,
-        optin,
         template,
         template_variables: list,
         schedule: ScheduleSpec,
@@ -301,7 +300,6 @@ class MailroomClient:
                 "query": query,
                 "node_uuid": node_uuid,
                 "exclude": asdict(exclude) if exclude else None,
-                "optin_id": optin.id if optin else None,
                 "template_id": template.id if template else None,
                 "template_variables": template_variables,
                 "schedule": asdict(schedule) if schedule else None,
@@ -380,29 +378,12 @@ class MailroomClient:
         """
         return self._request("notification/publish", {"org_id": org.id, "notifications": notifications})
 
+    def org_publish(self, org, event: dict):
+        """Publishes a workspace-wide realtime event."""
+        return self._request("org/publish", {"org_id": org.id, "event": event})
+
     def org_deindex(self, org):
         return self._request("org/deindex", {"org_id": org.id})
-
-    def po_export(self, org, flows, language: str):
-        return self._request(
-            "po/export",
-            {
-                "org_id": org.id,
-                "flow_ids": [f.id for f in flows],
-                "language": language,
-            },
-        )
-
-    def po_import(self, org, flows, language: str, po_data):
-        return self._request(
-            "po/import",
-            {
-                "org_id": org.id,
-                "flow_ids": [f.id for f in flows],
-                "language": language,
-            },
-            files={"po": po_data},
-        )
 
     def sim_start(self, payload: dict):
         return self._request("sim/start", payload, encode_json=True)
@@ -468,25 +449,14 @@ class MailroomClient:
             },
         )
 
-    def system_errors(self, log, ret, panic):  # pragma: no cover
-        return self._request("system/errors", {"log": log, "ret": ret, "panic": panic})
-
-    def system_latency(self) -> list:  # pragma: no cover
-        return self._request("system/latency", {}, post=False)
-
-    def system_queues(self) -> dict:  # pragma: no cover
-        return self._request("system/queues", {}, post=False)
-
-    def _request(self, endpoint, payload=None, files=None, post=True, encode_json=False):
+    def _request(self, endpoint, payload=None, post=True, encode_json=False):
         if logger.isEnabledFor(logging.DEBUG):  # pragma: no cover
             logger.debug("=============== %s request ===============" % endpoint)
             logger.debug(json.dumps(payload, indent=2))
             logger.debug("=============== /%s request ===============" % endpoint)
 
         headers = self.headers.copy()
-        if files:
-            kwargs = dict(data=payload, files=files)
-        elif encode_json:
+        if encode_json:
             # do the JSON encoding ourselves - required when the json is something we've loaded with our decoder
             # which could contain non-standard types
             headers["Content-Type"] = "application/json"
@@ -500,7 +470,7 @@ class MailroomClient:
         if response.headers.get("Content-Type") == "application/json":
             resp_body = response.json()
         else:
-            # not all endpoints return JSON, e.g. po file export
+            # defensive against non-JSON responses, e.g. error pages from a proxy
             resp_body = response.content
 
         if response.status_code == 422:

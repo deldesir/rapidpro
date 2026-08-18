@@ -3,7 +3,8 @@ from urllib.parse import quote_plus
 
 from django import forms
 from django.contrib import messages
-from django.http import HttpResponseForbidden, HttpResponseRedirect
+from django.core.exceptions import ValidationError
+from django.http import Http404, HttpResponseForbidden, HttpResponseRedirect
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
@@ -77,7 +78,10 @@ class OrgObjPermsMixin(OrgPermsMixin):
     """
 
     def get_object_org(self):
-        return self.get_object().org
+        try:
+            return self.get_object().org
+        except ValidationError:  # e.g. object URLs with invalid UUIDs
+            raise Http404()
 
     def has_permission(self, request, *args, **kwargs) -> bool:
         has_perm = super().has_permission(request, *args, **kwargs)
@@ -155,7 +159,9 @@ class InferUserMixin:
 
 class BulkActionMixin:
     """
-    Mixin for list views which have bulk actions
+    Mixin for list views which have bulk actions. The list components which post these actions identify both the
+    selection and any label by uuid, so the form matches on uuid rather than pk - which also means a malformed value
+    is a form error rather than an uncaught ValueError from the database layer.
     """
 
     bulk_actions = ()
@@ -166,19 +172,21 @@ class BulkActionMixin:
             super().__init__(*args, **kwargs)
 
             self.fields["action"] = forms.ChoiceField(choices=[(a, a) for a in actions], required=True)
-            self.fields["objects"] = forms.ModelMultipleChoiceField(queryset=queryset, required=False)
+            self.fields["objects"] = forms.ModelMultipleChoiceField(
+                queryset=queryset, to_field_name="uuid", required=False
+            )
             self.fields["all"] = forms.BooleanField(required=False)
             self.fields["add"] = forms.BooleanField(required=False)
 
             if label_queryset:
-                self.fields["label"] = forms.ModelChoiceField(label_queryset, required=False)
+                self.fields["label"] = forms.ModelChoiceField(label_queryset, to_field_name="uuid", required=False)
 
         def clean(self):
             cleaned_data = super().clean()
             action = cleaned_data.get("action")
             label = cleaned_data.get("label")
             if action in ("label", "unlabel") and not label:
-                raise forms.ValidationError("Must specify a label")
+                raise forms.ValidationError(_("Must specify a label"))
 
             # TODO update frontend to send back unlabel actions
             if action == "label" and self.data.get("add", "").lower() == "false":
@@ -227,12 +235,6 @@ class BulkActionMixin:
                 logger.exception(f"error applying '{action}' to {self.model.__name__} objects")
 
         return self.get(request, *args, **kwargs)
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["actions"] = self.get_bulk_actions()
-        context["labels"] = self.get_bulk_action_labels()
-        return context
 
     def get_bulk_actions(self):
         """

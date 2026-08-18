@@ -11,7 +11,6 @@ from typing import Any
 from urllib.parse import urlparse
 
 import pycountry
-import pytz
 from django_valkey import get_valkey_connection
 from packaging.version import Version
 from smartmin.models import SmartModel
@@ -39,7 +38,7 @@ from temba.users.models import User
 from temba.utils import json, languages, on_transaction_commit
 from temba.utils.dates import datetime_to_str
 from temba.utils.email import EmailSender
-from temba.utils.models import TembaUUIDMixin, delete_in_batches
+from temba.utils.models import LegacyIDMixin, TembaUUIDMixin, delete_in_batches
 from temba.utils.models.counts import BaseDailyCount, BaseScopedCount
 from temba.utils.text import generate_secret
 from temba.utils.timezones import timezone_to_country_code
@@ -193,7 +192,7 @@ class OrgRole(Enum):
         return self.has_perm(permission) or permission in self.api_permissions
 
 
-class Org(SmartModel):
+class Org(LegacyIDMixin, SmartModel):
     """
     An Org can have several users and is the main component that holds all Flows, Messages, Contacts, etc.
 
@@ -244,6 +243,8 @@ class Org(SmartModel):
     FEATURE_TEAMS = "teams"  # can create teams to organize agent users
     FEATURE_PROMETHEUS = "prometheus"  # can create a prometheus token to access metrics
     FEATURE_SHARED_CHANNELS = "shared_channels"  # can share channels between orgs
+    FEATURE_AGENTS = "agents"  # can create AI agents to handle contact conversations
+    FEATURE_UNRESTRICTED_WEBHOOKS = "unrestricted_webhooks"  # can call webhooks to otherwise blocked domains
     FEATURES_CHOICES = (
         (FEATURE_USERS, _("Users")),
         (FEATURE_NEW_ORGS, _("New Orgs")),
@@ -251,12 +252,15 @@ class Org(SmartModel):
         (FEATURE_TEAMS, _("Teams")),
         (FEATURE_PROMETHEUS, _("Prometheus")),
         (FEATURE_SHARED_CHANNELS, _("Shared Channels")),
+        (FEATURE_AGENTS, _("Agents")),
+        (FEATURE_UNRESTRICTED_WEBHOOKS, _("Unrestricted Webhooks")),
     )
 
     LIMIT_CHANNELS = "channels"
     LIMIT_FIELDS = "fields"
     LIMIT_GLOBALS = "globals"
     LIMIT_GROUPS = "groups"
+    LIMIT_KNOWLEDGE = "knowledge"
     LIMIT_LABELS = "labels"
     LIMIT_LLMS = "llms"
     LIMIT_TOPICS = "topics"
@@ -353,8 +357,8 @@ class Org(SmartModel):
         Creates a new workspace.
         """
 
-        mdy_tzs = pytz.country_timezones("US")
-        date_format = Org.DATE_FORMAT_MONTH_FIRST if str(tz) in mdy_tzs else cls.DATE_FORMAT_DAY_FIRST
+        is_us = timezone_to_country_code(tz) == "US"
+        date_format = Org.DATE_FORMAT_MONTH_FIRST if is_us else cls.DATE_FORMAT_DAY_FIRST
 
         # use default user language as default flow language too
         default_flow_language = languages.alpha2_to_alpha3(settings.DEFAULT_LANGUAGE)
@@ -573,8 +577,8 @@ class Org(SmartModel):
             trigger_type = trigger_def.get("trigger_type", "")
 
             # TODO need better way to report import results back to users
-            # ignore scheduled triggers
-            if trigger_type == "S":
+            # ignore scheduled triggers as they're missing their schedules, and removed trigger types
+            if trigger_type in ("S", "I", "O"):
                 continue
 
             Trigger.clean_import_def(trigger_def)
@@ -1037,12 +1041,14 @@ class Org(SmartModel):
         Initializes an organization, creating all the dependent objects we need for it to work properly.
         """
         from temba.contacts.models import ContactField, ContactGroup
+        from temba.knowledge.models import Knowledge
         from temba.tickets.models import Team, Topic
 
         ContactGroup.create_system_groups(self)
         ContactField.create_system_fields(self)
         Team.create_system(self)
         Topic.create_system(self)
+        Knowledge.create_system(self)  # both system sources; MUST be last so seeded UUIDs stay stable in test dumps
 
         # we should be called within a transaction, create the sample flows when its committed
         if sample_flows:
@@ -1132,6 +1138,9 @@ class Org(SmartModel):
 
         # delete contact-related data
         delete_in_batches(self.http_logs.all())
+        for kb in self.knowledge.all():
+            kb.delete()  # batched purge of chunks, items, articles, images + their storage objects
+        delete_in_batches(self.shortcuts.all())
         delete_in_batches(self.tickets.all())
         delete_in_batches(self.topics.all())
         delete_in_batches(self.teams.all())

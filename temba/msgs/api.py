@@ -1,18 +1,92 @@
 from datetime import timedelta
+from functools import cached_property
 
-from django.db.models import Q
-from django.http import HttpResponse
+from django.db.models import Q, TextField
+from django.db.models.expressions import RawSQL
+from django.db.models.functions import Cast
 from django.utils import timezone
 
 from temba.api.internal.serializers import ModelAsJsonSerializer
 from temba.api.internal.views import BaseEndpoint
-from temba.api.support import CreatedOnCursorPagination, SearchCountMixin, SentOnCursorPagination
+from temba.api.support import (
+    CreatedOnCursorPagination,
+    ListPagination,
+    SearchCountMixin,
+    SearchLengthMixin,
+    SentOnCursorPagination,
+)
 from temba.api.views import ListAPIMixin
+from temba.utils.uuid import is_uuid
 
-from .models import Msg, MsgFolder
+from .models import Broadcast, BroadcastMsgCount, Msg, MsgFolder
 
 
-class MessagesEndpoint(ListAPIMixin, BaseEndpoint):
+class BroadcastsEndpoint(SearchLengthMixin, ListAPIMixin, BaseEndpoint):
+    """
+    Broadcasts for the current org, used by the broadcast list component. A folder is selected with the `folder`
+    query param — `sent` (the default: broadcasts without a schedule) or `scheduled` (broadcasts waiting on one).
+    An optional `search` param filters by message text, and `sort` can be `created_on` or `next_fire`
+    (scheduled only), prefixed with `-` to reverse. Each item is serialized via Broadcast.as_json().
+    """
+
+    model = Broadcast
+    serializer_class = ModelAsJsonSerializer
+    pagination_class = ListPagination
+
+    def derive_queryset(self):
+        # Build from Broadcast.objects rather than the org.broadcasts related manager — a related manager would seed
+        # each fetched row with the in-memory org instance, which Django rejects on a GET because the org was loaded
+        # from the default database while this queryset reads from the readonly alias.
+        qs = Broadcast.objects.filter(org=self.request.org, is_active=True)
+
+        scheduled = self.request.query_params.get("folder", "sent").lower() == "scheduled"
+        if scheduled:
+            qs = qs.exclude(schedule=None)
+            default_order = ("schedule__next_fire", "-created_on")
+        else:
+            qs = qs.filter(schedule=None)
+            default_order = ("-created_on",)
+
+        search = self.request.query_params.get("search")
+        if search:
+            # broadcast text lives inside the translations JSON, so search over just the per-language text values
+            # (extracted with a jsonpath) rather than a raw cast of the JSON — a raw cast would also match its
+            # structure (keys like "text", language codes). Broadcasts are a small per-org table, unlike messages,
+            # so the scan is acceptable.
+            qs = qs.annotate(
+                translations_text=Cast(
+                    RawSQL("jsonb_path_query_array(translations, '$.*.text')", []), output_field=TextField()
+                )
+            ).filter(translations_text__icontains=search)
+
+        sort = self.request.query_params.get("sort") or ""
+        desc = sort.startswith("-")
+        key = sort[1:] if desc else sort
+
+        if key == "created_on":
+            order = ("-created_on" if desc else "created_on",)
+        elif key == "next_fire" and scheduled:
+            order = ("-schedule__next_fire" if desc else "schedule__next_fire",)
+        else:
+            order = default_order
+
+        # `org` is select_related because as_json reads self.org via get_translation (org primary language)
+        return (
+            qs.order_by(*order, "-id")
+            .select_related("org", "schedule", "template", "created_by")
+            .prefetch_related("groups", "contacts")
+        )
+
+    def filter_queryset(self, queryset):
+        # filtering (folder/search/sort) is fully resolved in derive_queryset; bypass the default backends
+        return queryset
+
+    def prepare_for_serialization(self, page, using: str):
+        # bulk-load the created-message counts for the page so as_json doesn't N+1
+        BroadcastMsgCount.bulk_annotate(page)
+
+
+class MessagesEndpoint(SearchLengthMixin, ListAPIMixin, BaseEndpoint):
     """
     Messages for the current org, used by the message list components. A folder is selected with the `folder` query
     param (one of `inbox`, `handled`, `archived`, `outbox`, `sent` or `failed`, defaulting to `inbox`) — alternatively
@@ -51,10 +125,8 @@ class MessagesEndpoint(ListAPIMixin, BaseEndpoint):
                 self._search_count = view.get_total_count()
             return page
 
-    # Match BaseListView's caps so the legacy and new lists impose the same bounds: a search query is capped at 1000
-    # chars (rejected with 413) and is restricted to messages from the last 90 days so an unbounded `text__icontains`
-    # scan (compounded by the SearchCountMixin COUNT(*)) can't be triggered by a session-authenticated client.
-    SEARCH_MAX_LENGTH = 1_000
+    # A search is restricted to messages from the last 90 days so an unbounded `text__icontains` scan (compounded by
+    # the SearchCountMixin COUNT(*)) can't be triggered by a session-authenticated client.
     SEARCH_WINDOW = timedelta(days=90)
 
     FOLDERS = {
@@ -70,20 +142,25 @@ class MessagesEndpoint(ListAPIMixin, BaseEndpoint):
     serializer_class = ModelAsJsonSerializer
     pagination_class = Pagination
 
-    def get(self, request, *args, **kwargs):
-        search = request.query_params.get("search") or ""
-        if len(search) > self.SEARCH_MAX_LENGTH:
-            return HttpResponse("Search query too long", status=413)
-        return super().get(request, *args, **kwargs)
+    @cached_property
+    def label(self):
+        """
+        The label referenced by the `label` query param, or None if it's malformed or not a label in the current
+        org. Validated before the lookup — an unparseable value would otherwise raise in the database's UUID
+        coercion (500). Mirrors FlowsEndpoint's label guard. Cached because it's read by both derive_queryset and
+        get_total_count on the same request.
+        """
+        label_uuid = self.request.query_params.get("label")
+        if not label_uuid or not is_uuid(label_uuid):
+            return None
+        return self.request.org.msgs_labels.filter(uuid=label_uuid).first()
 
     def get_total_count(self) -> int:
         # Cheap pre-calculated total for the active folder/label (squashed count tables) — used as the list's total
         # when there's no search, avoiding a COUNT(*) on the messages table.
         org = self.request.org
-        label_uuid = self.request.query_params.get("label")
-        if label_uuid:
-            label = org.msgs_labels.filter(uuid=label_uuid).first()
-            return label.get_visible_count() if label else 0
+        if self.request.query_params.get("label"):
+            return self.label.get_visible_count() if self.label else 0
 
         folder = self.FOLDERS.get(self.request.query_params.get("folder", "inbox").lower())
         if not folder:
@@ -95,9 +172,8 @@ class MessagesEndpoint(ListAPIMixin, BaseEndpoint):
         # messages for that label aren't a MsgFolder slice.
         # `org` and `channel` are select_related because Msg.as_json reads self.org (for contact display) and
         # self.channel.is_active/uuid (for the channel-log link gated on the channels.channel_logs perm).
-        label_uuid = self.request.query_params.get("label")
-        if label_uuid:
-            label = self.request.org.msgs_labels.filter(uuid=label_uuid).first()
+        if self.request.query_params.get("label"):
+            label = self.label
             if not label:
                 return Msg.objects.none()
             return (

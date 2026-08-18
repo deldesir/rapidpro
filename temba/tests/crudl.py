@@ -19,6 +19,7 @@ class CRUDLTestMixin:
         pre_msg_prefix = f"before {msg_prefix}"
 
         self.client.logout()
+
         if user:
             self.login(user, choose_org=choose_org)
 
@@ -194,6 +195,12 @@ class CRUDLTestMixin:
             HTTP_X_TEMBA_SPA=1,
         )
         self.assertEqual(items, [item.get("label", "-") for item in response.json()["items"]])
+
+    def assertBulkActions(self, response, keys: list):
+        """
+        Asserts the bulk action keys a list page offers its list component, in order
+        """
+        self.assertEqual(keys, [a["key"] for a in response.context["list_bulk_actions"]])
 
 
 class BaseCheck:
