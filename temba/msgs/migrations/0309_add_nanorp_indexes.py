@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("msgs", "0306_remove_msg_quick_replies"),
+        ("msgs", "0308_remove_optin_unique_optin_names_remove_msg_optin_and_more"),
     ]
 
     operations = [
