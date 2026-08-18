@@ -1,3 +1,261 @@
+v26.3.48 (2026-08-18)
+-------------------------
+ * Only offer subflows that the engine will actually let us enter
+ * Have the list pages identify their objects by uuid throughout
+
+v26.3.47 (2026-08-17)
+-------------------------
+ * Add unrestricted_webhooks org feature
+ * Add uuid field to Trigger model
+ * Reject an unresolvable group on the contact list's "Remove from group"
+ * Add a shared base class for list pages rendered by a component and remove the bulk-action machinery left over from the old list pages
+
+v26.3.46 (2026-08-17)
+-------------------------
+ * Add data migration to release remaining legacy WhatsApp channels
+ * Remove legacy WhatsApp channel types
+
+v26.3.45 (2026-08-17)
+-------------------------
+ * Use RedBeat as the celery beat scheduler so beat can be embedded in workers
+ * Make cron task locking non-blocking and fix the cron_task decorator losing its configured lock timeout after the first run
+ * Don't split ticket analytics response counts by team for orgs without the teams feature
+ * Update dependencies
+
+v26.3.44 (2026-08-13)
+-------------------------
+ * Configure Turn.io webhooks automatically on channel claim and release
+
+v26.3.43 (2026-08-13)
+-------------------------
+ * Add search button to the tickets menu to surface cross-ticket search
+ * Fix ticket search, key-value editor and notification list not rendering when bundled with class-field define semantics
+ * Route dialog button clicks by button type instead of display name
+ * Localize flow editor, simulator, chat, live, list and label dropdown component strings, with es/fr/pt translations
+ * Keep page= round-tripping in urlState mode and block list paging while a fetch is in flight
+ * Show a centered 'No notifications' message in the notifications popup when the list is empty
+ * Don't tell browsers to retry a websocket connection refused as unauthorized
+
+v26.3.42 (2026-08-11)
+-------------------------
+ * Fix opening webhook and other router node actions in the editor
+ * Drop opt-ins from the realtime asset types docstring
+
+v26.3.41 (2026-08-11)
+-------------------------
+ * Drop the OptIn model and the optin columns on broadcasts, messages and channel events
+
+v26.3.40 (2026-08-11)
+-------------------------
+ * Remove the opt-ins API endpoint
+ * Stop resolving opt-in assets, tracking opt-ins as flow dependencies, and emitting them on broadcasts
+ * Use a dedicated dynamodb-local service for the default DynamoDB endpoint
+
+v26.3.39 (2026-08-11)
+-------------------------
+ * Flag no-longer-supported actions like flow issues and explain on click
+ * Format large numbers with thousands separators across the product, leaving arbitrary numeric list cells unformatted
+ * Remove opt-in editing and asset resolution from components
+ * Serve components demo through Django in dev, dropping web-dev-server
+ * Don't hard-fail dev page loads when the components bundle isn't built yet
+ * Make code_check.py configurable so projects that build on this one can use it
+ * Add test runner that isolates parallel test workers and enable --parallel in CI
+ * Only run the CI jobs a PR calls for, and cancel superseded runs for the same branch or PR
+ * Update GitHub actions to versions that run on Node.js 24
+
+v26.3.38 (2026-08-06)
+-------------------------
+ * Stream the components build during collectstatic, bound it with timeouts and skip puppeteer's Chrome download
+
+v26.3.37 (2026-08-06)
+-------------------------
+ * Add Spanish translation for 'No options' in components
+
+v26.3.36 (2026-08-06)
+-------------------------
+ * Add the helpdesk authoring surface for creating and editing articles
+ * Add an internal endpoint serving the helpdesk article tree and render the helpdesk like other component list pages
+ * Read and write articles in a dialog rather than pages of their own, capping nesting at two levels and offering the workspace's languages
+ * Render article markdown with layout tables whose columns carry their own fill, border, padding and text color
+ * Allow left and right image layouts and authored image sizes in article markdown, dropping the floated layouts
+ * Escape raw HTML when rendering articles and drop the article preview endpoint
+ * Harden article reordering and screenshot storage
+ * Load Inter's italic faces so emphasis renders with synthesis disabled
+ * Leave clicks the editor already claimed out of spa link following
+ * Move temba-components into components/ and build it via a staticfiles finder, serving it as live modules in development
+ * Run the components test suite in CI
+ * Remove no longer used Beta auth group and User.is_alpha/is_beta
+
+v26.3.35 (2026-08-05)
+-------------------------
+ * Update temba-components to 0.174.0
+ * Use setUpTestData for shared test fixtures to speed up test suite
+
+v26.3.34 (2026-08-05)
+-------------------------
+ * Add management command to convert legacy bsuid URNs to whatsapp
+ * Remove unused optin plumbing from broadcast creation
+
+v26.3.33 (2026-08-04)
+-------------------------
+ * Remove opt-in and opt-out trigger types
+ * Allow whatsapp URNs to hold either a phone number or a business-scoped user id
+ * Make contact chat search always cover the contact's full history
+
+v26.3.32 (2026-08-04)
+-------------------------
+ * Add cross-ticket message search to the tickets page
+ * Remove the legacy UI escape hatch
+ * Gate ticket access on topic only, removing the assignee escape hatch
+ * Add knowledge base sources for AI and human agents
+ * Move the knowledge models into their own app and rename the top level section from Library to Knowledge
+ * Add the pgvector dependency and switch CI postgres to the pgvector image
+ * Render the shortcuts list like other component list pages
+ * Update @nyaruka/temba-components to 0.173.0
+ * Add es, fr and pt_BR translations for WhatsApp connect and LLM form strings
+ * Update dependencies
+
+v26.3.31 (2026-08-03)
+-------------------------
+ * Update @nyaruka/temba-components to 0.172.0
+ * Add internal assets endpoint and publish asset name changes to org sockets
+ * Avoid duplicate LLM credential validation
+ * Unify LLM model configuration
+
+v26.3.30 (2026-08-03)
+-------------------------
+ * Remove beta gating of WhatsApp channel type
+
+v26.3.29 (2026-08-03)
+-------------------------
+ * Use full-page OAuth dialog for WhatsApp Cloud embedded signup
+ * Surface OAuth errors on WhatsApp connect and strip credentials from URL
+ * Bump WhatsApp Cloud Graph API calls to v25.0
+
+v26.3.28 (2026-08-03)
+-------------------------
+ * Fix passing UUID objects to mailroom client when creating contacts
+
+v26.3.27 (2026-08-03)
+-------------------------
+ * Convert Flow, ContactGroup and Channel uuid fields to real UUID fields
+
+v26.3.26 (2026-07-31)
+-------------------------
+ * Convert archive primary keys to bigint and add LegacyIDMixin for models still using int primary keys
+ * Update temba-components to 0.170.1
+
+v26.3.25 (2026-07-30)
+-------------------------
+ * Convert schedule and template primary keys to bigint
+
+v26.3.24 (2026-07-30)
+-------------------------
+ * Check PO files are up to date in CI and stop committing compiled MO files
+ * Fix translations that never reached users at runtime and add regression test
+ * Wrap untranslatable user-facing strings and template copy in gettext/i18n tags
+ * Complete French and Brazilian Portuguese translations
+ * Update Spanish translations for reworked message ids and use consistent term for channel
+ * Regenerate PO files, dropping obsolete entries and translator/team headers
+ * Remove translation service sync command and references to it
+ * Drop unused Czech, Mongolian and Russian website localizations
+ * Remove unused legacy simulator and contact fields templates
+ * Publicize uuid filtering on tickets API endpoint and remove ticket alias
+ * Fix flakey ticket folder test by giving tickets deterministic activity timestamps
+
+v26.3.23 (2026-07-29)
+-------------------------
+ * Update @nyaruka/temba-components to 0.170.0
+ * Complete Spanish translations and update PO and MO files
+ * Add login warning for users who should be using SSO, with per-provider domain mapping
+ * Pass featured-field priority endpoint to the contact list
+ * Merge open and closed tickets into a single list
+
+v26.3.22 (2026-07-28)
+-------------------------
+ * Convert primary keys of more tables to bigint
+
+v26.3.21 (2026-07-28)
+-------------------------
+ * Update @nyaruka/temba-components to 0.168.1
+ * Put archive last in list bulk actions
+ * Add subscription authorization for flow channels to websockets API using pattern-based socket routes
+ * Update smartmin to 6.1.0
+ * Bump postcss from 8.5.10 to 8.5.18
+
+v26.3.20 (2026-07-28)
+-------------------------
+ * Update @nyaruka/temba-components to 0.168.0
+ * Support form and url quick reply types in API and raise extra max length to 1000
+ * Stop offering optins as a feature in the flow editor
+ * Navigate plain href items in menu popups and open external links with noopener
+ * Use internal API endpoint for contact editor writes instead of public API
+ * Persist list column widths in user settings
+ * Enable inline contact editing
+
+v26.3.19 (2026-07-27)
+-------------------------
+ * Convert primary keys of small tables to bigint
+
+v26.3.18 (2026-07-27)
+-------------------------
+ * Skip legacy-only queries on new-format list page GETs
+ * Use Opus 4.8 for PR reviews
+ * Update allowed LLM models: add new models, remove retired ones
+ * Remove DEFAULT_AUTO_FIELD setting so new models default to BigAutoField
+
+v26.3.17 (2026-07-22)
+-------------------------
+ * Update @nyaruka/temba-components to 0.167.0
+ * Show contact refs instead of masked URNs in new contact list for anon orgs
+ * Return contact ref as its own anon-only key and urn as scheme + display
+
+v26.3.16 (2026-07-22)
+-------------------------
+ * Update @nyaruka/temba-components to 0.166.0
+ * Update to Django 6.0
+ * Remove unused PO translation import/export functionality
+ * Pass user UUID to contact chat for typing indicator echo filtering
+ * Hydrate temba-store with org and user uuids for realtime channels
+ * Make new UI the default, replace preview mode with a legacy opt-out
+
+v26.3.15 (2026-07-21)
+-------------------------
+ * Update @nyaruka/temba-components to 0.165.0
+ * Add preview list page for contact fields
+ * Cache field lookups so permission checks don't double fetch
+ * Add preview-mode broadcast lists backed by temba-broadcast-list
+ * Pass list component's address-bar URL through to history entries on new-list pages
+ * Increase time before an unseen Android channel is considered disconnected to 90 minutes
+ * Switch JS dependency management from yarn to bun
+ * Update dependencies
+
+v26.3.14 (2026-07-20)
+-------------------------
+ * Add translatable message for too_complex contact query error code
+ * Always show Start Flow menu option and confirm interruption on seeded starts
+ * Guard malformed group/label UUID params on internal contacts and messages endpoints
+ * Fix mobile layout issues on the ticket page
+
+v26.3.13 (2026-07-15)
+-------------------------
+ * Update @nyaruka/temba-components to 0.164.0
+ * Consolidate list endpoint pagination and search caps into shared mixins
+ * Move card persistence and header strip into temba-components
+ * Limit the user settings endpoint to known keys and cap payload size
+ * Add preview-mode chat + cards layout for contact read and ticket pages
+ * Add campaign read page preview using temba-campaign-events
+ * Add campaign list preview using temba-campaign-list component
+ * Add preview mode for trigger lists
+ * Remove chat refreshes made redundant by socket delivery of ticket events
+
+v26.3.12 (2026-07-13)
+-------------------------
+ * Replace direct pytz usage with stdlib zoneinfo and tzdata
+ * Normalize legacy alias timezones to canonical IANA names
+ * Update django, smartmin and django-timezone-field
+ * Disable allauth rate limiting when testing
+
 v26.3.11 (2026-07-09)
 -------------------------
  * Update @nyaruka/temba-components to 0.163.0

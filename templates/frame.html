@@ -1,5 +1,5 @@
 <!DOCTYPE HTML>
-{% load humanize i18n smartmin sms compress static url_tags %}
+{% load i18n smartmin sms compress static temba url_tags %}
 
 {% block html-tag %}
   <html lang="{{ LANGUAGE_CODE }}">
@@ -128,15 +128,16 @@
       {% compress js %}
         <script src="{{ STATIC_URL }}js/temba.js"></script>
         <script src="{{ STATIC_URL }}js/frame.js"></script>
-        <script src="{{ STATIC_URL }}js/labels.js"></script>
       {% endcompress %}
     {% endblock scripts %}
     {% block favico %}
       <link type="image/ico" rel="shortcut icon" href="{{ STATIC_URL }}images/favicon.ico">
     {% endblock favico %}
     {% block styles %}
+      {# Inter's real italic faces ride along - font-synthesis is off below, so without them emphasis would render #}
+      {# upright everywhere, the article editor included #}
       <link rel="stylesheet"
-            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+            href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&family=JetBrains+Mono:wght@400;500&display=swap">
       {% compress css %}
         <link type="text/css" rel="stylesheet" href="{{ STATIC_URL }}css/tailwind.css">
         <link type="text/css" rel="stylesheet" href="{{ STATIC_URL }}css/temba-components.css">
@@ -163,13 +164,13 @@
   </head>
   {% block body %}
     <body class="bg-gradient" id="pageBody">
-      {% if COMPONENTS_DEV_MODE %}
-        <script type="module">
-          import '{{ COMPONENTS_DEV_URL }}/out-tsc/temba-modules.js';
-        </script>
+      {% if COMPONENTS_DEV %}
+        {# may 404 before a first components build has produced anything — preferable to the #}
+        {# compress block below hard-failing the whole page on a missing packaged bundle #}
+        <script type="module" src="{% static 'components-dev/temba-modules.js' %}"></script>
       {% else %}
         {% compress js %}
-          <script src="{% static '@nyaruka/temba-components/dist/temba-components.js' %}"></script>
+          <script src="{% static 'components/temba-components.js' %}"></script>
         {% endcompress %}
       {% endif %}
       {% if user_org %}
@@ -178,9 +179,12 @@
                      languages="{% url 'orgs.org_languages' %}"
                      fields="{% url 'api.v2.fields' %}.json"
                      groups="{% url 'api.v2.groups' %}.json"
+                     {% if org_perms.flows.flow_editor %}assets="{% url 'api.internal.assets' %}.json"{% endif %}
                      workspace="{% url 'api.v2.workspace' %}.json"
                      shortcuts="{% url 'api.internal.shortcuts' %}.json"
                      users="{% url 'api.v2.users' %}.json"
+                     org="{{ user_org.uuid }}"
+                     user="{{ request.user.uuid }}"
                      brand="{{ branding.name }}">
         </temba-store>
       {% else %}
@@ -200,7 +204,7 @@
           <temba-dialog id="shared-dialog">
           </temba-dialog>
           {% block error-dialog %}
-            <temba-dialog id="error-dialog" header="Uh oh!">
+            <temba-dialog id="error-dialog" header="{% trans "Uh oh!" %}">
               <div class="p-6">
                 {% blocktrans trimmed %}
                   We tried our best, but there was an error processing your request. If this keeps happening, please refresh your browser.
@@ -210,6 +214,35 @@
           {% endblock error-dialog %}
           <temba-toast duration="5000" error-sticky>
           </temba-toast>
+          {% pop_session "sso_login_warning" as sso_login_warning %}
+          {% if sso_login_warning %}
+            {% if sso_login_warning.provider %}
+              {% blocktrans with provider=sso_login_warning.provider asvar sso_warning_title %}Sign In with {{ provider }}{% endblocktrans %}
+            {% else %}
+              {% trans "Use Single Sign-On" as sso_warning_title %}
+            {% endif %}
+            {% trans "Ok" as sso_warning_button %}
+            <temba-dialog open
+                          header="{{ sso_warning_title }}"
+                          cancelButtonName="{{ sso_warning_button }}"
+                          primaryButtonName=""
+                          hideOnClick
+                          id="sso-login-warning">
+              <div class="p-6">
+                {% if sso_login_warning.provider %}
+                  {% blocktrans trimmed with provider=sso_login_warning.provider %}
+                    Signing in with an email and password is going away for your organization. To keep access to your
+                    account, please use <b>Sign In with {{ provider }}</b> the next time you sign in.
+                  {% endblocktrans %}
+                {% else %}
+                  {% blocktrans trimmed %}
+                    Signing in with an email and password is going away for your organization. To keep access to your
+                    account, please use the single sign-on option the next time you sign in.
+                  {% endblocktrans %}
+                {% endif %}
+              </div>
+            </temba-dialog>
+          {% endif %}
           <div class="ajax-scripts"></div>
           <div class="flex-col">
             <div style="height:100vh;width:100%" class="flex flex-col">

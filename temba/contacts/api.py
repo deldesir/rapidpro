@@ -1,50 +1,98 @@
-from rest_framework.pagination import PageNumberPagination
+from rest_framework import generics, serializers, status
 from rest_framework.response import Response
 
 from django.db.models import Prefetch, prefetch_related_objects
-from django.http import HttpResponse
 
 from temba import mailroom
 from temba.api.internal.serializers import ModelAsJsonSerializer
 from temba.api.internal.views import BaseEndpoint
-from temba.api.views import ListAPIMixin
+from temba.api.support import ListPagination, SearchLengthMixin
+from temba.api.v2 import serializers as v2
+from temba.api.views import ListAPIMixin, WriteAPIMixin
 from temba.utils.models.base import patch_queryset_count
 from temba.utils.models.es import SearchSliceQuerySet
+from temba.utils.uuid import is_uuid
 
 from .models import Contact, ContactField, ContactGroup
 
-# Match BaseListView/ContactListView: 50 rows per page, and never let a client page past the 200th page (ES deep
-# pagination guard, mirroring ContactListView.pre_process).
-DEFAULT_PAGE_SIZE = 50
-MAX_PAGE_SIZE = 500
+# Never let a client page past the 200th page (ES deep pagination guard, mirroring ContactListView.pre_process).
 MAX_PAGE = 200
-
-# Cap the search query length the same way the legacy list view does so an oversized query can't be used to drive an
-# expensive mailroom/ES request.
-SEARCH_MAX_LENGTH = ContactGroup.MAX_QUERY_LEN
 
 # The contact list component prefixes its custom-field column keys with `field:` (e.g. `field:age`); mailroom's sort
 # wants the bare field key. System columns (last_seen_on, created_on) are sent unprefixed and pass through untouched.
 FIELD_SORT_PREFIX = "field:"
 
 
-class ContactsEndpoint(ListAPIMixin, BaseEndpoint):
+class ContactWriteSerializer(v2.ContactWriteSerializer):
+    """
+    The public API contact write serializer extended with status changes, for the contact editor component.
+    """
+
+    STATUSES = {
+        "active": Contact.STATUS_ACTIVE,
+        "blocked": Contact.STATUS_BLOCKED,
+        "stopped": Contact.STATUS_STOPPED,
+        "archived": Contact.STATUS_ARCHIVED,
+    }
+
+    status = serializers.ChoiceField(required=False, choices=tuple(STATUSES))
+
+    def validate_groups(self, value):
+        # the public API rejects groups on any non-active contact - here that check needs to consider a status
+        # submitted in the same update, so it lives in validate() below
+        return value
+
+    def validate(self, data):
+        data = super().validate(data)
+
+        # only active contacts can be added to groups, tho we allow groups on an update that restores the contact
+        # since the restore is applied first
+        if self.instance and data.get("groups"):
+            new_status = self.STATUSES[data["status"]] if "status" in data else self.instance.status
+            if self.instance.status != Contact.STATUS_ACTIVE and new_status != Contact.STATUS_ACTIVE:
+                raise serializers.ValidationError({"groups": "Non-active contacts can't be added to groups"})
+
+        return data
+
+    def save(self):
+        # apply any status change first so that a restore to active happens before any group mods
+        contact_status = self.validated_data.get("status")
+        if self.instance and "status" in self.validated_data and self.STATUSES[contact_status] != self.instance.status:
+            user = self.context["user"]
+            if contact_status == "active":
+                self.instance.restore(user)
+            elif contact_status == "blocked":
+                self.instance.block(user)
+            elif contact_status == "stopped":
+                self.instance.stop(user)
+            elif contact_status == "archived":
+                self.instance.archive(user)
+
+        return super().save()
+
+
+class ContactsEndpoint(SearchLengthMixin, ListAPIMixin, WriteAPIMixin, BaseEndpoint):
     """
     Contacts for the current org, used by the contact list component. A status folder is selected with the `folder`
     query param (one of `active`, `blocked`, `stopped` or `archived`, defaulting to `active`) — alternatively pass
     `group=<uuid>` to filter by a specific (manual or smart) group. Optional `search` (a mailroom contact query) and
     `sort` params drive ES-backed search/sorting, exactly like the legacy contact list views. Each item is serialized
     via Contact.as_json() (the lightweight list shape — name, primary URN, featured field values, last/created on).
-    """
 
-    class Pagination(PageNumberPagination):
-        page_size = DEFAULT_PAGE_SIZE
-        page_size_query_param = "page_size"
-        max_page_size = MAX_PAGE_SIZE
+    POST with a `uuid` param updates a contact (used by the contact editor component), accepting the same fields as
+    the public API endpoint plus `status`, and returns the contact in the editor's read shape (the public API read
+    serialization with URNs expanded and in priority order). Unlike the public API endpoint, contacts can't be
+    created here.
+    """
 
     model = Contact
     serializer_class = ModelAsJsonSerializer
-    pagination_class = Pagination
+    write_serializer_class = ContactWriteSerializer
+    write_with_transaction = False
+    pagination_class = ListPagination
+
+    # a mailroom contact query rather than a plain text search, so cap it at the query length limit
+    search_max_length = ContactGroup.MAX_QUERY_LEN
 
     FOLDERS = {
         "active": ContactGroup.TYPE_DB_ACTIVE,
@@ -54,13 +102,35 @@ class ContactsEndpoint(ListAPIMixin, BaseEndpoint):
     }
 
     def get(self, request, *args, **kwargs):
-        search = request.query_params.get("search") or ""
-        if len(search) > SEARCH_MAX_LENGTH:
-            return HttpResponse("Search query too long", status=413)
         # Don't allow pagination past the 200th page (mirrors ContactListView.pre_process / the ES offset guard).
         if self._page() > MAX_PAGE:
             return Response({"results": [], "count": 0, "next": None, "previous": None})
         return super().get(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        # unlike the public API endpoint, contacts can only be updated here, never created
+        if "uuid" not in request.query_params:
+            return Response({"detail": "URL must contain uuid parameter."}, status=status.HTTP_400_BAD_REQUEST)
+
+        return super().post(request, *args, **kwargs)
+
+    def get_object(self):
+        # lookups are always by UUID and shouldn't be constrained by the folder/group params used for listing
+        return generics.get_object_or_404(Contact.objects.filter(org=self.request.org, **self.lookup_values))
+
+    def render_write_response(self, write_output, context):
+        # the editor component expects the same shape it reads: the public API read serialization with URNs
+        # expanded and in priority order
+        Contact.bulk_urn_cache_initialize([write_output], using="default")
+        expanded_urns = Contact.bulk_inspect([write_output])[write_output]["urns"]
+        priority = {(urn.scheme, urn.path): index for index, urn in enumerate(write_output.get_urns())}
+        write_output.expanded_urns = sorted(
+            expanded_urns, key=lambda urn: priority.get((urn["scheme"], urn["path"]), len(priority))
+        )
+
+        return Response(
+            v2.ContactReadSerializer(instance=write_output, context=context).data, status=status.HTTP_200_OK
+        )
 
     def _page(self) -> int:
         try:
@@ -74,17 +144,21 @@ class ContactsEndpoint(ListAPIMixin, BaseEndpoint):
         # The search/sort path derives the mailroom offset from this, so it must match the page size DRF slices with
         # or SearchSliceQuerySet's offset guard trips with an IndexError (HTTP 500).
         try:
-            size = int(self.request.query_params.get("page_size", DEFAULT_PAGE_SIZE))
+            size = int(self.request.query_params.get("page_size", ListPagination.page_size))
         except TypeError, ValueError:
-            return DEFAULT_PAGE_SIZE
+            return ListPagination.page_size
         if size <= 0:
-            return DEFAULT_PAGE_SIZE
-        return min(size, MAX_PAGE_SIZE)
+            return ListPagination.page_size
+        return min(size, ListPagination.max_page_size)
 
     def derive_group(self):
         org = self.request.org
         group_uuid = self.request.query_params.get("group")
         if group_uuid:
+            # Validate before the lookup — an unparseable value would otherwise raise in the database's UUID
+            # coercion (500). Mirrors FlowsEndpoint's label guard.
+            if not is_uuid(group_uuid):
+                return None
             # Mirror GroupsEndpoint.filter_queryset: skip still-evaluating smart groups so we never page over a group
             # whose membership isn't yet populated.
             return (

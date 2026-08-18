@@ -1,9 +1,7 @@
 import mimetypes
 import os
-from datetime import timedelta
 from functools import cached_property
 from urllib.parse import quote_plus
-from uuid import UUID
 
 import magic
 from smartmin.views import SmartCreateView, SmartCRUDL, SmartDeleteView, SmartUpdateView
@@ -13,31 +11,27 @@ from django.conf import settings
 from django.db.models.functions.text import Lower
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.urls import reverse
-from django.utils import timezone
-from django.utils.functional import Promise
 from django.utils.translation import gettext_lazy as _
 from django.views.generic import RedirectView
 
 from temba import mailroom
-from temba.archives.models import Archive
 from temba.mailroom.client.types import Exclusions
 from temba.orgs.models import Org
 from temba.orgs.views.base import (
     BaseCreateModal,
     BaseDependencyDeleteModal,
     BaseExportModal,
+    BaseListComponentView,
     BaseListView,
     BaseMenuView,
     BaseUsagesModal,
 )
-from temba.orgs.views.mixins import BulkActionMixin, OrgObjPermsMixin, OrgPermsMixin, UniqueNameMixin
+from temba.orgs.views.mixins import OrgObjPermsMixin, OrgPermsMixin, UniqueNameMixin
 from temba.templates.models import Template
 from temba.utils import json
 from temba.utils.compose import compose_deserialize, compose_serialize
 from temba.utils.fields import CompletionTextarea, ContactSearchWidget, InputWidget, SelectWidget
-from temba.utils.models import patch_queryset_count
 from temba.utils.views.mixins import (
-    ContextMenuMixin,
     ModalFormMixin,
     ModalHeaderMixin,
     NonAtomicMixin,
@@ -51,7 +45,7 @@ from .forms import ComposeForm, ScheduleForm, TargetForm
 from .models import Broadcast, Label, LabelCount, Media, MessageExport, Msg, MsgFolder
 
 
-class MsgListView(ContextMenuMixin, BulkActionMixin, SpaMixin, BaseListView):
+class MsgListView(BaseListComponentView):
     """
     Base class for message list views with message folders and labels listed by the side
     """
@@ -63,18 +57,8 @@ class MsgListView(ContextMenuMixin, BulkActionMixin, SpaMixin, BaseListView):
     bulk_action_permissions = {"resend": "msgs.msg_create", "delete": "msgs.msg_update"}
     template_name = "msgs/msg_list.html"
     folder = None
-    paginate_by = 100
+    list_endpoint = "api.internal.messages"
 
-    # Gated behind global preview mode (PreviewMiddleware → request.preview). When the viewer is in preview, every
-    # MsgListView subclass with a folder/label renders msgs/msg_list_new.html instead of its legacy template.
-    NEW_LIST_TEMPLATE = "msgs/msg_list_new.html"
-
-    # Optional subtitle rendered under the title on the new-list view;
-    # subclasses may override to describe what the folder contains.
-    subtitle = ""
-
-    # Bulk-action key -> config consumed by temba-content-list (label,
-    # icon, optional labelsEndpoint / destructive flag).
     BULK_ACTION_CONFIG = {
         "label": {"label": _("Label"), "icon": "tag-01", "labelsEndpoint": "/api/v2/labels.json"},
         "archive": {"label": _("Archive"), "icon": "archive"},
@@ -91,45 +75,6 @@ class MsgListView(ContextMenuMixin, BulkActionMixin, SpaMixin, BaseListView):
         "resend": {"label": _("Resend"), "icon": "send"},
     }
 
-    def _use_new_list(self) -> bool:
-        # The folder for a message list is either one of the built-in MsgFolder enum values (Inbox / Handled / …) or
-        # a user-defined Label (the filter view binds it in derive_folder); both render through the same new-list
-        # template when the viewer is in preview mode. `getattr` defaults to False so a view called via RequestFactory
-        # (or if PreviewMiddleware is ever reordered out) doesn't AttributeError.
-        return getattr(self.request, "preview", False) and isinstance(self.derive_folder(), (MsgFolder, Label))
-
-    def get_template_names(self):
-        if self._use_new_list():
-            return [self.NEW_LIST_TEMPLATE]
-        return super().get_template_names()
-
-    def get_paginate_by(self, queryset):
-        # The temba-msg-list component fetches and pages messages itself.
-        if self._use_new_list():
-            return None
-        return super().get_paginate_by(queryset)
-
-    def post(self, request, *args, **kwargs):
-        # The temba-msg-list label dropdown posts the label by uuid, but
-        # BulkActionMixin matches by id — translate the uuid here so both
-        # the new component and the legacy form post are accepted. A non-
-        # uuid value (the legacy form's integer id) is left alone. Only
-        # touch the label field on label/unlabel actions so an unrelated
-        # POST that happens to carry a `label` key isn't rewritten.
-        if request.POST.get("action") in ("label", "unlabel"):
-            label = request.POST.get("label")
-            if label:
-                try:
-                    UUID(label)
-                except ValueError:
-                    pass
-                else:
-                    obj = self.request.org.msgs_labels.filter(uuid=label).first()
-                    request.POST = request.POST.copy()
-                    request.POST["label"] = str(obj.id) if obj else ""
-
-        return super().post(request, *args, **kwargs)
-
     def pre_process(self, request, *args, **kwargs):
         if self.folder:
             self.queryset = self.folder.get_queryset(request.org)
@@ -139,8 +84,20 @@ class MsgListView(ContextMenuMixin, BulkActionMixin, SpaMixin, BaseListView):
     def derive_folder(self):
         return self.folder
 
-    def derive_subtitle(self):
-        return self.subtitle
+    def derive_list_query(self) -> str:
+        # the built-in folders are selected by name, a user label by uuid
+        folder = self.derive_folder()
+        if isinstance(folder, Label):
+            return f"label={folder.uuid}"
+
+        return f"folder={folder.name.lower()}"
+
+    def derive_bulk_action_config(self, key: str) -> dict:
+        cfg = super().derive_bulk_action_config(key)
+        if key == "label":
+            # the dropdown's "New Label…" row only renders for viewers who can create labels
+            cfg["allowCreate"] = self.has_org_perm("msgs.label_create")
+        return cfg
 
     def derive_export_url(self):
         redirect = quote_plus(self.request.get_full_path())
@@ -149,62 +106,7 @@ class MsgListView(ContextMenuMixin, BulkActionMixin, SpaMixin, BaseListView):
         return "%s?l=%s&redirect=%s" % (reverse("msgs.msg_export"), label_id, redirect)
 
     def get_queryset(self, **kwargs):
-        qs = super().get_queryset(**kwargs).select_related("contact", "channel", "flow")
-
-        # if we are searching, limit to last 90, and enforce distinct since we'll be joining on multiple tables
-        if self.search_fields and "search" in self.request.GET:
-            last_90 = timezone.now() - timedelta(days=90)
-
-            # we need to find get the field names we're ordering on without direction
-            distinct_on = (f.lstrip("-") for f in self.derive_ordering())
-
-            qs = qs.filter(created_on__gte=last_90).distinct(*distinct_on)
-
-        return qs
-
-    def get_context_data(self, **kwargs):
-        org = self.request.org
-        counts = MsgFolder.get_counts(org)
-        folder = self.derive_folder()
-
-        # if there isn't a search filtering the queryset, we can replace the count function with a pre-calculated value
-        if not self.search_fields or "search" not in self.request.GET:
-            if isinstance(folder, Label):
-                patch_queryset_count(self.object_list, folder.get_visible_count)
-            elif isinstance(folder, MsgFolder):
-                patch_queryset_count(self.object_list, lambda: counts[folder])
-
-        context = super().get_context_data(**kwargs)
-        context["has_messages"] = (
-            any(counts.values()) or Archive.objects.filter(org=org, archive_type=Archive.TYPE_MSG).exists()
-        )
-
-        # New-list view context: the resolved messages-api endpoint
-        # (folder= for the built-in folders, label= for a user label),
-        # the subtitle, and the bulk-action configs the temba-msg-list
-        # expects (resolved + JSON-encoded here so the template stays
-        # inert).
-        if self._use_new_list():
-            if isinstance(folder, Label):
-                query = f"label={folder.uuid}"
-            else:
-                query = f"folder={folder.name.lower()}"
-            context["new_list_endpoint"] = f"{reverse('api.internal.messages')}.json?{query}"
-            subtitle = self.derive_subtitle()
-            context["new_list_subtitle"] = str(subtitle) if subtitle else ""
-            actions = []
-            for key in self.get_bulk_actions():
-                cfg = dict(self.BULK_ACTION_CONFIG.get(key, {}))
-                cfg["key"] = key
-                if key == "label":
-                    # the dropdown's "New Label…" row only renders for viewers who can create labels
-                    cfg["allowCreate"] = self.has_org_perm("msgs.label_create")
-                # Resolve any i18n lazy proxies so json_script / json.dumps don't choke.
-                cfg = {k: (str(v) if isinstance(v, Promise) else v) for k, v in cfg.items()}
-                actions.append(cfg)
-            context["new_list_bulk_actions"] = actions
-
-        return context
+        return super().get_queryset(**kwargs).select_related("contact", "channel", "flow")
 
     def get_bulk_action_labels(self):
         return self.request.org.msgs_labels.filter(is_active=True).order_by(Lower("name"))
@@ -240,54 +142,59 @@ class BroadcastCRUDL(SmartCRUDL):
     )
     model = Broadcast
 
-    class List(SpaMixin, ContextMenuMixin, BulkActionMixin, BaseListView):
+    class BaseList(BaseListComponentView):
+        """
+        Base class for the broadcast list views (sent and scheduled)
+        """
+
+        template_name = "msgs/broadcast_list.html"
+        list_endpoint = "api.internal.broadcasts"
+
+        # The internal-API folder (and the component's `mode`) this view lists — `sent` or `scheduled`.
+        list_folder = "sent"
+
+        def derive_list_query(self) -> str:
+            return f"folder={self.list_folder}"
+
+        def get_queryset(self, **kwargs):
+            # the component fetches and pages broadcasts itself, and these views have no bulk actions, so the page
+            # never needs an object list
+            return Broadcast.objects.none()
+
+        def get_context_data(self, **kwargs):
+            context = super().get_context_data(**kwargs)
+
+            # the component's mode
+            context["list_mode"] = self.list_folder
+
+            return context
+
+        def build_context_menu(self, menu):
+            if self.has_org_perm("msgs.broadcast_create"):
+                menu.add_modax(
+                    _("New Broadcast"),
+                    "new-scheduled",
+                    reverse("msgs.broadcast_create"),
+                    as_button=True,
+                )
+
+    class List(BaseList):
         title = _("Broadcasts")
         menu_path = "/msg/broadcasts"
-        paginate_by = 25
         default_order = ("-created_on", "-id")
+        list_folder = "sent"
 
         def get_queryset(self, **kwargs):
-            return (
-                super()
-                .get_queryset(**kwargs)
-                .filter(is_active=True, schedule=None, org=self.request.org)
-                .select_related("org", "schedule")
-                .prefetch_related("groups", "contacts")
-            )
+            return super().get_queryset(**kwargs).filter(schedule=None)
 
-        def build_context_menu(self, menu):
-            if self.has_org_perm("msgs.broadcast_create"):
-                menu.add_modax(
-                    _("New Broadcast"),
-                    "new-scheduled",
-                    reverse("msgs.broadcast_create"),
-                    as_button=True,
-                )
-
-    class Scheduled(SpaMixin, ContextMenuMixin, BulkActionMixin, BaseListView):
+    class Scheduled(BaseList):
         title = _("Scheduled Broadcasts")
         menu_path = "/msg/scheduled"
-        paginate_by = 25
         default_order = ("schedule__next_fire", "-created_on")
+        list_folder = "scheduled"
 
         def get_queryset(self, **kwargs):
-            return (
-                super()
-                .get_queryset(**kwargs)
-                .filter(is_active=True)
-                .exclude(schedule=None)
-                .select_related("org", "schedule")
-                .prefetch_related("groups", "contacts")
-            )
-
-        def build_context_menu(self, menu):
-            if self.has_org_perm("msgs.broadcast_create"):
-                menu.add_modax(
-                    _("New Broadcast"),
-                    "new-scheduled",
-                    reverse("msgs.broadcast_create"),
-                    as_button=True,
-                )
+            return super().get_queryset(**kwargs).exclude(schedule=None)
 
     class Create(ModalHeaderMixin, OrgPermsMixin, SmartWizardView):
         form_list = [("target", TargetForm), ("compose", ComposeForm), ("schedule", ScheduleForm)]
@@ -796,7 +703,7 @@ class MsgCRUDL(SmartCRUDL):
         subtitle = _("Incoming messages that weren't automatically handled by a flow.")
         folder = MsgFolder.INBOX
         search_fields = ("text__icontains", "contact__name__icontains")
-        bulk_actions = ("archive", "label")
+        bulk_actions = ("label", "archive")
         allow_export = True
         menu_path = "/msg/inbox"
 
@@ -812,7 +719,7 @@ class MsgCRUDL(SmartCRUDL):
         subtitle = _("Incoming messages that were handled by a flow.")
         folder = MsgFolder.HANDLED
         search_fields = ("text__icontains", "contact__name__icontains")
-        bulk_actions = ("archive", "label")
+        bulk_actions = ("label", "archive")
         allow_export = True
         menu_path = "/msg/handled"
 
@@ -837,15 +744,9 @@ class MsgCRUDL(SmartCRUDL):
         bulk_actions = ()
         allow_export = True
 
-        def get_context_data(self, **kwargs):
-            context = super().get_context_data(**kwargs)
-            context["outbox_warning"] = MsgFolder.OUTBOX.get_count(self.request.org) >= Org.OUTBOX_WARNING_THRESHOLD
-            return context
-
     class Sent(MsgListView):
         title = _("Sent")
         subtitle = _("Outgoing messages that have been sent.")
-        template_name = "msgs/msg_sent.html"
         folder = MsgFolder.SENT
         bulk_actions = ()
         allow_export = True
@@ -862,7 +763,7 @@ class MsgCRUDL(SmartCRUDL):
 
     class Filter(MsgListView):
         search_fields = ("text__icontains", "contact__name__icontains")
-        bulk_actions = ("archive", "label")
+        bulk_actions = ("label", "archive")
 
         def derive_menu_path(self):
             return f"/msg/labels/{self.label.uuid}"
@@ -879,7 +780,7 @@ class MsgCRUDL(SmartCRUDL):
                     _("Edit"),
                     "update-label",
                     reverse("msgs.label_update", args=[self.label.id]),
-                    title="Edit Label",
+                    title=_("Edit Label"),
                 )
 
             if self.has_org_perm("msgs.label_delete"):
@@ -887,7 +788,7 @@ class MsgCRUDL(SmartCRUDL):
                     _("Delete"),
                     "delete-label",
                     reverse("msgs.label_delete", args=[self.label.uuid]),
-                    title="Delete Label",
+                    title=_("Delete Label"),
                 )
 
             menu.new_group()

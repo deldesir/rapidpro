@@ -25,13 +25,14 @@ from temba.ai.models import LLM
 from temba.channels.models import Channel
 from temba.contacts.models import Contact, ContactField, ContactGroup
 from temba.globals.models import Global
-from temba.msgs.models import Label, OptIn
+from temba.msgs.models import Label
 from temba.orgs.models import DependencyMixin, Export, ExportType, Org
+from temba.orgs.realtime import AssetNameMixin
 from temba.templates.models import Template
 from temba.tickets.models import Topic
 from temba.users.models import User
 from temba.utils.export.models import MultiSheetExporter
-from temba.utils.models import JSONAsTextField, LegacyUUIDMixin, TembaModel, delete_in_batches
+from temba.utils.models import JSONAsTextField, LegacyIDMixin, TembaModel, delete_in_batches
 from temba.utils.models.counts import BaseScopedCount, BaseSquashableCount
 from temba.utils.uuid import uuid4
 
@@ -60,7 +61,9 @@ FLOW_LOCK_TTL = 60  # 1 minute
 FLOW_LOCK_KEY = "org:%d:lock:flow:%d:definition"
 
 
-class Flow(LegacyUUIDMixin, TembaModel, DependencyMixin):
+class Flow(AssetNameMixin, LegacyIDMixin, TembaModel, DependencyMixin):
+    asset_type = "flow"
+
     # items in the flow definition JSON
     DEFINITION_UUID = "uuid"
     DEFINITION_NAME = "name"
@@ -174,7 +177,6 @@ class Flow(LegacyUUIDMixin, TembaModel, DependencyMixin):
     group_dependencies = models.ManyToManyField(ContactGroup, related_name="dependent_flows")
     label_dependencies = models.ManyToManyField(Label, related_name="dependent_flows")
     llm_dependencies = models.ManyToManyField(LLM, related_name="dependent_flows")
-    optin_dependencies = models.ManyToManyField(OptIn, related_name="dependent_flows")
     template_dependencies = models.ManyToManyField(Template, related_name="dependent_flows")
     topic_dependencies = models.ManyToManyField(Topic, related_name="dependent_flows")
     user_dependencies = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name="dependent_flows")
@@ -322,15 +324,6 @@ class Flow(LegacyUUIDMixin, TembaModel, DependencyMixin):
         flow_json = self.get_definition()
         copy.import_definition(user, flow_json, {})
         return copy
-
-    @classmethod
-    def export_translation(cls, org, flows, language):
-        return mailroom.get_client().po_export(org, flows, language=language)
-
-    @classmethod
-    def import_translation(cls, org, flows, language, po_data):
-        response = mailroom.get_client().po_import(org, flows, language=language, po_data=po_data)
-        return {d["uuid"]: d for d in response["flows"]}
 
     @classmethod
     def apply_action_label(cls, user, flows, label):
@@ -490,11 +483,6 @@ class Flow(LegacyUUIDMixin, TembaModel, DependencyMixin):
         for ref in deps_of_type("label"):
             label, _ = Label.import_def(self.org, user, ref)
             dependency_mapping[ref["uuid"]] = str(label.uuid)
-
-        # ensure any opt-in dependencies exist
-        for ref in deps_of_type("optin"):
-            optin, _ = OptIn.import_def(self.org, user, ref)
-            dependency_mapping[ref["uuid"]] = str(optin.uuid)
 
         # ensure any topic dependencies exist
         for ref in deps_of_type("topic"):
@@ -734,12 +722,12 @@ class Flow(LegacyUUIDMixin, TembaModel, DependencyMixin):
         if self.is_legacy():
             if "metadata" not in definition:
                 definition["metadata"] = {}
-            definition["metadata"]["uuid"] = self.uuid
+            definition["metadata"]["uuid"] = str(self.uuid)
             definition["metadata"]["name"] = self.name
             definition["metadata"]["revision"] = rev.revision
             definition["metadata"]["expires"] = self.expires_after_minutes
         else:
-            definition[Flow.DEFINITION_UUID] = self.uuid
+            definition[Flow.DEFINITION_UUID] = str(self.uuid)
             definition[Flow.DEFINITION_NAME] = self.name
             definition[Flow.DEFINITION_REVISION] = rev.revision
             definition[Flow.DEFINITION_EXPIRE_AFTER_MINUTES] = self.expires_after_minutes
@@ -909,7 +897,6 @@ class Flow(LegacyUUIDMixin, TembaModel, DependencyMixin):
             "group": ContactGroup.get_groups(self.org).filter(uuid__in=identifiers["group"]),
             "label": Label.get_active_for_org(self.org).filter(uuid__in=identifiers["label"]),
             "llm": self.org.llms.filter(is_active=True, uuid__in=identifiers["llm"]),
-            "optin": OptIn.get_active_for_org(self.org).filter(uuid__in=identifiers["optin"]),
             "template": self.org.templates.filter(uuid__in=identifiers["template"]),
             "topic": self.org.topics.filter(is_active=True, uuid__in=identifiers["topic"]),
             "user": self.org.users.filter(is_active=True, email__in=identifiers["user"]),
@@ -1248,7 +1235,7 @@ class FlowRun(models.Model):
         ]
 
 
-class FlowRevision(models.Model):
+class FlowRevision(LegacyIDMixin, models.Model):
     """
     Each version of a flow's definition.
     """
@@ -1502,7 +1489,7 @@ class ResultsExport(ExportType):
             for result_field in flow.info["results"]:
                 if not result_field["name"].startswith("_"):
                     result_field = result_field.copy()
-                    result_field["flow_uuid"] = flow.uuid
+                    result_field["flow_uuid"] = str(flow.uuid)
                     result_field["flow_name"] = flow.name
                     result_fields.append(result_field)
 
@@ -1652,7 +1639,7 @@ class ResultsExport(ExportType):
         }
 
 
-class FlowStart(models.Model):
+class FlowStart(LegacyIDMixin, models.Model):
     """
     A queuable request to start contacts and groups in a flow
     """

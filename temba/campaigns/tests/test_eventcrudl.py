@@ -1,3 +1,7 @@
+from uuid import uuid4
+
+from django_valkey import get_valkey_connection
+
 from django.urls import reverse
 
 from temba.campaigns.models import Campaign, CampaignEvent
@@ -14,6 +18,12 @@ from temba.utils.views.mixins import TEMBA_MENU_SELECTION
 
 def _compose(translations):
     return json.dumps(compose_serialize(translations))
+
+
+def add_recent_contact(event, contact, ts: float):
+    r = get_valkey_connection()
+    member = f"{uuid4()}|{contact.id}"
+    r.zadd(f"recent_campaign_fires:{event.id}", mapping={member: ts})
 
 
 class CampaignEventCRUDLTest(TembaTest, CRUDLTestMixin):
@@ -42,6 +52,61 @@ class CampaignEventCRUDLTest(TembaTest, CRUDLTestMixin):
             org, user, campaign, registered, offset=2, unit="W", flow=background_flow, delivery_hour="13"
         )
         return campaign
+
+    @mock_mailroom
+    def test_update_success_url(self, mr_mocks):
+        event = self.campaign1.events.order_by("id").first()
+        registered = self.org.fields.get(key="registered")
+        flow = self.org.flows.get(name="Welcomes Flow")
+
+        update_url = reverse("campaigns.campaignevent_update", args=[event.uuid])
+        data = {
+            "event_type": "F",
+            "relative_to": registered.id,
+            "offset": 1,
+            "unit": "W",
+            "delivery_hour": 13,
+            "direction": "A",
+            "flow_to_start": flow.id,
+            "flow_start_mode": "I",
+        }
+
+        self.login(self.admin)
+
+        # the edit modal returns to the campaign read page
+        response = self.client.post(update_url, data)
+        self.assertRedirects(
+            response, reverse("campaigns.campaign_read", args=[self.campaign1.uuid]), fetch_redirect_response=False
+        )
+
+    def test_fires(self):
+        event = self.campaign1.events.order_by("id").first()
+        contact = self.create_contact("Ann", phone="+1234567890")
+        add_recent_contact(event, contact, 1639338554.969123)
+
+        fires_url = reverse("campaigns.campaignevent_fires", args=[event.uuid])
+
+        self.assertRequestDisallowed(fires_url, [None, self.agent, self.admin2])
+
+        self.login(self.editor)
+
+        response = self.client.get(fires_url)
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(
+            {
+                "fires": [
+                    {
+                        "contact": {
+                            "uuid": str(contact.uuid),
+                            "name": "Ann",
+                            "url": f"/contact/read/{contact.uuid}/",
+                        },
+                        "time": "2021-12-12T19:49:14.969123+00:00",
+                    }
+                ]
+            },
+            response.json(),
+        )
 
     def test_read(self):
         event = self.campaign1.events.order_by("id").first()
@@ -164,7 +229,7 @@ class CampaignEventCRUDLTest(TembaTest, CRUDLTestMixin):
                 "delivery_hour": 13,
                 "message_start_mode": "I",
             },
-            form_errors={"compose": "Maximum allowed text is 4096 characters."},
+            form_errors={"compose": "Maximum allowed text is 4,096 characters."},
         )
 
         # can create an event with just a eng translation

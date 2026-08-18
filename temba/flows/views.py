@@ -1,6 +1,5 @@
 import logging
 from datetime import datetime, timedelta
-from urllib.parse import urlencode
 from uuid import UUID
 
 import regex
@@ -10,7 +9,6 @@ from smartmin.views import (
     SmartCRUDL,
     SmartDeleteView,
     SmartFormView,
-    SmartListView,
     SmartTemplateView,
     SmartUpdateView,
 )
@@ -19,12 +17,12 @@ from django import forms
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db.models.functions import Lower
-from django.http import Http404, HttpResponse, HttpResponseRedirect, JsonResponse
+from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.encoding import force_str
-from django.utils.functional import Promise, cached_property
+from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.csrf import csrf_exempt
 
@@ -39,14 +37,15 @@ from temba.orgs.models import IntegrationType, Org
 from temba.orgs.views.base import (
     BaseDependencyDeleteModal,
     BaseExportModal,
+    BaseListComponentView,
     BaseListView,
     BaseMenuView,
     BaseReadView,
     BaseUpdateModal,
 )
-from temba.orgs.views.mixins import BulkActionMixin, OrgObjPermsMixin, OrgPermsMixin, UniqueNameMixin
+from temba.orgs.views.mixins import OrgObjPermsMixin, OrgPermsMixin, UniqueNameMixin
 from temba.triggers.models import Trigger
-from temba.utils import gettext, json, languages
+from temba.utils import json, languages
 from temba.utils.fields import (
     CheckboxWidget,
     ContactSearchWidget,
@@ -55,7 +54,6 @@ from temba.utils.fields import (
     SelectWidget,
     TembaChoiceField,
 )
-from temba.utils.text import slugify_with
 from temba.utils.views.mixins import ContextMenuMixin, ModalFormMixin, SpaMixin
 
 from .models import (
@@ -138,9 +136,6 @@ class FlowCRUDL(SmartCRUDL):
         "menu",
         "simulate",
         "change_language",
-        "export_translation",
-        "download_translation",
-        "import_translation",
         "export_results",
         "editor",
         "results",
@@ -264,7 +259,7 @@ class FlowCRUDL(SmartCRUDL):
                 return JsonResponse(
                     {
                         "definition": definition,
-                        "info": flow.info,
+                        "info": info,
                         "issues": info["issues"],  # deprecated
                         "metadata": info,  # deprecated
                     }
@@ -581,26 +576,14 @@ class FlowCRUDL(SmartCRUDL):
                         match_type=Trigger.MATCH_FIRST_WORD,
                     )
 
-    class BaseList(SpaMixin, BulkActionMixin, ContextMenuMixin, BaseListView):
+    class BaseList(BaseListComponentView):
         permission = "flows.flow_list"
         title = _("Flows")
-        fields = ("name", "modified_on")
         default_template = "flows/flow_list.html"
         default_order = ("-saved_on",)
         search_fields = ("name__icontains",)
+        list_endpoint = "api.internal.flows"
 
-        # Gated behind global preview mode (PreviewMiddleware → request.preview). When the viewer is in preview,
-        # every flow list view renders the temba-flow-list component (flows/flow_list_new.html) instead of its legacy
-        # table; the component fetches/pages flows itself from the internal flows API.
-        NEW_LIST_TEMPLATE = "flows/flow_list_new.html"
-
-        # Optional subtitle rendered under the title on the new-list view.
-        subtitle = ""
-
-        # Bulk-action key -> config consumed by temba-flow-list (label, icon). `clientOnly` actions (export-results)
-        # open a modal seeded with the selected flows rather than POSTing to the action endpoint. `labelsEndpoint`
-        # turns the action into a dropdown of flow labels to add/remove the selection to/from — mirroring the message
-        # list's label dropdown.
         BULK_ACTION_CONFIG = {
             "label": {
                 "label": _("Label"),
@@ -612,105 +595,12 @@ class FlowCRUDL(SmartCRUDL):
             "restore": {"label": _("Restore"), "icon": "restore"},
         }
 
-        def _use_new_list(self) -> bool:
-            # `getattr` defaults to False so a view called via RequestFactory (or if PreviewMiddleware is reordered
-            # out) doesn't AttributeError.
-            return getattr(self.request, "preview", False)
-
-        def get_template_names(self):
-            if self._use_new_list():
-                return [self.NEW_LIST_TEMPLATE]
-            return super().get_template_names()
-
-        def get_paginate_by(self, queryset):
-            # The temba-flow-list component fetches and pages flows itself.
-            if self._use_new_list():
-                return None
-            return super().get_paginate_by(queryset)
-
-        def derive_subtitle(self):
-            return self.subtitle
-
-        def derive_new_list_query(self) -> str:
-            return "folder=active"
-
-        def post(self, request, *args, **kwargs):
-            # The component posts flow uuids in `objects`, but BulkActionMixin matches by primary key — translate
-            # them here so the new component and the legacy id-based form post are both accepted. The label dropdown
-            # likewise posts the target label by uuid (action=label, add=true|false), which the form matches by id —
-            # translate it too.
-            if self._use_new_list() and ("objects" in request.POST or "label" in request.POST):
-                data = request.POST.copy()
-                uuids = data.getlist("objects")
-                if uuids:
-                    # Only keep well-formed UUIDs — `uuid__in` runs each value through UUIDField.get_prep_value, so a
-                    # single malformed value (a hostile post, or a stale id-based form post) would otherwise raise
-                    # ValueError (500).
-                    valid = []
-                    for u in uuids:
-                        try:
-                            valid.append(UUID(u))
-                        except ValueError:
-                            pass
-                    ids = Flow.objects.filter(org=request.org, is_active=True, uuid__in=valid).values_list(
-                        "id", flat=True
-                    )
-                    data.setlist("objects", [str(i) for i in ids])
-                label = data.get("label")
-                if label:
-                    try:
-                        UUID(label)
-                    except ValueError:
-                        pass  # already an id (legacy form post) — leave alone
-                    else:
-                        obj = request.org.flow_labels.filter(uuid=label).first()
-                        data["label"] = str(obj.id) if obj else ""
-                request.POST = data
-
-            return super().post(request, *args, **kwargs)
-
-        def get_queryset(self, **kwargs):
-            # In preview the temba-flow-list component fetches and pages flows from the internal flows API, so a GET
-            # page needs no object list. A POST (bulk action) still needs the real queryset, since BulkActionMixin
-            # validates the posted `objects` against it.
-            if self._use_new_list() and self.request.method == "GET":
-                return Flow.objects.none()
-
-            return super().get_queryset(**kwargs)
-
-        def get_context_data(self, **kwargs):
-            context = super().get_context_data(**kwargs)
-
-            Flow.prefetch_run_counts(context["object_list"])
-
-            # decorate flow objects with their run activity stats
-            for flow in context["object_list"]:
-                counts = flow.get_run_counts()
-                total = sum(counts.values())
-                flow.num_runs_ongoing = counts[FlowRun.STATUS_ACTIVE] + counts[FlowRun.STATUS_WAITING]
-                flow.num_runs_total = total
-                flow.completion_pct = 100 * counts[FlowRun.STATUS_COMPLETED] // total if total else 0
-
-            # New-list view context: the resolved flows-api endpoint (folder= for active/archived, label= for the
-            # filter view), the subtitle, and the bulk-action configs the temba-flow-list expects (resolved +
-            # JSON-encoded here so the template stays inert).
-            if self._use_new_list():
-                context["new_list_endpoint"] = f"{reverse('api.internal.flows')}.json?{self.derive_new_list_query()}"
-                subtitle = self.derive_subtitle()
-                context["new_list_subtitle"] = str(subtitle) if subtitle else ""
-                actions = []
-                for key in self.get_bulk_actions():
-                    cfg = dict(self.BULK_ACTION_CONFIG.get(key, {}))
-                    cfg["key"] = key
-                    if key == "label":
-                        # the dropdown's "New Label…" row only renders for viewers who can create labels
-                        cfg["allowCreate"] = self.has_org_perm("flows.flowlabel_create")
-                    # Resolve any i18n lazy proxies so json_script / json.dumps don't choke.
-                    cfg = {k: (str(v) if isinstance(v, Promise) else v) for k, v in cfg.items()}
-                    actions.append(cfg)
-                context["new_list_bulk_actions"] = actions
-
-            return context
+        def derive_bulk_action_config(self, key: str) -> dict:
+            cfg = super().derive_bulk_action_config(key)
+            if key == "label":
+                # the dropdown's "New Label…" row only renders for viewers who can create labels
+                cfg["allowCreate"] = self.has_org_perm("flows.flowlabel_create")
+            return cfg
 
         def apply_bulk_action(self, user, action, objects, label):
             super().apply_bulk_action(user, action, objects, label)
@@ -761,7 +651,7 @@ class FlowCRUDL(SmartCRUDL):
         default_order = ("-created_on",)
         subtitle = _("These flows have been archived and can no longer be started.")
 
-        def derive_new_list_query(self) -> str:
+        def derive_list_query(self) -> str:
             return "folder=archived"
 
         def derive_queryset(self, *args, **kwargs):
@@ -785,7 +675,7 @@ class FlowCRUDL(SmartCRUDL):
         def derive_menu_path(self):
             return f"/flow/labels/{self.label.uuid}"
 
-        def derive_new_list_query(self) -> str:
+        def derive_list_query(self) -> str:
             return f"label={self.label.uuid}"
 
         def build_context_menu(self, menu):
@@ -805,11 +695,6 @@ class FlowCRUDL(SmartCRUDL):
                     f"{reverse('flows.flowlabel_delete', args=[self.label.id])}",
                     title=_("Delete Label"),
                 )
-
-        def get_context_data(self, *args, **kwargs):
-            context = super().get_context_data(*args, **kwargs)
-            context["current_label"] = self.label
-            return context
 
         @classmethod
         def derive_url_pattern(cls, path, action):
@@ -861,11 +746,8 @@ class FlowCRUDL(SmartCRUDL):
         def get_features(self, org) -> list:
             features = ["auto_translate"]
 
-            facebook_channel = org.get_channel(Channel.ROLE_SEND, scheme=URN.FACEBOOK_SCHEME)
             whatsapp_channel = org.get_channel(Channel.ROLE_SEND, scheme=URN.WHATSAPP_SCHEME)
 
-            if facebook_channel:
-                features.append("optins")
             if whatsapp_channel:
                 features.append("whatsapp")
             if org.get_integrations(IntegrationType.Category.AIRTIME):
@@ -984,169 +866,6 @@ class FlowCRUDL(SmartCRUDL):
 
             return JsonResponse({"status": "failure", "description": error, "detail": detail}, status=400)
 
-    class ExportTranslation(ModalFormMixin, OrgObjPermsMixin, SmartUpdateView):
-        class Form(forms.Form):
-            language = forms.ChoiceField(
-                required=False,
-                label=_("Language"),
-                help_text=_("Include translations in this language."),
-                choices=(("", "None"),),
-                widget=SelectWidget(),
-            )
-
-            def __init__(self, org, instance, *args, **kwargs):
-                super().__init__(*args, **kwargs)
-
-                self.fields["language"].choices += languages.choices(codes=org.flow_languages)
-
-        permission = "flows.flow_editor"
-        form_class = Form
-        submit_button_name = _("Export")
-        success_url = "@flows.flow_list"
-
-        def get_form_kwargs(self):
-            kwargs = super().get_form_kwargs()
-            kwargs["org"] = self.request.org
-            return kwargs
-
-        def get_success_url(self):
-            params = {"flow": self.object.id, "language": self.form.cleaned_data["language"]}
-            return reverse("flows.flow_download_translation") + "?" + urlencode(params, doseq=True)
-
-        def form_valid(self, form):
-            return self.render_modal_response(form)
-
-    class DownloadTranslation(OrgPermsMixin, SmartListView):
-        """
-        Download link for PO translation files extracted from flows by mailroom
-        """
-
-        permission = "flows.flow_editor"
-
-        def get(self, request, *args, **kwargs):
-            org = self.request.org
-            flow_ids = self.request.GET.getlist("flow")
-            flows = org.flows.filter(id__in=flow_ids, is_active=True)
-            if len(flows) != len(flow_ids):
-                raise Http404()
-
-            language = request.GET.get("language", "")
-            filename = slugify_with(flows[0].name) if len(flows) == 1 else "flows"
-            if language:
-                filename += f".{language}"
-            filename += ".po"
-
-            po = Flow.export_translation(org, flows, language)
-
-            response = HttpResponse(po, content_type="text/x-gettext-translation")
-            response["Content-Disposition"] = f'attachment; filename="{filename}"'
-            return response
-
-    class ImportTranslation(SpaMixin, OrgObjPermsMixin, SmartUpdateView):
-        class UploadForm(forms.Form):
-            po_file = forms.FileField(label=_("PO translation file"), required=True)
-
-            def __init__(self, org, instance, *args, **kwargs):
-                super().__init__(*args, **kwargs)
-
-                self.flow = instance
-
-            def clean_po_file(self):
-                data = self.cleaned_data["po_file"]
-                if data:
-                    try:
-                        po_info = gettext.po_get_info(data.read().decode())
-                    except Exception:
-                        raise ValidationError(_("File doesn't appear to be a valid PO file."))
-
-                    if po_info.language_code:
-                        if po_info.language_code == self.flow.base_language:
-                            raise ValidationError(
-                                _("Contains translations in %(lang)s which is the base language of this flow."),
-                                params={"lang": po_info.language_name},
-                            )
-
-                        if po_info.language_code not in self.flow.org.flow_languages:
-                            raise ValidationError(
-                                _("Contains translations in %(lang)s which is not a supported translation language."),
-                                params={"lang": po_info.language_name},
-                            )
-
-                return data
-
-        class ConfirmForm(forms.Form):
-            language = forms.ChoiceField(
-                label=_("Language"),
-                help_text=_("Replace flow translations in this language."),
-                required=True,
-                widget=SelectWidget(),
-            )
-
-            def __init__(self, org, instance, *args, **kwargs):
-                super().__init__(*args, **kwargs)
-
-                lang_codes = list(org.flow_languages)
-                if instance.base_language in lang_codes:
-                    lang_codes.remove(instance.base_language)
-
-                self.fields["language"].choices = languages.choices(codes=lang_codes)
-
-        permission = "flows.flow_update"
-        title = _("Import Translation")
-        submit_button_name = _("Import")
-        success_url = "uuid@flows.flow_editor"
-        menu_path = "/flow/active"
-
-        def get_form_class(self):
-            return self.ConfirmForm if self.request.GET.get("po") else self.UploadForm
-
-        def get_form_kwargs(self):
-            kwargs = super().get_form_kwargs()
-            kwargs["org"] = self.request.org
-            return kwargs
-
-        def form_valid(self, form):
-            org = self.request.org
-            po_uuid = self.request.GET.get("po")
-
-            if not po_uuid:
-                po_file = form.cleaned_data["po_file"]
-                po_uuid = gettext.po_save(org, po_file)
-
-                return HttpResponseRedirect(
-                    reverse("flows.flow_import_translation", args=[self.object.id]) + f"?po={po_uuid}"
-                )
-            else:
-                po_data = gettext.po_load(org, po_uuid)
-                language = form.cleaned_data["language"]
-
-                updated_defs = Flow.import_translation(self.object.org, [self.object], language, po_data)
-                self.object.save_revision(self.request.user, updated_defs[str(self.object.uuid)])
-
-            return HttpResponseRedirect(self.get_success_url())
-
-        @cached_property
-        def po_info(self):
-            po_uuid = self.request.GET.get("po")
-            if not po_uuid:
-                return None
-
-            org = self.request.org
-            po_data = gettext.po_load(org, po_uuid)
-            return gettext.po_get_info(po_data)
-
-        def get_context_data(self, *args, **kwargs):
-            flow_lang_code = self.object.base_language
-
-            context = super().get_context_data(*args, **kwargs)
-            context["show_upload_form"] = not self.po_info
-            context["po_info"] = self.po_info
-            context["flow_language"] = {"iso_code": flow_lang_code, "name": languages.get_name(flow_lang_code)}
-            return context
-
-        def derive_initial(self):
-            return {"language": self.po_info.language_code if self.po_info else ""}
-
     class ExportResults(BaseExportModal):
         class Form(BaseExportModal.Form):
             flows = forms.ModelMultipleChoiceField(
@@ -1183,7 +902,7 @@ class FlowCRUDL(SmartCRUDL):
 
             flow_ids = self.request.GET.get("ids")
             if flow_ids:
-                # the legacy list passes ids, the new (preview mode) list component passes uuids
+                # values can be ids or uuids
                 ids, uuids = [], []
                 for val in flow_ids.split(","):
                     if val.isdigit():
@@ -1530,10 +1249,14 @@ class FlowCRUDL(SmartCRUDL):
                     template = flow.org.templates.filter(uuid=ref["uuid"]).first()
                     if not template:
                         warnings.append(
-                            _(f"The message template {ref['name']} does not exist on your account and cannot be sent.")
+                            _("The message template %(name)s does not exist on your account and cannot be sent.")
+                            % {"name": ref["name"]}
                         )
                     elif not template.is_approved():
-                        warnings.append(_(f"Your message template {template.name} is not approved and cannot be sent."))
+                        warnings.append(
+                            _("Your message template %(name)s is not approved and cannot be sent.")
+                            % {"name": template.name}
+                        )
 
             # warn about potential template costs if the flow uses templates and brand has cost warnings enabled
             if "cost_warnings" in features and templates:
@@ -1591,7 +1314,7 @@ class FlowCRUDL(SmartCRUDL):
                 ),
             )
 
-            def __init__(self, org, flow, **kwargs):
+            def __init__(self, org, flow, contact, **kwargs):
                 super().__init__(**kwargs)
                 self.org = org
 
@@ -1600,6 +1323,14 @@ class FlowCRUDL(SmartCRUDL):
                     is_archived=False,
                     is_active=True,
                 ).order_by(Lower("name"))
+
+                if contact:
+                    # seeded from a single contact (e.g. their read page) so recipients can't be
+                    # changed, and if they're in a flow the user must confirm interrupting it
+                    search_attrs = self.fields["contact_search"].widget.attrs
+                    search_attrs["fixed"] = True
+                    if contact.current_flow:
+                        search_attrs["current_flow"] = contact.current_flow.name
 
                 if flow:
                     self.fields["flow"].widget = forms.HiddenInput(
@@ -1646,7 +1377,7 @@ class FlowCRUDL(SmartCRUDL):
         def derive_initial(self):
             org = self.request.org
             contacts = self.request.GET.get("c", "")
-            contacts = org.contacts.filter(uuid__in=contacts.split(","))
+            contacts = org.contacts.filter(uuid__in=contacts.split(","), is_active=True)
             recipients = []
             for contact in contacts:
                 urn = contact.get_urn()
@@ -1674,25 +1405,49 @@ class FlowCRUDL(SmartCRUDL):
             flow_id = self.request.GET.get("flow", None)
             return self.request.org.flows.filter(id=flow_id, is_active=True).first() if flow_id else None
 
+        @cached_property
+        def contact(self):
+            """
+            When seeded with a single contact (e.g. from their read page or a ticket) the start is
+            locked to that contact.
+            """
+            uuids = [u for u in self.request.GET.get("c", "").split(",") if u]
+            if len(uuids) == 1:
+                return (
+                    self.request.org.contacts.filter(uuid=uuids[0], is_active=True)
+                    .select_related("current_flow")
+                    .first()
+                )
+            return None
+
         def get_form_kwargs(self):
             kwargs = super().get_form_kwargs()
             kwargs["org"] = self.request.org
             kwargs["flow"] = self.flow
+            kwargs["contact"] = self.contact
             return kwargs
 
         def form_valid(self, form):
             contact_search = form.cleaned_data["contact_search"]
             flow = form.cleaned_data["flow"]
 
-            recipients = contact_search.get("recipients", [])
-            groups, contacts = ContactSearchWidget.parse_recipients(self.request.org, recipients)
+            exclusions = contact_search.get("exclusions", {})
+
+            if self.contact:
+                groups, contacts, query = [], [self.contact], None
+                # user has already confirmed interrupting the contact's current flow
+                exclusions = {k: v for k, v in exclusions.items() if k != "in_a_flow"}
+            else:
+                recipients = contact_search.get("recipients", [])
+                groups, contacts = ContactSearchWidget.parse_recipients(self.request.org, recipients)
+                query = contact_search["parsed_query"] if "parsed_query" in contact_search else None
 
             flow.start(
                 self.request.user,
                 groups=groups,
                 contacts=contacts,
-                query=contact_search["parsed_query"] if "parsed_query" in contact_search else None,
-                exclude=Exclusions(**contact_search.get("exclusions", {})),
+                query=query,
+                exclude=Exclusions(**exclusions),
             )
             return super().form_valid(form)
 
@@ -1829,7 +1584,7 @@ class FlowLabelCRUDL(SmartCRUDL):
         def post_save(self, obj, *args, **kwargs):
             obj = super().post_save(obj, *args, **kwargs)
 
-            # the legacy list seeds this field with ids, the new (preview mode) list component with uuids
+            # this field can be seeded with ids or uuids
             if self.form.cleaned_data["flows"]:
                 ids, uuids = [], []
                 for val in self.form.cleaned_data["flows"].split(","):

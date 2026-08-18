@@ -72,15 +72,128 @@ class CampaignCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertRequestDisallowed(read_url, [None, self.agent, self.admin2])
         response = self.assertReadFetch(read_url, [self.editor, self.admin], context_object=campaign)
         self.assertContains(response, "Welcomes")
-        self.assertContains(response, "Registered")
-        self.assertContains(response, "Event2Flow")
-        self.assertContains(response, "Event3Flow")
 
         self.assertContentMenu(read_url, self.admin, ["New Event", "Edit", "Export", "Archive"])
 
         campaign.archive(self.admin)
 
         self.assertContentMenu(read_url, self.admin, ["Activate", "Export", "-", "Delete"])
+
+    def test_read_component(self):
+        group = self.create_group("Reporters", contacts=[])
+        campaign = self.create_campaign(self.org, "Welcomes", group)
+
+        read_url = reverse("campaigns.campaign_read", args=[campaign.uuid])
+
+        self.login(self.admin)
+
+        # the temba-campaign-events component fetches the events itself
+        response = self.client.get(read_url)
+        self.assertContains(response, "temba-campaign-events")
+        self.assertContains(response, "Welcomes")
+        self.assertNotIn("events", response.context)
+
+    def test_events(self):
+        group = self.create_group("Reporters", contacts=[])
+        campaign = self.create_campaign(self.org, "Welcomes", group)
+        registered = self.org.fields.get(key="registered")
+        joined = self.create_field("joined", "Joined", value_type="D")
+
+        flow_event = campaign.events.get()
+        message_event = CampaignEvent.create_message_event(
+            self.org,
+            self.admin,
+            campaign,
+            registered,
+            offset=-3,
+            unit="D",
+            translations={"eng": {"text": "Hi @fields.registered"}},
+            base_language="eng",
+            delivery_hour=9,
+        )
+        joined_event = CampaignEvent.create_flow_event(
+            self.org, self.admin, campaign, joined, offset=0, unit="D", flow=flow_event.flow
+        )
+
+        events_url = reverse("campaigns.campaign_events", args=[campaign.uuid])
+
+        self.assertRequestDisallowed(events_url, [None, self.agent, self.admin2])
+
+        self.login(self.editor)
+
+        response = self.client.get(events_url)
+        self.assertEqual(200, response.status_code)
+
+        # events are sorted by field name then offset, and carry the schedule definition rather than a computed time
+        self.assertEqual(
+            {
+                "campaign": {"uuid": str(campaign.uuid), "name": "Welcomes"},
+                "events": [
+                    {
+                        "uuid": str(joined_event.uuid),
+                        "type": "flow",
+                        "status": "ready",
+                        "offset": 0,
+                        "unit": "D",
+                        "offset_display": "on",
+                        "relative_to": {"key": "joined", "name": "Joined", "system": False},
+                        "count": 0,
+                        "edit_url": f"/campaignevent/update/{joined_event.uuid}/",
+                        "delete_url": f"/campaignevent/delete/{joined_event.uuid}/",
+                        "fires_url": f"/campaignevent/fires/{joined_event.uuid}/",
+                        "flow": {
+                            "uuid": str(flow_event.flow.uuid),
+                            "name": "Welcomes Flow",
+                            "url": f"/flow/editor/{flow_event.flow.uuid}/",
+                        },
+                    },
+                    {
+                        "uuid": str(message_event.uuid),
+                        "type": "message",
+                        "status": "ready",
+                        "offset": -3,
+                        "unit": "D",
+                        "offset_display": "3 days before",
+                        "delivery_hour_display": "at 9:00 a.m.",
+                        "relative_to": {"key": "registered", "name": "Registered", "system": False},
+                        "count": 0,
+                        "edit_url": f"/campaignevent/update/{message_event.uuid}/",
+                        "delete_url": f"/campaignevent/delete/{message_event.uuid}/",
+                        "fires_url": f"/campaignevent/fires/{message_event.uuid}/",
+                        "message": "Hi @fields.registered",
+                    },
+                    {
+                        "uuid": str(flow_event.uuid),
+                        "type": "flow",
+                        "status": "ready",
+                        "offset": 1,
+                        "unit": "W",
+                        "offset_display": "1 week after",
+                        "delivery_hour_display": "at 1:00 p.m.",
+                        "relative_to": {"key": "registered", "name": "Registered", "system": False},
+                        "count": 0,
+                        "edit_url": f"/campaignevent/update/{flow_event.uuid}/",
+                        "delete_url": f"/campaignevent/delete/{flow_event.uuid}/",
+                        "fires_url": f"/campaignevent/fires/{flow_event.uuid}/",
+                        "flow": {
+                            "uuid": str(flow_event.flow.uuid),
+                            "name": "Welcomes Flow",
+                            "url": f"/flow/editor/{flow_event.flow.uuid}/",
+                        },
+                    },
+                ],
+                "can_edit": True,
+                "can_delete": True,
+            },
+            response.json(),
+        )
+
+        # archiving the campaign locks editing but deletion stays available
+        campaign.archive(self.admin)
+        response = self.client.get(events_url)
+        self.assertEqual(200, response.status_code)
+        self.assertFalse(response.json()["can_edit"])
+        self.assertTrue(response.json()["can_delete"])
 
     @mock_mailroom
     def test_update(self, mr_mocks):
@@ -166,8 +279,8 @@ class CampaignCRUDLTest(TembaTest, CRUDLTestMixin):
         list_url = reverse("campaigns.campaign_list")
 
         group = self.create_group("Reporters", contacts=[])
-        campaign1 = self.create_campaign(self.org, "Welcomes", group)
-        campaign2 = self.create_campaign(self.org, "Follow Ups", group)
+        self.create_campaign(self.org, "Welcomes", group)
+        self.create_campaign(self.org, "Follow Ups", group)
         campaign3 = self.create_campaign(self.org, "Reminders", group)
         campaign3.archive(self.admin)
 
@@ -175,8 +288,55 @@ class CampaignCRUDLTest(TembaTest, CRUDLTestMixin):
         self.create_campaign(self.org2, "Welcomes", other_org_group)
 
         self.assertRequestDisallowed(list_url, [None, self.agent])
-        self.assertListFetch(list_url, [self.editor, self.admin], context_objects=[campaign2, campaign1])
+        self.assertListFetch(list_url, [self.editor, self.admin])
         self.assertContentMenu(list_url, self.admin, ["New Campaign"])
+
+    @mock_mailroom
+    def test_list_component(self, mr_mocks):
+        group = self.create_group("Reporters", contacts=[])
+        campaign1 = self.create_campaign(self.org, "Welcomes", group)
+        campaign2 = self.create_campaign(self.org, "Follow Ups", group)
+
+        list_url = reverse("campaigns.campaign_list")
+        archived_url = reverse("campaigns.campaign_archived")
+
+        self.login(self.admin)
+
+        # the temba-campaign-list component is pointed at the internal campaigns api
+        response = self.client.get(list_url)
+        self.assertContains(response, "temba-campaign-list")
+        self.assertEqual(f"{reverse('api.internal.campaigns')}.json?folder=active", response.context["list_url"])
+        self.assertEqual(["archive"], [a["key"] for a in response.context["list_bulk_actions"]])
+
+        # the archived view selects the archived folder and offers restore instead
+        response = self.client.get(archived_url)
+        self.assertEqual(f"{reverse('api.internal.campaigns')}.json?folder=archived", response.context["list_url"])
+        self.assertNotEqual("", response.context["list_subtitle"])
+        self.assertEqual(["restore"], [a["key"] for a in response.context["list_bulk_actions"]])
+
+        # the component posts campaign uuids in `objects`
+        self.client.post(list_url, {"action": "archive", "objects": str(campaign1.uuid)})
+        campaign1.refresh_from_db()
+        self.assertTrue(campaign1.is_archived)
+
+        # ...and restore works the same way from the archived view
+        self.client.post(archived_url, {"action": "restore", "objects": str(campaign1.uuid)})
+        campaign1.refresh_from_db()
+        self.assertFalse(campaign1.is_archived)
+
+        # a malformed uuid fails form validation rather than erroring
+        response = self.client.post(list_url, {"action": "archive", "objects": "not-a-uuid"})
+        self.assertEqual(200, response.status_code)
+        campaign2.refresh_from_db()
+        self.assertFalse(campaign2.is_archived)
+
+        # a campaign belonging to another org can't be touched
+        other_org_group = self.create_group("Reporters", contacts=[], org=self.org2)
+        other_org_campaign = self.create_campaign(self.org2, "Other Org", other_org_group)
+        response = self.client.post(list_url, {"action": "archive", "objects": str(other_org_campaign.uuid)})
+        self.assertEqual(200, response.status_code)
+        other_org_campaign.refresh_from_db()
+        self.assertFalse(other_org_campaign.is_archived)
 
     def test_archived(self):
         archived_url = reverse("campaigns.campaign_archived")
@@ -193,7 +353,7 @@ class CampaignCRUDLTest(TembaTest, CRUDLTestMixin):
         campaign2.archive(self.admin)
 
         self.assertRequestDisallowed(archived_url, [None, self.agent])
-        self.assertListFetch(archived_url, [self.editor, self.admin], context_objects=[campaign2, campaign1])
+        self.assertListFetch(archived_url, [self.editor, self.admin])
         self.assertContentMenu(archived_url, self.admin, [])
 
     @mock_mailroom

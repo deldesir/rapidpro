@@ -141,7 +141,7 @@ class BroadcastCRUDLTest(TembaTest, CRUDLTestMixin):
             create_url,
             self._form_data(translations={"eng": {"text": "." * 4097}}, contacts=[self.joe]),
         )
-        self.assertFormError(response.context["form"], "compose", ["Maximum allowed text is 4096 characters."])
+        self.assertFormError(response.context["form"], "compose", ["Maximum allowed text is 4,096 characters."])
 
         # too many attachments
         attachments = compose_deserialize_attachments([{"content_type": media.content_type, "url": media.url}])
@@ -593,33 +593,41 @@ class BroadcastCRUDLTest(TembaTest, CRUDLTestMixin):
         list_url = reverse("msgs.broadcast_list")
 
         self.assertRequestDisallowed(list_url, [None, self.agent])
-        self.assertListFetch(list_url, [self.editor, self.admin], context_objects=[])
+        self.assertListFetch(list_url, [self.editor, self.admin])
         self.assertContentMenu(list_url, self.editor, ["New Broadcast"])
         self.assertContentMenu(list_url, self.admin, ["New Broadcast"])
 
-        broadcast = self.create_broadcast(
+        self.create_broadcast(
             self.admin,
             {"eng": {"text": "Broadcast sent to one contact"}},
             contacts=[self.joe],
         )
 
-        self.assertListFetch(list_url, [self.admin], context_objects=[broadcast])
+        # the temba-broadcast-list component is pointed at the internal broadcasts api
+        self.login(self.admin)
+
+        response = self.client.get(list_url)
+        self.assertContains(response, "temba-broadcast-list")
+        self.assertEqual(f"{reverse('api.internal.broadcasts')}.json?folder=sent", response.context["list_url"])
+        self.assertEqual("sent", response.context["list_mode"])
+        # the sent list's detail dialog has no edit/delete actions
+        self.assertNotContains(response, "can-edit")
 
     def test_scheduled(self):
         scheduled_url = reverse("msgs.broadcast_scheduled")
 
         self.assertRequestDisallowed(scheduled_url, [None, self.agent])
-        self.assertListFetch(scheduled_url, [self.editor, self.admin], context_objects=[])
+        self.assertListFetch(scheduled_url, [self.editor, self.admin])
         self.assertContentMenu(scheduled_url, self.editor, ["New Broadcast"])
         self.assertContentMenu(scheduled_url, self.admin, ["New Broadcast"])
 
-        bc1 = self.create_broadcast(
+        self.create_broadcast(
             self.admin,
             {"eng": {"text": "good morning"}},
             contacts=[self.joe],
             schedule=Schedule.create(self.org, timezone.now(), Schedule.REPEAT_DAILY),
         )
-        bc2 = self.create_broadcast(
+        self.create_broadcast(
             self.admin,
             {"eng": {"text": "good evening"}},
             contacts=[self.frank],
@@ -627,19 +635,16 @@ class BroadcastCRUDLTest(TembaTest, CRUDLTestMixin):
         )
         self.create_broadcast(self.admin, {"eng": {"text": "not_scheduled"}}, groups=[self.joe_and_frank])
 
-        bc3 = self.create_broadcast(
-            self.admin,
-            {"eng": {"text": "good afternoon"}},
-            contacts=[self.frank],
-            schedule=Schedule.create(self.org, timezone.now(), Schedule.REPEAT_DAILY),
-        )
+        # the temba-broadcast-list component runs in scheduled mode
+        self.login(self.editor)
 
-        self.assertListFetch(scheduled_url, [self.editor], context_objects=[bc3, bc2, bc1])
-
-        bc3.is_active = False
-        bc3.save(update_fields=("is_active",))
-
-        self.assertListFetch(scheduled_url, [self.editor], context_objects=[bc2, bc1])
+        response = self.client.get(scheduled_url)
+        self.assertContains(response, "temba-broadcast-list")
+        self.assertEqual(f"{reverse('api.internal.broadcasts')}.json?folder=scheduled", response.context["list_url"])
+        self.assertEqual("scheduled", response.context["list_mode"])
+        # editors can update and delete scheduled broadcasts, so the detail dialog gets its edit/delete actions
+        self.assertContains(response, "can-edit")
+        self.assertContains(response, "can-delete")
 
     def test_scheduled_delete(self):
         self.login(self.editor)

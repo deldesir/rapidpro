@@ -12,11 +12,11 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import transaction
 from django.db.models.functions import Upper
-from django.http import HttpResponse, HttpResponseNotFound, HttpResponseRedirect, JsonResponse
+from django.http import Http404, HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.functional import Promise, cached_property
+from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 from django.views import View
 
@@ -28,18 +28,18 @@ from temba.orgs.views.base import (
     BaseDeleteModal,
     BaseDependencyDeleteModal,
     BaseExportModal,
+    BaseListComponentView,
     BaseListView,
     BaseMenuView,
     BaseReadView,
     BaseUpdateModal,
     BaseUsagesModal,
 )
-from temba.orgs.views.mixins import BulkActionMixin, OrgObjPermsMixin, OrgPermsMixin, UniqueNameMixin
+from temba.orgs.views.mixins import OrgObjPermsMixin, OrgPermsMixin, UniqueNameMixin
 from temba.tickets.models import Topic
 from temba.users.models import User
 from temba.utils import json, on_transaction_commit
 from temba.utils.fields import CheckboxWidget, InputWidget, SelectWidget, TembaChoiceField
-from temba.utils.models import patch_queryset_count
 from temba.utils.models.es import SearchSliceQuerySet
 from temba.utils.views.mixins import ContextMenuMixin, ModalFormMixin, NonAtomicMixin, SpaMixin
 
@@ -50,34 +50,22 @@ from .omnibox import omnibox_query, omnibox_serialize
 logger = logging.getLogger(__name__)
 
 
-class ContactListView(SpaMixin, BulkActionMixin, BaseListView):
+class ContactListView(BaseListComponentView):
     """
     Base class for contact list views with contact folders and groups listed by the side
     """
 
     permission = "contacts.contact_list"
     system_group = None
-    add_button = True
-    paginate_by = 50
+    template_name = "contacts/contact_list.html"
+    list_endpoint = "api.internal.contacts"
 
-    parsed_query = None
-    search_is_saveable = None
-
-    sort_field = None
-    sort_direction = None
-
-    search_fields = ("name",)  # so that search box is displayed
-    search_error = None
     search_max_length = ContactGroup.MAX_QUERY_LEN
 
-    # Gated behind global preview mode (PreviewMiddleware → request.preview). When the viewer is in preview, every
-    # contact list view renders the temba-contact-list component (contacts/contact_list_new.html) instead of its
-    # legacy table; the component fetches/pages contacts itself from the internal contacts API.
-    NEW_LIST_TEMPLATE = "contacts/contact_list_new.html"
-
-    # Optional subtitle rendered under the title on the new-list view; subclasses override to carry the intro text the
-    # legacy templates rendered in their pre-table block.
-    subtitle = ""
+    # set from the `?search=` content menu parse in ContactCRUDL.List.build_context_menu
+    parsed_query = None
+    search_is_saveable = None
+    search_error = None
 
     # Maps a view's system group to the `folder` the internal contacts API expects; user groups pass `group=<uuid>`.
     FOLDER_BY_SYSTEM_GROUP = {
@@ -112,72 +100,20 @@ class ContactListView(SpaMixin, BulkActionMixin, BaseListView):
         },
     }
 
-    def _use_new_list(self) -> bool:
-        # `getattr` defaults to False so a view called via RequestFactory (or if PreviewMiddleware is reordered out)
-        # doesn't AttributeError.
-        return getattr(self.request, "preview", False)
-
-    def get_template_names(self):
-        if self._use_new_list():
-            return [self.NEW_LIST_TEMPLATE]
-        return super().get_template_names()
-
-    def get_paginate_by(self, queryset):
-        # The temba-contact-list component fetches and pages contacts itself.
-        if self._use_new_list():
-            return None
-        return super().get_paginate_by(queryset)
-
-    def derive_subtitle(self):
-        return self.subtitle
-
-    def derive_new_list_query(self) -> str:
+    def derive_list_query(self) -> str:
         if self.system_group:
             return f"folder={self.FOLDER_BY_SYSTEM_GROUP[self.system_group]}"
         return f"group={self.group.uuid}"
 
     def post(self, request, *args, **kwargs):
-        # The component posts contact uuids in `objects`, but BulkActionMixin matches by primary key — translate them
-        # here so the new component and the legacy id-based form post are both accepted. The group dropdown likewise
-        # posts the target group by uuid (action=label, add=true|false), which the form matches by id — translate it
-        # too. A fixed "unlabel" with no group (the group view's "Remove from group") falls back to the current group.
-        if self._use_new_list():
-            data = request.POST.copy()
-            uuids = data.getlist("objects")
-            if uuids:
-                # Only keep well-formed UUIDs — `uuid__in` runs each value through UUIDField.get_prep_value, so a single
-                # malformed value (a hostile post, or a stale id-based form post) would otherwise raise ValueError (500).
-                valid = []
-                for u in uuids:
-                    try:
-                        valid.append(UUID(u))
-                    except ValueError:
-                        pass
-                ids = Contact.objects.filter(org=request.org, uuid__in=valid).values_list("id", flat=True)
-                data.setlist("objects", [str(i) for i in ids])
-            label = data.get("label")
-            if label:
-                try:
-                    UUID(label)
-                except ValueError:
-                    pass  # already an id (legacy form post) — leave alone
-                else:
-                    group = request.org.groups.filter(uuid=label).first()
-                    data["label"] = str(group.id) if group else ""
-            elif data.get("action") == "unlabel" and self.group is not None:
-                data["label"] = str(self.group.id)
-            request.POST = data
+        # A fixed "unlabel" with no group (the group view's "Remove from group") falls back to the current group.
+        # Gated on the key being absent, which is what that action posts — a present-but-unresolvable group must
+        # still be rejected rather than silently removing the selection from the current group.
+        if "label" not in request.POST and request.POST.get("action") == "unlabel" and self.group is not None:
+            request.POST = request.POST.copy()
+            request.POST["label"] = str(self.group.uuid)
 
         return super().post(request, *args, **kwargs)
-
-    def pre_process(self, request, *args, **kwargs):
-        """
-        Don't allow pagination past 200th page
-        """
-        if int(self.request.GET.get("page", "1")) > 200:
-            return HttpResponseNotFound()
-
-        return super().pre_process(request, *args, **kwargs)
 
     @cached_property
     def group(self):
@@ -196,99 +132,11 @@ class ContactListView(SpaMixin, BulkActionMixin, BaseListView):
         return ContactGroup.get_groups(self.request.org, manual_only=True)
 
     def get_queryset(self, **kwargs):
-        # In preview the temba-contact-list component fetches and pages contacts from the internal contacts API, so a
-        # GET page needs no object list — skip the mailroom/DB query entirely. A POST (bulk action) still needs the
-        # real queryset, since BulkActionMixin validates the posted `objects` against it.
-        if self._use_new_list() and self.request.method == "GET":
+        # a GET page needs no object list — skip the mailroom/DB query entirely
+        if self.request.method == "GET":
             return Contact.objects.none()
 
-        org = self.request.org
-        self.search_error = None
-
-        # contact list views don't use regular field searching but use more complex contact searching
-        search_query = self.request.GET.get("search", None)
-        sort_on = self.request.GET.get("sort_on", "")
-        page = self.request.GET.get("page", "1")
-
-        offset = (int(page) - 1) * 50
-
-        self.sort_direction = "desc" if sort_on.startswith("-") else "asc"
-        self.sort_field = sort_on.lstrip("-")
-
-        if search_query or sort_on:
-            # is this request is part of a bulk action, get the ids that were modified so we can check which ones
-            # should no longer appear in this view, even though ES won't have caught up yet
-            bulk_action_ids = self.kwargs.get("bulk_action_ids", [])
-            if bulk_action_ids:
-                reappearing_ids = set(self.group.contacts.filter(id__in=bulk_action_ids).values_list("id", flat=True))
-                exclude = list(
-                    Contact.objects.filter(id__in=bulk_action_ids).exclude(id__in=reappearing_ids).only("id", "uuid")
-                )
-            else:
-                exclude = []
-
-            try:
-                results = mailroom.get_client().contact_search(
-                    org, self.group, search_query, sort=sort_on, offset=offset, exclude=exclude
-                )
-                self.parsed_query = results.query if len(results.query) > 0 else None
-                self.search_is_saveable = results.metadata.allow_as_group
-
-                return SearchSliceQuerySet(Contact, results.contact_uuids, offset=offset, total=results.total)
-            except mailroom.QueryValidationException as e:
-                self.search_error = str(e)
-
-                # this should be an empty resultset
-                return Contact.objects.none()
-            except Exception as e:
-                # nanorp fallback: Mailroom ES transport error
-                logger.warning("Mailroom contact search unavailable: %s", e)
-                self.search_error = _("Search is temporarily unavailable")
-                return Contact.objects.none()
-        else:
-            # if user search is not defined, use DB to select contacts
-            qs = self.group.contacts.filter(org=self.request.org).order_by("-id").prefetch_related("org", "groups")
-            patch_queryset_count(qs, self.group.get_member_count)
-            return qs
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        org = self.request.org
-
-        # prefetch contact URNs
-        Contact.bulk_urn_cache_initialize(context["object_list"])
-
-        # get the first 6 featured fields as well as the last seen and created fields
-        featured_fields = ContactField.get_fields(org, featured=True).order_by("-priority", "id")[0:6]
-        proxy_fields = org.fields.filter(key__in=("last_seen_on", "created_on"), is_proxy=True).order_by("-key")
-        context["contact_fields"] = list(featured_fields) + list(proxy_fields)
-
-        context["search_error"] = self.search_error
-        context["sort_direction"] = self.sort_direction
-        context["sort_field"] = self.sort_field
-
-        # replace search string with parsed search expression
-        if self.parsed_query is not None:
-            context["search"] = self.parsed_query
-            context["search_is_saveable"] = self.search_is_saveable
-
-        # New-list view context: the resolved contacts-api endpoint (folder= for the system groups, group= for a user
-        # group), the subtitle, and the bulk-action configs the temba-contact-list expects (resolved + JSON-encoded
-        # here so the template stays inert).
-        if self._use_new_list():
-            context["new_list_endpoint"] = f"{reverse('api.internal.contacts')}.json?{self.derive_new_list_query()}"
-            subtitle = self.derive_subtitle()
-            context["new_list_subtitle"] = str(subtitle) if subtitle else ""
-            actions = []
-            for key in self.get_bulk_actions():
-                cfg = dict(self.BULK_ACTION_CONFIG.get(key, {}))
-                cfg["key"] = key
-                # Resolve any i18n lazy proxies so json_script / json.dumps don't choke.
-                cfg = {k: (str(v) if isinstance(v, Promise) else v) for k, v in cfg.items()}
-                actions.append(cfg)
-            context["new_list_bulk_actions"] = actions
-
-        return context
+        return self.group.contacts.filter(org=self.request.org).order_by("-id")
 
 
 class ContactCRUDL(SmartCRUDL):
@@ -453,18 +301,8 @@ class ContactCRUDL(SmartCRUDL):
         def build_context_menu(self, menu):
             obj = self.get_object()
 
-            if self.has_org_perm("contacts.contact_update"):
-                menu.add_modax(
-                    _("Edit"),
-                    "edit-contact",
-                    f"{reverse('contacts.contact_update', args=[obj.uuid])}",
-                    title=_("Edit Contact"),
-                    on_submit="contactUpdated()",
-                    as_button=True,
-                )
-
             if obj.status == Contact.STATUS_ACTIVE:
-                if not obj.current_flow and self.has_org_perm("flows.flow_start"):
+                if self.has_org_perm("flows.flow_start"):
                     menu.add_modax(
                         _("Start Flow"),
                         "start-flow",
@@ -480,6 +318,11 @@ class ContactCRUDL(SmartCRUDL):
         def get_context_data(self, **kwargs):
             context = super().get_context_data(**kwargs)
             context["msg_logs_after"] = (timezone.now() - settings.RETENTION_PERIODS["channellog"]).isoformat()
+            # serialized for temba-card-layout's settings attribute
+            context["card_settings"] = json.dumps(self.request.user.settings.get("contact_cards", {}))
+            context["contact_urn_schemes"] = [
+                {"value": value, "name": str(label)} for value, label in URN.SCHEME_CHOICES
+            ]
             return context
 
     class Timeline(BaseReadView):
@@ -593,8 +436,6 @@ class ContactCRUDL(SmartCRUDL):
             return JsonResponse({"results": [event for _, event in results]})
 
     class Search(ContactListView):
-        template_name = "contacts/contact_list.html"
-
         def get(self, request, *args, **kwargs):
             org = self.request.org
             query = self.request.GET.get("search", None)
@@ -649,19 +490,21 @@ class ContactCRUDL(SmartCRUDL):
             }
             return JsonResponse(summary)
 
-    class List(ContextMenuMixin, ContactListView):
+    class List(ContactListView):
         title = _("Active")
         system_group = ContactGroup.TYPE_DB_ACTIVE
         menu_path = "/contact/active"
 
         def get_bulk_actions(self):
-            # "label" (the group dropdown) is a preview-list-only action — the legacy table has no UI for it.
-            update = ("label", "block", "archive") if self._use_new_list() else ("block", "archive")
-            actions = update if self.has_org_perm("contacts.contact_update") else ()
+            can_update = self.has_org_perm("contacts.contact_update")
+            actions = ("label", "block") if can_update else ()
             if self.has_org_perm("msgs.broadcast_create"):
                 actions += ("send",)
             if self.has_org_perm("flows.flow_start"):
                 actions += ("start-flow",)
+            # archive always trails the other actions
+            if can_update:
+                actions += ("archive",)
             return actions
 
         def has_context_menu(self):
@@ -700,7 +543,7 @@ class ContactCRUDL(SmartCRUDL):
             if self.has_org_perm("contacts.contact_export") and not self.search_error:
                 menu.add_modax(_("Export"), "export-contacts", self.derive_export_url(), title=_("Export Contacts"))
 
-    class Blocked(ContextMenuMixin, ContactListView):
+    class Blocked(ContactListView):
         title = _("Blocked")
         system_group = ContactGroup.TYPE_DB_BLOCKED
 
@@ -711,14 +554,8 @@ class ContactCRUDL(SmartCRUDL):
             if self.has_org_perm("contacts.contact_export"):
                 menu.add_modax(_("Export"), "export-contacts", self.derive_export_url(), title=_("Export Contacts"))
 
-        def get_context_data(self, *args, **kwargs):
-            context = super().get_context_data(*args, **kwargs)
-            context["reply_disabled"] = True
-            return context
-
-    class Stopped(ContextMenuMixin, ContactListView):
+    class Stopped(ContactListView):
         title = _("Stopped")
-        template_name = "contacts/contact_stopped.html"
         system_group = ContactGroup.TYPE_DB_STOPPED
         subtitle = _(
             "These contacts have opted out and you can no longer send them messages, but inbound messages will "
@@ -732,14 +569,8 @@ class ContactCRUDL(SmartCRUDL):
             if self.has_org_perm("contacts.contact_export"):
                 menu.add_modax(_("Export"), "export-contacts", self.derive_export_url(), title=_("Export Contacts"))
 
-        def get_context_data(self, *args, **kwargs):
-            context = super().get_context_data(*args, **kwargs)
-            context["reply_disabled"] = True
-            return context
-
-    class Archived(ContextMenuMixin, ContactListView):
+    class Archived(ContactListView):
         title = _("Archived")
-        template_name = "contacts/contact_archived.html"
         system_group = ContactGroup.TYPE_DB_ARCHIVED
         subtitle = _("These contacts have been removed from all groups and can be deleted permanently.")
         bulk_action_permissions = {"delete": "contacts.contact_delete"}
@@ -752,11 +583,6 @@ class ContactCRUDL(SmartCRUDL):
                 actions.append("delete")
             return actions
 
-        def get_context_data(self, *args, **kwargs):
-            context = super().get_context_data(*args, **kwargs)
-            context["reply_disabled"] = True
-            return context
-
         def build_context_menu(self, menu):
             if self.has_org_perm("contacts.contact_export"):
                 menu.add_modax(_("Export"), "export-contacts", self.derive_export_url(), title=_("Export Contacts"))
@@ -764,9 +590,7 @@ class ContactCRUDL(SmartCRUDL):
             if self.has_org_perm("contacts.contact_delete"):
                 menu.add_js("contacts_delete_all", _("Delete All"))
 
-    class Group(OrgObjPermsMixin, ContextMenuMixin, ContactListView):
-        template_name = "contacts/contact_group.html"
-
+    class Group(OrgObjPermsMixin, ContactListView):
         def build_context_menu(self, menu):
             if not self.group.is_system and self.has_org_perm("contacts.contactgroup_update"):
                 menu.add_modax(_("Edit"), "edit-group", reverse("contacts.contactgroup_update", args=[self.group.uuid]))
@@ -783,22 +607,21 @@ class ContactCRUDL(SmartCRUDL):
 
         def get_bulk_actions(self):
             actions = ()
-            if self.has_org_perm("contacts.contact_update"):
+            can_update = self.has_org_perm("contacts.contact_update")
+            if can_update:
                 # the group action ("Remove from group") leads, matching the "Group" dropdown's slot on the active list
-                actions += ("block", "archive") if self.group.is_smart else ("unlabel", "block")
+                actions += ("block",) if self.group.is_smart else ("unlabel", "block")
             if self.has_org_perm("msgs.broadcast_create"):
                 actions += ("send",)
             if self.has_org_perm("flows.flow_start"):
                 actions += ("start-flow",)
+            # archive always trails the other actions
+            if can_update and self.group.is_smart:
+                actions += ("archive",)
             return actions
 
         def get_bulk_action_labels(self):
             return ContactGroup.get_groups(self.request.org, manual_only=True)
-
-        def get_context_data(self, *args, **kwargs):
-            context = super().get_context_data(*args, **kwargs)
-            context["current_group"] = self.group
-            return context
 
         @classmethod
         def derive_url_pattern(cls, path, action):
@@ -821,13 +644,16 @@ class ContactCRUDL(SmartCRUDL):
             return super().derive_subtitle()
 
         def derive_group(self):
-            return get_object_or_404(
-                ContactGroup.objects.filter(
-                    uuid=self.kwargs["uuid"],
-                    group_type__in=(ContactGroup.TYPE_MANUAL, ContactGroup.TYPE_SMART),
-                    is_active=True,
+            try:
+                return get_object_or_404(
+                    ContactGroup.objects.filter(
+                        uuid=self.kwargs["uuid"],
+                        group_type__in=(ContactGroup.TYPE_MANUAL, ContactGroup.TYPE_SMART),
+                        is_active=True,
+                    )
                 )
-            )
+            except ValidationError:  # not a valid UUID
+                raise Http404()
 
     class Create(NonAtomicMixin, ModalFormMixin, OrgPermsMixin, SmartCreateView):
         form_class = CreateContactForm
@@ -972,7 +798,7 @@ class ContactCRUDL(SmartCRUDL):
             )
 
         def get_success_url(self):
-            return f"{reverse('tickets.ticket_list')}all/open/{self.ticket.uuid}/"
+            return f"{reverse('tickets.ticket_list')}all/{self.ticket.uuid}/"
 
     class Interrupt(ModalFormMixin, OrgObjPermsMixin, SmartUpdateView):
         """
@@ -1105,11 +931,10 @@ class ContactFieldForm(UniqueNameMixin, forms.ModelForm):
 
     class Meta:
         model = ContactField
-        fields = ("name", "value_type", "show_in_table", "agent_access")
+        fields = ("name", "value_type", "agent_access")
         labels = {
             "name": _("Name"),
             "value_type": _("Data Type"),
-            "show_in_table": _("Featured"),
             "agent_access": _("Agent Access"),
         }
         help_texts = {
@@ -1119,7 +944,6 @@ class ContactFieldForm(UniqueNameMixin, forms.ModelForm):
         widgets = {
             "name": InputWidget(attrs={"widget_only": False}),
             "value_type": SelectWidget(attrs={"widget_only": False}),
-            "show_in_table": CheckboxWidget(attrs={"widget_only": True}),
             "agent_access": SelectWidget(attrs={"widget_only": False}),
         }
 
@@ -1136,14 +960,19 @@ class FieldLookupMixin:
         return False
 
     def get_object(self):
-        if self.request.org:
-            return self.request.org.fields.filter(key=self.kwargs["key"], is_active=True).first()
-        return None
+        # cached because permission checking during dispatch also fetches the object
+        if not hasattr(self, "_object"):
+            self._object = (
+                self.request.org.fields.filter(key=self.kwargs["key"], is_active=True).first()
+                if self.request.org
+                else None
+            )
+        return self._object
 
 
 class ContactFieldCRUDL(SmartCRUDL):
     model = ContactField
-    actions = ("list", "create", "update", "update_priority", "delete", "usages")
+    actions = ("list", "create", "update", "update_priority", "delete", "usages", "detail")
 
     class Create(BaseCreateModal):
         queryset = ContactField.user_fields
@@ -1157,7 +986,6 @@ class ContactFieldCRUDL(SmartCRUDL):
                 self.request.user,
                 name=form.cleaned_data["name"],
                 value_type=form.cleaned_data["value_type"],
-                featured=form.cleaned_data["show_in_table"],
                 agent_access=form.cleaned_data["agent_access"],
             )
             return self.render_modal_response(form)
@@ -1167,14 +995,6 @@ class ContactFieldCRUDL(SmartCRUDL):
         form_class = ContactFieldForm
         submit_button_name = _("Update")
         success_url = "hide"
-
-        def pre_save(self, obj):
-            obj = super().pre_save(obj)
-
-            # clear our priority if no longer featured
-            if not obj.show_in_table:
-                obj.priority = 0
-            return obj
 
         def form_valid(self, form):
             super().form_valid(form)
@@ -1188,9 +1008,21 @@ class ContactFieldCRUDL(SmartCRUDL):
         def post(self, request, *args, **kwargs):
             try:
                 post_data = json.loads(request.body)
+                featured = post_data.get("featured") if isinstance(post_data, dict) else None
+
                 with transaction.atomic():
-                    for key, priority in post_data.items():
-                        ContactField.user_fields.filter(key=key, org=self.request.org).update(priority=priority)
+                    if isinstance(featured, list):
+                        # the full ordered featured set: first is highest priority, and any featured field not
+                        # listed is un-featured
+                        org_fields = ContactField.user_fields.filter(org=self.request.org, is_active=True)
+                        for idx, key in enumerate(featured):
+                            org_fields.filter(key=key).update(show_in_table=True, priority=len(featured) - idx)
+                        org_fields.filter(show_in_table=True).exclude(key__in=featured).update(
+                            show_in_table=False, priority=0
+                        )
+                    else:
+                        for key, priority in post_data.items():
+                            ContactField.user_fields.filter(key=key, org=self.request.org).update(priority=priority)
 
                 return HttpResponse('{"status":"OK"}', status=200, content_type="application/json")
 
@@ -1204,6 +1036,9 @@ class ContactFieldCRUDL(SmartCRUDL):
     class List(SpaMixin, ContextMenuMixin, BaseListView):
         menu_path = "/contact/fields"
         title = _("Fields")
+
+        # the temba-field-list component fetches the fields itself from the API
+        template_name = "contacts/contactfield_list.html"
 
         def build_context_menu(self, menu):
             if self.has_org_perm("contacts.contactfield_create") and not self.is_limit_reached():
@@ -1219,6 +1054,67 @@ class ContactFieldCRUDL(SmartCRUDL):
     class Usages(FieldLookupMixin, BaseUsagesModal):
         permission = "contacts.contactfield_read"
         queryset = ContactField.user_fields
+
+    class Detail(FieldLookupMixin, OrgPermsMixin, SmartView, View):
+        """
+        A field's usages and permissions as JSON, consumed by the temba-field-list component's detail modal on
+        the list page.
+        """
+
+        permission = "contacts.contactfield_read"
+        USAGES_LIMIT = 25
+
+        def get(self, request, *args, **kwargs):
+            field = self.get_object()
+            dependents = field.get_dependents()
+            flows = dependents["flow"].order_by("name")
+            groups = dependents["group"].order_by("name")
+            events = dependents["campaign_event"].select_related("campaign", "relative_to").order_by("campaign__name")
+
+            return JsonResponse(
+                {
+                    "field": {
+                        "key": field.key,
+                        "name": field.name,
+                        "value_type": field.value_type,
+                        "featured": field.show_in_table,
+                        "agent_access": field.agent_access,
+                    },
+                    "usages": {
+                        "flows": [
+                            {"uuid": str(f.uuid), "name": f.name, "url": reverse("flows.flow_editor", args=[f.uuid])}
+                            for f in flows[: self.USAGES_LIMIT]
+                        ],
+                        "groups": [
+                            {
+                                "uuid": str(g.uuid),
+                                "name": g.name,
+                                "url": reverse("contacts.contact_group", args=[g.uuid]),
+                            }
+                            for g in groups[: self.USAGES_LIMIT]
+                        ],
+                        "campaign_events": [
+                            {
+                                "id": e.id,
+                                "campaign": {
+                                    "uuid": str(e.campaign.uuid),
+                                    "name": e.campaign.name,
+                                    "url": reverse("campaigns.campaign_read", args=[e.campaign.uuid]),
+                                },
+                                "offset_display": f"{e.offset_display} {e.relative_to.name}",
+                            }
+                            for e in events[: self.USAGES_LIMIT]
+                        ],
+                    },
+                    "counts": {
+                        "flows": flows.count(),
+                        "groups": groups.count(),
+                        "campaign_events": events.count(),
+                    },
+                    "can_edit": self.has_org_perm("contacts.contactfield_update") and not field.is_system,
+                    "can_delete": self.has_org_perm("contacts.contactfield_delete") and not field.is_system,
+                }
+            )
 
 
 class ContactImportCRUDL(SmartCRUDL):

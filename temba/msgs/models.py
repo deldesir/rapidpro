@@ -28,7 +28,7 @@ from temba.orgs.models import DependencyMixin, Export, ExportType, Org
 from temba.schedules.models import Schedule
 from temba.utils import languages, on_transaction_commit
 from temba.utils.export.models import MultiSheetExporter
-from temba.utils.models import TembaModel
+from temba.utils.models import LegacyIDMixin, TembaModel
 from temba.utils.models.counts import BaseSquashableCount
 from temba.utils.s3 import public_file_storage
 from temba.utils.uuid import uuid4
@@ -180,7 +180,7 @@ class Media(models.Model):
         ]
 
 
-class Broadcast(models.Model):
+class Broadcast(LegacyIDMixin, models.Model):
     """
     A broadcast is a message that is sent out to more than one recipient, such
     as a ContactGroup or a list of Contacts. It's nothing more than a way to tie
@@ -218,7 +218,6 @@ class Broadcast(models.Model):
     # message content
     translations = models.JSONField()  # text, attachments and quick replies by language
     base_language = models.CharField(max_length=3)  # ISO-639-3
-    optin = models.ForeignKey("msgs.OptIn", null=True, on_delete=models.PROTECT)
     template = models.ForeignKey("templates.Template", null=True, on_delete=models.PROTECT)
     template_variables = ArrayField(models.TextField(), null=True)
 
@@ -246,7 +245,6 @@ class Broadcast(models.Model):
         query=None,
         node_uuid=None,
         exclude=None,
-        optin=None,
         template=None,
         template_variables=(),
         schedule=None,
@@ -266,7 +264,6 @@ class Broadcast(models.Model):
             query=query,
             node_uuid=node_uuid,
             exclude=exclude,
-            optin=optin,
             template=template,
             template_variables=template_variables,
             schedule=schedule,
@@ -363,6 +360,87 @@ class Broadcast(models.Model):
 
         if contacts:
             self.contacts.add(*contacts)
+
+    def get_exclusions_display(self) -> list:
+        """
+        Human readable descriptions of this broadcast's exclusions - same wording as includes/exclusions.html.
+        """
+        display = []
+        exclusions = self.exclusions or {}
+        if exclusions.get("in_a_flow"):
+            display.append(_("Not in a flow"))
+        if exclusions.get("started_previously"):
+            display.append(_("No recent runs"))
+        # exclusions is untyped JSON so guard against a non-int creeping into the format below
+        days = exclusions.get("not_seen_since_days")
+        if isinstance(days, int) and days:
+            if days == 365:
+                display.append(_("Active in the last year"))
+            else:
+                display.append(_("Active in the last %(days)d days") % {"days": days})
+        return display
+
+    def as_json(self, context=None) -> dict:
+        """
+        Internal API shape, consumed by the temba-broadcast-list component. Content fields carry the base
+        translation; `msg_count` relies on BroadcastMsgCount.bulk_annotate having run for the page (falling back to
+        a per-row count). The numeric id is included alongside the uuid for the scheduled list's edit and delete
+        modals, whose URLs are still pk based.
+        """
+
+        translation = self.get_translation()
+
+        # a scheduled broadcast hasn't sent anything itself (its fires spawn child broadcasts), so it carries no
+        # count or progress
+        msg_count = None
+        if not self.schedule:
+            msg_count = getattr(self, "msg_count", None)
+            if msg_count is None:
+                msg_count = self.get_message_count()
+
+        return {
+            "uuid": str(self.uuid),
+            "id": self.id,
+            "status": self.get_status_display().lower(),
+            "text": translation["text"],
+            "attachments": translation["attachments"],
+            "quick_replies": translation["quick_replies"],
+            "template": {"uuid": str(self.template.uuid), "name": self.template.name} if self.template else None,
+            "groups": [{"uuid": str(g.uuid), "name": g.name} for g in self.groups.all()],
+            "contacts": [{"uuid": str(c.uuid), "name": c.name} for c in self.contacts.all()],
+            "urns": self.urns or [],
+            "query": self.query,
+            "exclusions": [str(e) for e in self.get_exclusions_display()],
+            "schedule": (
+                {
+                    "repeat_period": self.schedule.repeat_period,
+                    "display": self.schedule.get_display(),
+                    # a paused schedule can carry a stale next_fire — null it so the broadcast reads as not
+                    # scheduled, same as the trigger list
+                    "next_fire": (
+                        self.schedule.next_fire.isoformat()
+                        if self.schedule.next_fire and not self.schedule.is_paused
+                        else None
+                    ),
+                }
+                if self.schedule
+                else None
+            ),
+            "msg_count": msg_count,
+            # send progress, matching the v2 API's shape: total is -1 until mailroom resolves the recipient
+            # count at queue time
+            "progress": (
+                None
+                if self.schedule
+                else {
+                    "total": self.contact_count if self.contact_count is not None else -1,
+                    "started": msg_count,
+                }
+            ),
+            "created_on": self.created_on.isoformat(),
+            "created_by": self.created_by.email if self.created_by else None,
+            "modified_on": self.modified_on.isoformat(),
+        }
 
     def __repr__(self):
         return f'<Broadcast: id={self.id} text="{self.get_translation()["text"]}">'
@@ -532,7 +610,6 @@ class Msg(models.Model):
     text = models.TextField()
     attachments = ArrayField(models.URLField(max_length=Attachment.MAX_LEN), null=True)
     quickreplies = models.JSONField(null=True)
-    optin = models.ForeignKey("msgs.OptIn", on_delete=models.DO_NOTHING, null=True, db_index=False, db_constraint=False)
     locale = models.CharField(max_length=6, null=True)  # eng, eng-US, por-BR, und etc
     templating = models.JSONField(null=True)
 
@@ -569,7 +646,6 @@ class Msg(models.Model):
         retention-gated.
         """
         return {
-            "id": self.id,
             "uuid": str(self.uuid),
             "type": self.TYPE_SLUGS.get(self.msg_type),
             "contact": {"uuid": str(self.contact.uuid), "name": self.contact.get_display(self.org)},
@@ -1031,28 +1107,6 @@ class LabelCount(BaseSquashableCount):
         )
         counts_by_label_id = {c[0]: c[1] for c in counts}
         return {lb: counts_by_label_id.get(lb.id, 0) for lb in labels}
-
-
-class OptIn(TembaModel):
-    """
-    Contact optin for a particular messaging topic.
-    """
-
-    org = models.ForeignKey(Org, on_delete=models.PROTECT, related_name="optins")
-
-    @classmethod
-    def create(cls, org, user, name: str):
-        assert cls.is_valid_name(name), f"'{name}' is not a valid optin name"
-        assert not org.optins.filter(name__iexact=name).exists()
-
-        return org.optins.create(name=name, created_by=user, modified_by=user)
-
-    @classmethod
-    def create_from_import_def(cls, org, user, definition: dict):
-        return cls.create(org, user, definition["name"])
-
-    class Meta:
-        constraints = [models.UniqueConstraint("org", Lower("name"), name="unique_optin_names")]
 
 
 class MsgIterator:

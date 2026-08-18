@@ -16,15 +16,16 @@ from django.db.models.functions import Lower
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.functional import Promise
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
 from temba.contacts.models import ContactField, ContactGroup
 from temba.utils import on_transaction_commit
 from temba.utils.fields import SelectMultipleWidget, TembaDateField
-from temba.utils.views.mixins import ComponentFormMixin, ModalFormMixin
+from temba.utils.views.mixins import ComponentFormMixin, ContextMenuMixin, ModalFormMixin, SpaMixin
 
-from .mixins import DependencyMixin, OrgObjPermsMixin, OrgPermsMixin
+from .mixins import BulkActionMixin, DependencyMixin, OrgObjPermsMixin, OrgPermsMixin
 
 
 class LimitAwareMixin:
@@ -164,6 +165,70 @@ class BaseListView(LimitAwareMixin, OrgPermsMixin, SmartListView):
         return qs
 
 
+class BaseListComponentView(ContextMenuMixin, BulkActionMixin, SpaMixin, BaseListView):
+    """
+    Base list view for pages rendered by a list component. The component fetches and pages the objects itself from
+    the internal API, so this view only renders the page shell, serves its content menu, and applies bulk actions
+    posted back to it. Selections and labels are posted by uuid - see BulkActionMixin.
+    """
+
+    # the internal API endpoint the component fetches from, e.g. "api.internal.contacts"
+    list_endpoint = None
+
+    # bulk action key -> config consumed by the component: a label and icon, plus optionally `clientOnly` (the action
+    # opens a modal seeded with the selection rather than posting back here), `destructive`/`confirm`, or a
+    # `labelsEndpoint` turning it into a dropdown of labels to add/remove the selection to/from
+    BULK_ACTION_CONFIG = {}
+
+    # optional subtitle rendered under the title
+    subtitle = ""
+
+    # the component pages the objects itself
+    paginate_by = None
+
+    def derive_subtitle(self):
+        return self.subtitle
+
+    def derive_list_query(self) -> str:
+        """
+        The query string selecting what the component should fetch, e.g. "folder=active"
+        """
+        return "folder=active"
+
+    def derive_bulk_action_config(self, key: str) -> dict:
+        """
+        Gets the config for the given bulk action. Views can override to vary it by requesting user.
+        """
+        return dict(self.BULK_ACTION_CONFIG.get(key, {}))
+
+    def get_queryset(self, **kwargs):
+        # the component fetches and pages the objects itself, so a GET page needs no object list. A POST still needs
+        # the real queryset, since BulkActionMixin validates the posted `objects` against it.
+        if self.request.method == "GET":
+            return self.model._default_manager.none()
+
+        return super().get_queryset(**kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        # the resolved API endpoint, the subtitle, and the bulk action configs the component expects (resolved here
+        # so the template stays inert)
+        context["list_url"] = f"{reverse(self.list_endpoint)}.json?{self.derive_list_query()}"
+        subtitle = self.derive_subtitle()
+        context["list_subtitle"] = str(subtitle) if subtitle else ""
+
+        actions = []
+        for key in self.get_bulk_actions():
+            cfg = self.derive_bulk_action_config(key)
+            cfg["key"] = key
+            # resolve any i18n lazy proxies so json_script doesn't choke
+            actions.append({k: (str(v) if isinstance(v, Promise) else v) for k, v in cfg.items()})
+        context["list_bulk_actions"] = actions
+
+        return context
+
+
 class BaseMenuView(OrgPermsMixin, SmartTemplateView):
     """
     Base view for the section menus
@@ -197,6 +262,16 @@ class BaseMenuView(OrgPermsMixin, SmartTemplateView):
 
         if "href" not in menu_item:  # pragma: no cover
             return None
+
+        return menu_item
+
+    def create_event_button(self, name, event, icon=None):
+        """
+        A button (rendered like a modax button) whose click dispatches the given custom event on the document
+        """
+        menu_item = {"id": slugify(name), "name": name, "type": "button", "event": event}
+        if icon:
+            menu_item["icon"] = icon
 
         return menu_item
 
@@ -317,14 +392,18 @@ class BaseExportModal(ModalFormMixin, OrgPermsMixin, SmartFormView):
         def clean_with_fields(self):
             data = self.cleaned_data["with_fields"]
             if data and len(data) > self.MAX_FIELDS_COLS:
-                raise forms.ValidationError(_(f"You can only include up to {self.MAX_FIELDS_COLS} fields."))
+                raise forms.ValidationError(
+                    _("You can only include up to %(limit)d fields."), params={"limit": self.MAX_FIELDS_COLS}
+                )
 
             return data
 
         def clean_with_groups(self):
             data = self.cleaned_data["with_groups"]
             if data and len(data) > self.MAX_GROUPS_COLS:
-                raise forms.ValidationError(_(f"You can only include up to {self.MAX_GROUPS_COLS} groups."))
+                raise forms.ValidationError(
+                    _("You can only include up to %(limit)d groups."), params={"limit": self.MAX_GROUPS_COLS}
+                )
 
             return data
 

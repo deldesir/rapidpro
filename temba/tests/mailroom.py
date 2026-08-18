@@ -81,7 +81,6 @@ _INSPECT_ACTION_REFS = {
     "flow": "flow",
     "channel": "channel",
     "llm": "llm",
-    "optin": "optin",
     "topic": "topic",
     "template": "template",
 }
@@ -197,14 +196,14 @@ class LiveMailroomError(BaseException):
     """
 
 
-def _guarded_mailroom_request(self, endpoint, payload=None, files=None, post=True, encode_json=False):
+def _guarded_mailroom_request(self, endpoint, payload=None, post=True, encode_json=False):
     # a patched transport (e.g. patch("requests.post")) means no real network call happens - that's how the
     # MailroomClient's own request-construction tests work, so let those through to the real _request. this only
     # detects Mock-based patches; patch("requests.post", new=<plain callable>) would slip past, but that form
     # isn't used against requests here.
     transport = requests.post if post else requests.get
     if isinstance(transport, NonCallableMock):
-        return _real_mailroom_request(self, endpoint, payload=payload, files=files, post=post, encode_json=encode_json)
+        return _real_mailroom_request(self, endpoint, payload=payload, post=post, encode_json=encode_json)
 
     # flow/clone and flow/inspect are reached by undecorated import/save tests via the production client; both are
     # faked from the request payload (see clone_flow_definition / inspect_flow) rather than reaching a live
@@ -617,7 +616,6 @@ class TestClient(MailroomClient):
         query: str,
         node_uuid: str,
         exclude: mailroom.Exclusions,
-        optin,
         template,
         template_variables: list,
         schedule: mailroom.ScheduleSpec,
@@ -633,7 +631,6 @@ class TestClient(MailroomClient):
             query=query,
             node_uuid=node_uuid,
             exclude=exclude,
-            optin=optin,
             template=template,
             template_variables=template_variables,
             schedule=schedule,
@@ -702,6 +699,10 @@ class TestClient(MailroomClient):
         return {}
 
     @_client_method
+    def org_publish(self, org, event: dict):
+        return {}
+
+    @_client_method
     def ticket_add_note(self, org, user, tickets, note: str, via: str):
         now = timezone.now()
         tickets = list(Ticket.objects.filter(org=org, id__in=[t.id for t in tickets]))
@@ -761,16 +762,6 @@ class TestClient(MailroomClient):
 
         return {"changed_uuids": [str(t.uuid) for t in tickets]}
 
-    def system_latency(self) -> list:
-        return []
-
-    def system_queues(self) -> dict:
-        return {
-            "batch": {"queued": {}, "active": {}, "paused": {}},
-            "realtime": {"queued": {}, "active": {}, "paused": {}},
-            "throttled": {"queued": {}, "active": {}, "paused": {}},
-        }
-
 
 def mock_mailroom(method=None):
     """
@@ -809,7 +800,6 @@ def apply_modifiers(org, user, contacts, modifiers: list):
 
     for mod in modifiers:
         fields = dict()
-        clear_groups = False
 
         if mod.type == "name":
             fields = dict(name=mod.name)
@@ -824,13 +814,10 @@ def apply_modifiers(org, user, contacts, modifiers: list):
         elif mod.type == "status":
             if mod.status == "blocked":
                 fields = dict(status=Contact.STATUS_BLOCKED)
-                clear_groups = True
             elif mod.status == "stopped":
                 fields = dict(status=Contact.STATUS_STOPPED)
-                clear_groups = True
             elif mod.status == "archived":
                 fields = dict(status=Contact.STATUS_ARCHIVED)
-                clear_groups = True
             else:
                 fields = dict(status=Contact.STATUS_ACTIVE)
 
@@ -860,8 +847,11 @@ def apply_modifiers(org, user, contacts, modifiers: list):
         Contact.objects.filter(id__in=[c.id for c in contacts]).update(
             modified_by=user, modified_on=timezone.now(), **fields
         )
-        if clear_groups:
-            for c in contacts:
+
+        # like mailroom, ensure that non-active contacts belong to no groups after each modifier
+        for c in contacts:
+            c.refresh_from_db()
+            if c.status != Contact.STATUS_ACTIVE:
                 for g in c.get_groups():
                     g.contacts.remove(c)
 
@@ -1212,7 +1202,6 @@ def create_broadcast(
     query: str,
     node_uuid: str,
     exclude: mailroom.Exclusions,
-    optin,
     template,
     template_variables: list,
     schedule,
@@ -1234,7 +1223,6 @@ def create_broadcast(
         query=query,
         node_uuid=node_uuid,
         exclusions=asdict(exclude) if exclude else None,
-        optin=optin,
         template=template,
         template_variables=template_variables,
         schedule=schedule,
