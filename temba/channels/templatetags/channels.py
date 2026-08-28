@@ -18,7 +18,7 @@ def channel_log_link(context, obj):
     logs_url = None
 
     if user.has_org_perm(org, "channels.channel_logs") or user.is_staff:
-        has_channel = obj.channel and obj.channel.is_active
+        has_channel = obj.channel and obj.channel.is_active and obj.channel.type.has_logs
 
         obj_age = timezone.now() - obj.created_on
 
@@ -29,3 +29,11 @@ def channel_log_link(context, obj):
                 logs_url = reverse("channels.channel_logs_read", args=[obj.channel.uuid, "msg", obj.uuid])
 
     return {"logs_url": logs_url}
+
+
+@register.simple_tag
+def channel_callback(channel, action: str) -> str:
+    """
+    Gets the URL on which courier handles the given action for the given channel
+    """
+    return channel.courier_url(action)

@@ -26,6 +26,7 @@ from temba.utils import json
 from temba.utils.fields import NameValidator
 
 from ..models import BulkActionFailure, Resthook, ResthookSubscriber, WebHookEvent
+from ..support import record_deprecated
 from ..validators import UniqueForOrgValidator
 from . import fields
 
@@ -995,6 +996,9 @@ class ContactBulkActionSerializer(WriteSerializer):
         elif action == self.INTERRUPT:
             Contact.bulk_interrupt(user, contacts)
         elif action == self.ARCHIVE_MESSAGES or action == self.ARCHIVE:
+            # tracked separately for each action name so we can see if the older alias can be dropped on its own
+            record_deprecated(self.context["org"], f"contact_actions#{action}")
+
             Msg.archive_all_for_contacts(contacts)
         elif action == self.BLOCK:
             Contact.bulk_change_status(user, contacts, modifiers.Status.BLOCKED, via_api=True)
@@ -1563,12 +1567,10 @@ class MsgBulkActionSerializer(WriteSerializer):
                 label.toggle_label(messages, add=False)
         elif action == self.DELETE:
             Msg.bulk_soft_delete(self.context["org"], self.context["user"], messages)
-        else:
-            for msg in messages:
-                if action == self.ARCHIVE and msg.visibility == Msg.VISIBILITY_VISIBLE:
-                    msg.archive()
-                elif action == self.RESTORE and msg.visibility == Msg.VISIBILITY_ARCHIVED:
-                    msg.restore()
+        elif action == self.ARCHIVE:
+            Msg.bulk_archive(self.context["org"], messages)
+        elif action == self.RESTORE:
+            Msg.bulk_restore(self.context["org"], messages)
 
         return BulkActionFailure(missing_message_ids) if missing_message_ids else None
 

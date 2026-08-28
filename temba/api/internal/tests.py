@@ -98,7 +98,7 @@ class EndpointsTest(APITestMixin, TembaTest):
         msg2_logs_url = reverse("channels.channel_logs_read", args=[self.channel.uuid, "msg", msg2.uuid])
 
         # admin has `channels.channel_logs` so as_json resolves logs_url to a real path
-        self.assertGet(
+        response = self.assertGet(
             endpoint_url,
             [self.admin],
             results=[
@@ -126,6 +126,10 @@ class EndpointsTest(APITestMixin, TembaTest):
                 },
             ],
         )
+
+        # responses say how they're paginated so the list UI knows a single page of a cursor list isn't page one of a
+        # page-numbered one - the two are otherwise indistinguishable when everything fits on one page
+        self.assertEqual("cursor", response.json()["paged_by"])
 
         # editor lacks `channels.channel_logs` so logs_url is gated to None
         self.assertGet(
@@ -359,8 +363,7 @@ class EndpointsTest(APITestMixin, TembaTest):
         self.assertGet(endpoint_url + "?sort=-field:gender&page_size=0", [self.admin], results=[joe, frank])
         self.assertEqual(50, mr_mocks.calls["contact_search"][-1].kwargs["limit"])
 
-    @mock_mailroom
-    def test_contacts_update(self, mr_mocks):
+    def test_contacts_update(self):
         endpoint_url = reverse("api.internal.contacts") + ".json"
 
         joe = self.create_contact("Joe", urns=["tel:+250788111111", "facebook:123456"])
@@ -572,7 +575,9 @@ class EndpointsTest(APITestMixin, TembaTest):
         self.assertEqual([3, 5], flow1.get_activity_series()[-2:])
 
         # default folder is `active`, most recently saved first
-        self.assertGet(endpoint_url, [self.editor, self.admin], results=[flow2, flow1])
+        response = self.assertGet(endpoint_url, [self.editor, self.admin], results=[flow2, flow1])
+        self.assertEqual("page", response.json()["paged_by"])  # unlike messages, flows are page-numbered
+
         self.assertGet(endpoint_url + "?folder=active", [self.admin], results=[flow2, flow1])
 
         # archived flows live in their own folder, newest first
@@ -757,6 +762,20 @@ class EndpointsTest(APITestMixin, TembaTest):
                 response = self._postJSON(endpoint_url, user, payload)
             self.assertEqual(200, response.status_code)
             self.assertEqual(expected, response.json()["results"])
+
+        # staff servicing the org can also resolve names - this endpoint's POSTs are reads, so the
+        # GET-only rule for servicing staff doesn't apply
+        self.login(self.customer_support, choose_org=self.org)
+        with self.mockReadOnly(assert_models={Flow}):
+            response = self.client.post(
+                endpoint_url,
+                {"flow": [str(flow.uuid)]},
+                content_type="application/json",
+                HTTP_X_FORWARDED_HTTPS="https",
+            )
+        self.assertEqual(200, response.status_code)
+        self.assertEqual([{"type": "flow", "uuid": str(flow.uuid), "name": "Welcome"}], response.json()["results"])
+        self.client.logout()
 
         # a payload of a single type only queries for that type, and duplicate references are only resolved once
         with self.mockReadOnly(assert_models={Flow}):
@@ -1208,7 +1227,6 @@ class EndpointsTest(APITestMixin, TembaTest):
         # each row carries the columns the component renders
         def check_sent_shape(data):
             row = [r for r in data["results"] if r["uuid"] == str(bcast1.uuid)][0]
-            self.assertEqual(bcast1.id, row["id"])
             self.assertEqual("completed", row["status"])
             self.assertEqual("Hello everyone", row["text"])
             self.assertEqual(["image/jpeg:http://example.com/cat.jpg"], row["attachments"])
@@ -1346,7 +1364,6 @@ class EndpointsTest(APITestMixin, TembaTest):
         # each row carries the columns the component renders
         def check_shape(data):
             first = [r for r in data["results"] if r["uuid"] == str(trigger1.uuid)][0]
-            self.assertEqual(trigger1.id, first["id"])
             self.assertEqual("keyword", first["type"])
             self.assertEqual({"uuid": str(flow1.uuid), "name": "Survey"}, first["flow"])
             self.assertIsNone(first["channel"])

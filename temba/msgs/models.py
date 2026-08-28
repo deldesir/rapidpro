@@ -384,8 +384,7 @@ class Broadcast(LegacyIDMixin, models.Model):
         """
         Internal API shape, consumed by the temba-broadcast-list component. Content fields carry the base
         translation; `msg_count` relies on BroadcastMsgCount.bulk_annotate having run for the page (falling back to
-        a per-row count). The numeric id is included alongside the uuid for the scheduled list's edit and delete
-        modals, whose URLs are still pk based.
+        a per-row count).
         """
 
         translation = self.get_translation()
@@ -400,7 +399,6 @@ class Broadcast(LegacyIDMixin, models.Model):
 
         return {
             "uuid": str(self.uuid),
-            "id": self.id,
             "status": self.get_status_display().lower(),
             "text": translation["text"],
             "attachments": translation["attachments"],
@@ -484,8 +482,15 @@ class Attachment:
         raise ValueError(f"{s} is not a valid attachment")
 
     @classmethod
-    def parse_all(cls, attachments) -> list:
-        return [cls.parse(s) for s in (attachments or [])]
+    def parse_all(cls, attachments, ignore_invalid: bool = False) -> list:
+        parsed = []
+        for s in attachments or []:
+            try:
+                parsed.append(cls.parse(s))
+            except ValueError:
+                if not ignore_invalid:
+                    raise
+        return parsed
 
     @classmethod
     def bulk_delete(cls, attachments):
@@ -564,6 +569,27 @@ class Msg(models.Model):
     TYPE_CHOICES = ((TYPE_TEXT, "Text"), (TYPE_OPTIN, "Opt-In Request"), (TYPE_VOICE, "Interactive Voice Response"))
     TYPE_SLUGS = {TYPE_TEXT: "text", TYPE_OPTIN: "optin", TYPE_VOICE: "voice"}
 
+    # which folder this message belongs to. the first six are the user facing folders defined by MsgFolder - the last
+    # two exist so that every message has a folder, and so that a null folder means only "not yet written".
+    FOLDER_INBOX = "I"
+    FOLDER_HANDLED = "W"
+    FOLDER_ARCHIVED = "A"
+    FOLDER_OUTBOX = "O"
+    FOLDER_SENT = "S"
+    FOLDER_FAILED = "X"
+    FOLDER_PENDING = "P"  # incoming and not yet handled
+    FOLDER_DELETED = "D"  # deleted by the user or the sender
+    FOLDER_CHOICES = (
+        (FOLDER_INBOX, "Inbox"),
+        (FOLDER_HANDLED, "Handled"),
+        (FOLDER_ARCHIVED, "Archived"),
+        (FOLDER_OUTBOX, "Outbox"),
+        (FOLDER_SENT, "Sent"),
+        (FOLDER_FAILED, "Failed"),
+        (FOLDER_PENDING, "Pending"),
+        (FOLDER_DELETED, "Deleted"),
+    )
+
     FAILED_NO_DESTINATION = "D"
     FAILED_CONTACT = "C"
     FAILED_SUSPENDED = "S"
@@ -621,6 +647,10 @@ class Msg(models.Model):
     direction = models.CharField(max_length=1, choices=DIRECTION_CHOICES)
     status = models.CharField(max_length=1, choices=STATUS_CHOICES, default=STATUS_PENDING)
     visibility = models.CharField(max_length=1, choices=VISIBILITY_CHOICES, default=VISIBILITY_VISIBLE)
+    # denormalized folder, derived from direction/visibility/status/flow, maintained by mailroom and courier. null
+    # means not yet written, not "in no folder" - see derive_folder.
+    folder = models.CharField(max_length=1, null=True, choices=FOLDER_CHOICES)
+
     is_android = models.BooleanField()
     labels = models.ManyToManyField("Label", related_name="msgs")
 
@@ -670,7 +700,7 @@ class Msg(models.Model):
             return None
         if not (user.has_org_perm(org, "channels.channel_logs") or user.is_staff):
             return None
-        if not (self.channel and self.channel.is_active and self.created_on):
+        if not (self.channel and self.channel.is_active and self.channel.type.has_logs and self.created_on):
             return None
         if timezone.now() - self.created_on >= settings.RETENTION_PERIODS["channellog"]:
             return None
@@ -718,15 +748,24 @@ class Msg(models.Model):
 
         mailroom.get_client().msg_handle(self.org, [self])
 
-    def archive(self):
+    def derive_folder(self) -> str:
         """
-        Archives this message
+        Derives the folder code for this message. Nothing reads this yet - it exists to pin down the contract that
+        mailroom and courier implement, in particular the precedence, which matters for states that fall outside the
+        user facing folders entirely: a message can be archived or deleted while still pending, and such messages
+        must not appear in the Archived folder.
         """
-        assert self.direction == self.DIRECTION_IN
 
-        if self.visibility == self.VISIBILITY_VISIBLE:
-            self.visibility = self.VISIBILITY_ARCHIVED
-            self.save(update_fields=("visibility", "modified_on"))
+        if self.visibility in (self.VISIBILITY_DELETED_BY_USER, self.VISIBILITY_DELETED_BY_SENDER):
+            return self.FOLDER_DELETED
+        if self.direction == self.DIRECTION_IN and self.status == self.STATUS_PENDING:
+            return self.FOLDER_PENDING
+
+        folder = MsgFolder.from_msg(self)
+
+        assert folder is not None, f"unable to derive folder for msg #{self.id}"
+
+        return folder.code
 
     @classmethod
     def archive_all_for_contacts(cls, contacts):
@@ -741,16 +780,6 @@ class Msg(models.Model):
         for batch in itertools.batched(msg_ids, 100):
             Msg.objects.filter(pk__in=batch).update(visibility=cls.VISIBILITY_ARCHIVED, modified_on=timezone.now())
 
-    def restore(self):
-        """
-        Restores (i.e. un-archives) this message
-        """
-        assert self.direction == self.DIRECTION_IN
-
-        if self.visibility == self.VISIBILITY_ARCHIVED:
-            self.visibility = self.VISIBILITY_VISIBLE
-            self.save(update_fields=("visibility", "modified_on"))
-
     @classmethod
     def apply_action_label(cls, user, msgs, label):
         label.toggle_label(msgs, add=True)
@@ -761,13 +790,13 @@ class Msg(models.Model):
 
     @classmethod
     def apply_action_archive(cls, user, msgs):
-        for msg in msgs:
-            msg.archive()
+        if msgs := list(msgs):
+            cls.bulk_archive(msgs[0].org, msgs)
 
     @classmethod
     def apply_action_restore(cls, user, msgs):
-        for msg in msgs:
-            msg.restore()
+        if msgs := list(msgs):
+            cls.bulk_restore(msgs[0].org, msgs)
 
     @classmethod
     def apply_action_delete(cls, user, msgs):
@@ -780,6 +809,30 @@ class Msg(models.Model):
             mailroom.get_client().msg_resend(msgs[0].org, user, msgs)
 
     @classmethod
+    def bulk_archive(cls, org, msgs: list):
+        """
+        Bulk archives the given incoming messages. Messages which aren't currently visible are ignored.
+        """
+
+        for msg in msgs:
+            assert msg.direction == Msg.DIRECTION_IN, "only incoming messages can be archived"
+
+        if msgs:
+            mailroom.get_client().msg_archive(org, msgs)
+
+    @classmethod
+    def bulk_restore(cls, org, msgs: list):
+        """
+        Bulk restores (i.e. un-archives) the given incoming messages. Messages which aren't archived are ignored.
+        """
+
+        for msg in msgs:
+            assert msg.direction == Msg.DIRECTION_IN, "only incoming messages can be restored"
+
+        if msgs:
+            mailroom.get_client().msg_restore(org, msgs)
+
+    @classmethod
     def bulk_soft_delete(cls, org, user, msgs: list):
         """
         Bulk soft deletes the given incoming messages, i.e. clears content and updates its visibility to deleted.
@@ -790,7 +843,7 @@ class Msg(models.Model):
         for msg in msgs:
             assert msg.direction == Msg.DIRECTION_IN, "only incoming messages can be soft deleted"
 
-            attachments_to_delete.extend(msg.get_attachments())
+            attachments_to_delete.extend(Attachment.parse_all(msg.attachments, ignore_invalid=True))
 
         Attachment.bulk_delete(attachments_to_delete)  # TODO move to mailroom as well
 
@@ -806,7 +859,7 @@ class Msg(models.Model):
 
         for msg in msgs:
             if msg.direction == Msg.DIRECTION_IN:
-                attachments_to_delete.extend(msg.get_attachments())
+                attachments_to_delete.extend(Attachment.parse_all(msg.attachments, ignore_invalid=True))
 
         Attachment.bulk_delete(attachments_to_delete)
 
@@ -915,7 +968,7 @@ class MsgFolder(Enum):
     """
 
     INBOX = (
-        "I",
+        Msg.FOLDER_INBOX,
         dict(
             direction=Msg.DIRECTION_IN,
             visibility=Msg.VISIBILITY_VISIBLE,
@@ -925,7 +978,7 @@ class MsgFolder(Enum):
         dict(direction="in", visibility="visible", status="handled", flow__isnull=True),
     )
     HANDLED = (
-        "W",
+        Msg.FOLDER_HANDLED,
         dict(
             direction=Msg.DIRECTION_IN,
             visibility=Msg.VISIBILITY_VISIBLE,
@@ -935,7 +988,7 @@ class MsgFolder(Enum):
         dict(direction="in", visibility="visible", status="handled", flow__isnull=False),
     )
     ARCHIVED = (
-        "A",
+        Msg.FOLDER_ARCHIVED,
         dict(
             direction=Msg.DIRECTION_IN,
             visibility=Msg.VISIBILITY_ARCHIVED,
@@ -944,7 +997,7 @@ class MsgFolder(Enum):
         dict(direction="in", visibility="archived", status="handled"),
     )
     OUTBOX = (
-        "O",
+        Msg.FOLDER_OUTBOX,
         dict(
             direction=Msg.DIRECTION_OUT,
             visibility=Msg.VISIBILITY_VISIBLE,
@@ -953,7 +1006,7 @@ class MsgFolder(Enum):
         dict(direction="out", visibility="visible", status__in=("initializing", "queued", "errored")),
     )
     SENT = (
-        "S",
+        Msg.FOLDER_SENT,
         dict(
             direction=Msg.DIRECTION_OUT,
             visibility=Msg.VISIBILITY_VISIBLE,
@@ -962,7 +1015,7 @@ class MsgFolder(Enum):
         dict(direction="out", visibility="visible", status__in=("wired", "sent", "delivered", "read")),
     )
     FAILED = (
-        "X",
+        Msg.FOLDER_FAILED,
         dict(direction=Msg.DIRECTION_OUT, visibility=Msg.VISIBILITY_VISIBLE, status=Msg.STATUS_FAILED),
         dict(direction="out", visibility="visible", status="failed"),
     )
@@ -975,6 +1028,32 @@ class MsgFolder(Enum):
     @classmethod
     def from_code(cls, code):
         return next(f for f in cls if f.code == code)
+
+    @classmethod
+    def from_msg(cls, msg):
+        """
+        Derives the folder that the given message belongs to, or None if it isn't in one (e.g. an unhandled incoming
+        message, or one deleted by its sender).
+        """
+
+        def matches(lookup: str, expected) -> bool:
+            field, _, op = lookup.partition("__")
+            actual = getattr(msg, Msg._meta.get_field(field).attname)
+
+            if op == "in":
+                return actual in expected
+            elif op == "isnull":
+                return (actual is None) == expected
+
+            assert op == "", f"unsupported lookup: {lookup}"
+
+            return actual == expected
+
+        for folder in cls:
+            if all(matches(lookup, expected) for lookup, expected in folder.query.items()):
+                return folder
+
+        return None
 
     def get_queryset(self, org):
         # we don't use org.msgs here because it causes problems when the API is using different db connections
@@ -1114,17 +1193,20 @@ class MsgIterator:
     Queryset wrapper to chunk queries and reduce in-memory footprint
     """
 
-    def __init__(self, ids, order_by=None, select_related=None, prefetch_related=None, max_obj_num=1000):
+    def __init__(
+        self, ids, order_by=None, select_related=None, prefetch_related=None, using="default", max_obj_num=1000
+    ):
         self._ids = ids
         self._order_by = order_by
         self._select_related = select_related
         self._prefetch_related = prefetch_related
+        self._using = using
         self._generator = self._setup()
         self.max_obj_num = max_obj_num
 
     def _setup(self):
         for i in range(0, len(self._ids), self.max_obj_num):
-            chunk_queryset = Msg.objects.filter(id__in=self._ids[i : i + self.max_obj_num])
+            chunk_queryset = Msg.objects.using(self._using).filter(id__in=self._ids[i : i + self.max_obj_num])
 
             if self._order_by:
                 chunk_queryset = chunk_queryset.order_by(*self._order_by)
@@ -1247,15 +1329,18 @@ class MessageExport(ExportType):
 
         all_message_ids = array(str("l"), messages.values_list("id", flat=True))
 
+        # Django 6.1 no longer routes custom Prefetch querysets by the parent queryset's database so the
+        # prefetches need their own explicit .using(..)
         for msg_batch in MsgIterator(
             all_message_ids,
             order_by=("created_on",),
             select_related=("channel", "contact_urn"),
             prefetch_related=(
-                Prefetch("contact", queryset=Contact.objects.only("uuid", "name")),
-                Prefetch("flow", queryset=Flow.objects.only("uuid", "name")),
-                Prefetch("labels", queryset=Label.objects.only("uuid", "name").order_by("name")),
+                Prefetch("contact", queryset=Contact.objects.only("uuid", "name").using("readonly")),
+                Prefetch("flow", queryset=Flow.objects.only("uuid", "name").using("readonly")),
+                Prefetch("labels", queryset=Label.objects.only("uuid", "name").order_by("name").using("readonly")),
             ),
+            using="readonly",
         ):
             # convert this batch of msgs to same format as records in our archives
             yield [msg.as_archive_json() for msg in msg_batch]

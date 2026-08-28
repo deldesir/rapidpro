@@ -7,6 +7,7 @@ from django.utils import timezone
 from temba.api.checks import websockets_auth_secret
 from temba.api.tests.mixins import APITestMixin
 from temba.api.websockets.views import SUBSCRIPTION_TTL
+from temba.channels.types.webchat.views import CONFIG_ALLOWED_DOMAINS
 from temba.orgs.models import OrgRole
 from temba.tests import TembaTest
 from temba.tickets.models import Team, Topic
@@ -17,8 +18,10 @@ SECRET = "topsecret"
 
 @override_settings(WEBSOCKETS_AUTH_SECRET=SECRET)
 class EndpointsTest(APITestMixin, TembaTest):
-    def post(self, name, data=None, *, client=None, secret=SECRET):
+    def post(self, name, data=None, *, client=None, secret=SECRET, origin=None):
         headers = {"HTTP_X_WEBSOCKETS_SECRET": secret} if secret is not None else {}
+        if origin is not None:  # the realtime server forwarding the browser's Origin header
+            headers["HTTP_ORIGIN"] = origin
         return (client or self.client).post(reverse(name), data or {}, content_type="application/json", **headers)
 
     def assertExpiry(self, expire_at):
@@ -31,6 +34,12 @@ class EndpointsTest(APITestMixin, TembaTest):
         self.assertExpiry(result.pop("expire_at"))
         # connect attaches no server-side subscriptions - the browser subscribes to the sockets it wants itself
         self.assertEqual({"user": str(user.uuid), "channels": [], "meta": meta}, result)
+
+    def assertAnonymousConnect(self, response):
+        self.assertEqual(200, response.status_code)
+        # an anonymous connection has an empty user, no identity meta, and no expire_at - it never needs re-validating
+        # at the connection level, so the refresh proxy is never called for it
+        self.assertEqual({"result": {"user": "", "channels": [], "meta": {}}}, response.json())
 
     def test_connect(self):
         endpoint_url = reverse("api.websockets.connect")
@@ -66,20 +75,16 @@ class EndpointsTest(APITestMixin, TembaTest):
             },
         )
 
-        # a user with no current workspace can't connect for now - they're told to disconnect
+        # a user with no current workspace connects as anonymous
         self.login(self.admin)
         session = self.client.session
         del session["org_id"]
         session.save()
-        response = self.post("api.websockets.connect")
-        self.assertEqual(200, response.status_code)
-        self.assertEqual({"disconnect": {"code": 4501, "reason": "unauthorized"}}, response.json())
+        self.assertAnonymousConnect(self.post("api.websockets.connect"))
 
-        # an unauthenticated request is told to disconnect
+        # as does a request with no session at all - e.g. a webchat visitor
         self.client.logout()
-        response = self.post("api.websockets.connect")
-        self.assertEqual(200, response.status_code)
-        self.assertEqual({"disconnect": {"code": 4501, "reason": "unauthorized"}}, response.json())
+        self.assertAnonymousConnect(self.post("api.websockets.connect"))
 
         # because it's a server-to-server POST with no CSRF token, it still works when CSRF checks are enforced
         csrf_client = self.client_class(enforce_csrf_checks=True)
@@ -97,6 +102,44 @@ class EndpointsTest(APITestMixin, TembaTest):
                 "org_uuid": str(self.org.uuid),
             },
         )
+
+    @override_settings(ALLOWED_HOSTS=["testserver", ".rapidpro.io"])
+    def test_connect_origin(self):
+        admin_meta = {
+            "user_id": self.admin.id,
+            "user_uuid": str(self.admin.uuid),
+            "org_id": self.org.id,
+            "org_uuid": str(self.org.uuid),
+        }
+
+        self.login(self.admin)
+
+        # a session connecting from an origin the deployment itself serves (wildcard entries included, so whitelabel
+        # domains pass) gets its full identity
+        self.assertConnect(
+            self.post("api.websockets.connect", origin="https://app.rapidpro.io"), user=self.admin, meta=admin_meta
+        )
+
+        # as does one with no Origin header at all - a non-browser client, or a proxy config that doesn't forward it
+        self.assertConnect(self.post("api.websockets.connect"), user=self.admin, meta=admin_meta)
+
+        # but a session presented from a foreign origin is refused its identity - the connection is accepted as
+        # anonymous instead, and the downgrade is warned about since it's either an attack or a misconfiguration
+        with self.assertLogs("temba.api.websockets.views", level="WARNING") as logs:
+            self.assertAnonymousConnect(self.post("api.websockets.connect", origin="https://attacker.example.com"))
+        self.assertIn("foreign origin https://attacker.example.com", logs.output[0])
+
+        # an opaque or unparseable origin is foreign too
+        with self.assertLogs("temba.api.websockets.views", level="WARNING"):
+            self.assertAnonymousConnect(self.post("api.websockets.connect", origin="null"))
+        with self.assertLogs("temba.api.websockets.views", level="WARNING"):
+            self.assertAnonymousConnect(self.post("api.websockets.connect", origin="https://[invalid"))
+
+        # anonymous connections are origin-agnostic - webchat widgets connect from arbitrary sites by design - and
+        # nothing is downgraded, so nothing is warned about
+        self.client.logout()
+        with self.assertNoLogs("temba.api.websockets.views", level="WARNING"):
+            self.assertAnonymousConnect(self.post("api.websockets.connect", origin="https://attacker.example.com"))
 
     def test_refresh(self):
         # a still-authenticated connection with a current workspace is extended with a new expiry
@@ -116,6 +159,23 @@ class EndpointsTest(APITestMixin, TembaTest):
         # a connection whose session is gone is told it has expired, which tears the connection down
         self.client.logout()
         response = self.post("api.websockets.refresh")
+        self.assertEqual(200, response.status_code)
+        self.assertEqual({"result": {"expired": True}}, response.json())
+
+    @override_settings(ALLOWED_HOSTS=["testserver", ".rapidpro.io"])
+    def test_refresh_origin(self):
+        self.login(self.admin)
+
+        # a refresh from an origin the deployment serves, or with no Origin header, extends the connection as before
+        for origin in ("https://app.rapidpro.io", None):
+            response = self.post("api.websockets.refresh", origin=origin)
+            self.assertEqual(200, response.status_code)
+            self.assertExpiry(response.json()["result"]["expire_at"])
+
+        # but a foreign origin gets no session identity, so the connection expires rather than persisting - even one
+        # that authenticated at connect (e.g. under a config that didn't yet forward the Origin header)
+        with self.assertLogs("temba.api.websockets.views", level="WARNING"):
+            response = self.post("api.websockets.refresh", origin="https://attacker.example.com")
         self.assertEqual(200, response.status_code)
         self.assertEqual({"result": {"expired": True}}, response.json())
 
@@ -179,11 +239,10 @@ class EndpointsTest(APITestMixin, TembaTest):
         session.save()
         assertForbidden(f"history:{contact.uuid}")
 
-        # an unauthenticated request is told to disconnect
+        # an unauthenticated request - e.g. from an anonymous connection - is forbidden: anonymous connections can
+        # only subscribe to chat sockets, never to session-based sockets like history
         self.client.logout()
-        response = subscribe(f"history:{contact.uuid}")
-        self.assertEqual(200, response.status_code)
-        self.assertEqual({"disconnect": {"code": 4501, "reason": "unauthorized"}}, response.json())
+        assertForbidden(f"history:{contact.uuid}")
 
     def test_subscribe_notifications(self):
         def subscribe(socket, client="conn-1"):
@@ -287,6 +346,215 @@ class EndpointsTest(APITestMixin, TembaTest):
             response = subscribe(socket)
             self.assertEqual(200, response.status_code)
             self.assertEqual({"error": {"code": 403, "message": "forbidden"}}, response.json())
+
+    def test_subscribe_chat(self):
+        # a webchat channel with a visitor contact whose webchat URN carries the secret chat-id as its path (as
+        # courier creates them, with the URN's channel affinity set to the webchat channel)
+        chat_id = "65vbbDAQCdPdEWlEhDGy4utO"
+        channel = self.create_channel("WCH", "WebChat", "wch1")
+        contact = self.create_contact("Vic", urns=[f"webchat:{chat_id}"])
+        contact.urns.update(channel=channel)
+
+        # a webchat channel in another workspace with its own visitor
+        other_chat_id = "aB3dEf6hIj9kLm2nOp5qRs8t"
+        other_channel = self.create_channel("WCH", "WebChat", "wch2", org=self.org2)
+        other_contact = self.create_contact("Zed", urns=[f"webchat:{other_chat_id}"], org=self.org2)
+        other_contact.urns.update(channel=other_channel)
+
+        # a non-webchat channel, to prove the channel type is checked even if a webchat URN points at it
+        ex_channel = self.create_channel("EX", "External", "ex1", schemes=["webchat"])
+        ex_contact = self.create_contact("Xan", urns=["webchat:Cd4eFg7hIj0kLm3nOp6qRs9t"])
+        ex_contact.urns.update(channel=ex_channel)
+
+        def subscribe(socket, client="conn-1"):
+            return self.post("api.websockets.subscribe", {"channel": socket, "client": client})
+
+        def assertAllowed(socket):
+            response = subscribe(socket)
+            self.assertEqual(200, response.status_code)
+            self.assertExpiry(response.json()["result"]["expire_at"])
+
+        def assertForbidden(socket):
+            response = subscribe(socket)
+            self.assertEqual(200, response.status_code)
+            self.assertEqual({"error": {"code": 403, "message": "forbidden"}}, response.json())
+
+        # webchat visitors are anonymous - no login, no session - and possession of the chat-id is the credential
+        socket = f"chat:{channel.uuid}:{chat_id}"
+        key = f"socket-subs:{socket}"
+        r = get_valkey_connection()
+        r.delete(key)
+
+        assertAllowed(socket)
+
+        # an allowed chat subscribe records presence exactly like any other socket, so courier sees the subscriber
+        self.assertEqual(b"1", r.get(key))
+        self.assertGreater(r.ttl(key), 0)
+        self.assertLessEqual(r.ttl(key), SUBSCRIPTION_TTL)
+
+        assertForbidden(f"chat:{channel.uuid}:Ab1cDe2fGh3iJk4lMn5oPq6r")  # no URN with that chat-id
+        assertForbidden(f"chat:{channel.uuid}:{other_chat_id}")  # chat-id belongs to a different channel
+        assertForbidden(f"chat:{other_channel.uuid}:{chat_id}")  # and vice versa
+        assertForbidden(f"chat:{uuid4()}:{chat_id}")  # channel not found
+        assertForbidden(f"chat:{ex_channel.uuid}:Cd4eFg7hIj0kLm3nOp6qRs9t")  # channel isn't a webchat channel
+
+        # malformed socket names are denied by the route pattern before any lookup
+        assertForbidden(f"chat:{chat_id}")  # too few segments
+        assertForbidden(f"chat:{channel.uuid}:{chat_id}:extra")  # too many segments
+        assertForbidden(f"chat:{channel.uuid}:{chat_id[:23]}")  # chat-id too short
+        assertForbidden(f"chat:{channel.uuid}:{chat_id}x")  # chat-id too long
+        assertForbidden(f"chat:{channel.uuid}:{chat_id[:23]}-")  # chat-id with a non-alphanumeric char
+        assertForbidden(f"chat:{str(channel.uuid).upper()}:{chat_id}")  # non-canonical uuid encoding
+        assertForbidden(f"chat:not-a-uuid:{chat_id}")  # malformed channel uuid
+        assertForbidden(f"chat:{channel.uuid}:{chat_id}\n")  # trailing newline isn't part of the canonical name
+
+        # anonymous connections can't subscribe to any session-based socket
+        assertForbidden(f"notifications:{self.org.uuid}:{self.admin.uuid}")
+        assertForbidden(f"org:{self.org.uuid}")
+        assertForbidden(f"history:{contact.uuid}")
+        assertForbidden(f"flow:{self.create_flow('Test').uuid}")
+
+        # sub_refresh applies the same capability-based authorization for anonymous connections
+        response = self.post("api.websockets.sub_refresh", {"channel": socket, "client": "conn-1"})
+        self.assertEqual(200, response.status_code)
+        self.assertExpiry(response.json()["result"]["expire_at"])
+
+        response = self.post(
+            "api.websockets.sub_refresh",
+            {"channel": f"chat:{channel.uuid}:Ab1cDe2fGh3iJk4lMn5oPq6r", "client": "conn-1"},
+        )
+        self.assertEqual(200, response.status_code)
+        self.assertEqual({"result": {"expired": True}}, response.json())
+
+        # releasing the visitor's contact closes their chat immediately, even though their URNs aren't purged until
+        # the full release later
+        contact.is_active = False
+        contact.save(update_fields=("is_active",))
+        assertForbidden(socket)
+        contact.is_active = True
+        contact.save(update_fields=("is_active",))
+
+        # as does orphaning the URN (no contact at all)
+        contact.urns.update(contact=None)
+        assertForbidden(socket)
+        channel.urns.update(contact=contact)
+
+        # deactivating the channel tears the chat down on the next refresh
+        channel.is_active = False
+        channel.save(update_fields=("is_active",))
+        assertForbidden(socket)
+        response = self.post("api.websockets.sub_refresh", {"channel": socket, "client": "conn-1"})
+        self.assertEqual(200, response.status_code)
+        self.assertEqual({"result": {"expired": True}}, response.json())
+        channel.is_active = True
+        channel.save(update_fields=("is_active",))
+
+        # being logged in doesn't get in the way of chat authorization - it never touches the session
+        self.login(self.admin)
+        assertAllowed(socket)
+
+    def test_subscribe_chat_allowed_domains(self):
+        # a webchat channel and visitor, as in test_subscribe_chat
+        chat_id = "65vbbDAQCdPdEWlEhDGy4utO"
+        channel = self.create_channel("WCH", "WebChat", "wch1")
+        contact = self.create_contact("Vic", urns=[f"webchat:{chat_id}"])
+        contact.urns.update(channel=channel)
+
+        socket = f"chat:{channel.uuid}:{chat_id}"
+
+        def assertAllowed(origin=None):
+            response = self.post("api.websockets.subscribe", {"channel": socket, "client": "conn-1"}, origin=origin)
+            self.assertEqual(200, response.status_code)
+            self.assertExpiry(response.json()["result"]["expire_at"])
+
+        def assertForbidden(origin=None):
+            response = self.post("api.websockets.subscribe", {"channel": socket, "client": "conn-1"}, origin=origin)
+            self.assertEqual(200, response.status_code)
+            self.assertEqual({"error": {"code": 403, "message": "forbidden"}}, response.json())
+
+        # a channel without allowed_domains is unrestricted - any forwarded origin, or none at all, is allowed
+        assertAllowed()
+        assertAllowed(origin="https://anywhere.example.com")
+
+        # pin the channel to its operator's websites
+        channel.config[CONFIG_ALLOWED_DOMAINS] = ["widgets.example.com", "example.com:8080"]
+        channel.save(update_fields=("config",))
+
+        # a forwarded origin's host[:port] must now match an entry, case-insensitively
+        assertAllowed(origin="https://widgets.example.com")
+        assertAllowed(origin="http://Widgets.Example.COM")
+        assertAllowed(origin="http://example.com:8080")
+
+        assertForbidden(origin="https://attacker.example.com")
+        assertForbidden(origin="https://example.com")  # an entry's port must be present in the origin
+        assertForbidden(origin="https://widgets.example.com:8080")  # and an origin's port in the entry
+        assertForbidden(origin="https://wwidgets.example.com")  # matching is exact, not by suffix
+        assertForbidden(origin="null")  # an opaque origin can't match
+        assertForbidden(origin="https://[")  # nor an unparseable one
+
+        # but a request without a forwarded Origin (a non-browser client, or a proxy config that doesn't forward it)
+        # is still allowed - possession of the chat-id remains the credential
+        assertAllowed()
+
+        # sub_refresh applies the same check, so adding domains tears down non-matching subscriptions
+        response = self.post(
+            "api.websockets.sub_refresh",
+            {"channel": socket, "client": "conn-1"},
+            origin="https://attacker.example.com",
+        )
+        self.assertEqual(200, response.status_code)
+        self.assertEqual({"result": {"expired": True}}, response.json())
+
+        response = self.post(
+            "api.websockets.sub_refresh",
+            {"channel": socket, "client": "conn-1"},
+            origin="https://widgets.example.com",
+        )
+        self.assertEqual(200, response.status_code)
+        self.assertExpiry(response.json()["result"]["expire_at"])
+
+    @override_settings(ALLOWED_HOSTS=["testserver", ".rapidpro.io"])
+    def test_subscribe_origin(self):
+        contact = self.create_contact("Ann", phone="+1234", org=self.org)
+
+        # a webchat channel and visitor, as in test_subscribe_chat
+        chat_id = "65vbbDAQCdPdEWlEhDGy4utO"
+        channel = self.create_channel("WCH", "WebChat", "wch1")
+        chat_contact = self.create_contact("Vic", urns=[f"webchat:{chat_id}"])
+        chat_contact.urns.update(channel=channel)
+
+        def subscribe(socket, origin):
+            return self.post("api.websockets.subscribe", {"channel": socket, "client": "conn-1"}, origin=origin)
+
+        self.login(self.admin)
+
+        # a session subscribing from an origin the deployment serves, or with no Origin header, is authorized as usual
+        for origin in ("https://app.rapidpro.io", None):
+            response = subscribe(f"history:{contact.uuid}", origin)
+            self.assertEqual(200, response.status_code)
+            self.assertExpiry(response.json()["result"]["expire_at"])
+
+        # but a foreign-origin request gets no session identity here either - a page the connect proxy would only
+        # accept as anonymous can't reach session-based sockets by subscribing with the same forwarded cookie
+        response = subscribe(f"history:{contact.uuid}", "https://attacker.example.com")
+        self.assertEqual(200, response.status_code)
+        self.assertEqual({"error": {"code": 403, "message": "forbidden"}}, response.json())
+
+        # and sub_refresh applies the same rule, so such a subscription expires rather than being re-armed
+        response = self.post(
+            "api.websockets.sub_refresh",
+            {"channel": f"history:{contact.uuid}", "client": "conn-1"},
+            origin="https://attacker.example.com",
+        )
+        self.assertEqual(200, response.status_code)
+        self.assertEqual({"result": {"expired": True}}, response.json())
+
+        # chat sockets are capability-based and exempt from the session-identity origin check - webchat widgets
+        # subscribe from arbitrary sites unless the channel itself pins embedding to its operator's domains (see
+        # test_subscribe_chat_allowed_domains)
+        response = subscribe(f"chat:{channel.uuid}:{chat_id}", "https://attacker.example.com")
+        self.assertEqual(200, response.status_code)
+        self.assertExpiry(response.json()["result"]["expire_at"])
 
     def test_subscribe_ticket_topic_access(self):
         # an agent restricted to a team's topics can only watch the history of tickets they're allowed to view - the
@@ -430,11 +698,9 @@ class EndpointsTest(APITestMixin, TembaTest):
         # a missing secret is rejected
         self.assertEqual(403, self.post("api.websockets.connect", secret=None).status_code)
 
-        # a correct secret doesn't bypass session auth - a browser with no session is still told to disconnect
+        # a correct secret doesn't grant an identity - a browser with no session still only connects as anonymous
         self.client.logout()
-        response = self.post("api.websockets.connect")
-        self.assertEqual(200, response.status_code)
-        self.assertEqual({"disconnect": {"code": 4501, "reason": "unauthorized"}}, response.json())
+        self.assertAnonymousConnect(self.post("api.websockets.connect"))
 
     @override_settings(WEBSOCKETS_AUTH_SECRET=None)
     def test_secret_required(self):

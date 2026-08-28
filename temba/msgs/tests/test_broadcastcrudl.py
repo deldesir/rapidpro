@@ -284,7 +284,7 @@ class BroadcastCRUDLTest(TembaTest, CRUDLTestMixin):
             ],
         )
 
-        update_url = reverse("msgs.broadcast_update", args=[broadcast.id])
+        update_url = reverse("msgs.broadcast_update", args=[broadcast.uuid])
 
         self.assertRequestDisallowed(update_url, [None, self.agent, self.admin2])
         self.assertUpdateFetch(update_url, [self.editor, self.admin], form_fields=("contact_search",))
@@ -388,11 +388,11 @@ class BroadcastCRUDLTest(TembaTest, CRUDLTestMixin):
             contacts=[self.joe],
             schedule=Schedule.create(self.org, timezone.now(), Schedule.REPEAT_DAILY),
         )
-        update_url = reverse("msgs.broadcast_update", args=[broadcast.id])
+        update_url = reverse("msgs.broadcast_update", args=[broadcast.uuid])
 
         self.org.flow_languages = ["eng", "esp"]
         self.org.save()
-        update_url = reverse("msgs.broadcast_update", args=[broadcast.id])
+        update_url = reverse("msgs.broadcast_update", args=[broadcast.uuid])
 
         def get_languages(response):
             return json.loads(response.context["form"]["compose"].field.widget.attrs["languages"])
@@ -542,8 +542,7 @@ class BroadcastCRUDLTest(TembaTest, CRUDLTestMixin):
             "Using a message template may incur additional fees from your channel provider.",
         )
 
-    @mock_mailroom
-    def test_to_node(self, mr_mocks):
+    def test_to_node(self):
         to_node_url = reverse("msgs.broadcast_to_node")
 
         # give Joe a flow run that has stopped on a node
@@ -656,7 +655,7 @@ class BroadcastCRUDLTest(TembaTest, CRUDLTestMixin):
             schedule=schedule,
         )
 
-        delete_url = reverse("msgs.broadcast_scheduled_delete", args=[broadcast.id])
+        delete_url = reverse("msgs.broadcast_scheduled_delete", args=[broadcast.uuid])
 
         self.assertRequestDisallowed(delete_url, [None, self.agent, self.admin2])
 
@@ -674,34 +673,6 @@ class BroadcastCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertIsNone(broadcast.schedule)
         self.assertEqual(0, Schedule.objects.count())
 
-    def test_status(self):
-        broadcast = self.create_broadcast(
-            self.admin,
-            {"eng": {"text": "Daily reminder"}},
-            groups=[self.joe_and_frank],
-            status=Broadcast.STATUS_PENDING,
-        )
-
-        status_url = f"{reverse('msgs.broadcast_status')}?id={broadcast.id}&status=P"
-        self.assertRequestDisallowed(status_url, [None, self.agent])
-        response = self.assertReadFetch(status_url, [self.editor, self.admin])
-
-        # status returns json
-        self.assertEqual("Pending", response.json()["results"][0]["status"])
-
-        # broadcasts from other orgs should not be accessible even by id
-        other_broadcast = self.create_broadcast(
-            self.admin2,
-            {"eng": {"text": "Other org reminder"}},
-            contacts=[self.create_contact("Bob", urns=["tel:+250788000001"], org=self.org2)],
-            status=Broadcast.STATUS_PENDING,
-            org=self.org2,
-        )
-        other_status_url = f"{reverse('msgs.broadcast_status')}?id={other_broadcast.id}&status=P"
-        response = self.requestView(other_status_url, self.admin)
-        self.assertEqual(200, response.status_code)
-        self.assertEqual([], response.json()["results"])
-
     def test_interrupt(self):
         broadcast = self.create_broadcast(
             self.admin,
@@ -710,7 +681,7 @@ class BroadcastCRUDLTest(TembaTest, CRUDLTestMixin):
             status=Broadcast.STATUS_PENDING,
         )
 
-        interrupt_url = reverse("msgs.broadcast_interrupt", args=[broadcast.id])
+        interrupt_url = reverse("msgs.broadcast_interrupt", args=[broadcast.uuid])
         self.assertRequestDisallowed(interrupt_url, [None, self.agent])
         self.requestView(interrupt_url, self.admin, post_data={})
 

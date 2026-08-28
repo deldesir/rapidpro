@@ -5,6 +5,7 @@ from django.utils import timezone
 
 from temba.flows.models import FlowActivityCount, FlowRun, FlowSession
 from temba.flows.tasks import squash_flow_counts
+from temba.msgs.models import Msg
 from temba.tests import TembaTest
 from temba.utils.uuid import uuid4
 
@@ -50,6 +51,18 @@ class FlowActivityCountTest(TembaTest):
                 "node:ebb534e1-e2e0-40e9-8652-d195e87d832b": 1,
                 "node:bbb71aab-e026-442e-9971-6bc4f48941fb": 0,
                 "node:85b0c928-4bd9-4a2e-84b2-164802c32486": 1,
+            },
+            flow.counts.prefix("node:").scope_totals(),
+        )
+
+        # deleting runs decrements the node counts of any still active or waiting
+        FlowRun.objects.all().delete()
+
+        self.assertEqual(
+            {
+                "node:ebb534e1-e2e0-40e9-8652-d195e87d832b": 0,
+                "node:bbb71aab-e026-442e-9971-6bc4f48941fb": 0,
+                "node:85b0c928-4bd9-4a2e-84b2-164802c32486": 0,
             },
             flow.counts.prefix("node:").scope_totals(),
         )
@@ -134,11 +147,16 @@ class FlowActivityCountTest(TembaTest):
         self.assertEqual({"status:A": 2, "status:I": 4}, flow1.counts.scope_totals())
         self.assertEqual({"status:X": 1, "status:I": 2}, flow2.counts.scope_totals())
 
-        # delete some runs
+        # deleting runs which are still active or waiting decrements their status counts
         FlowRun.objects.filter(id__in=[r.id for r in runs2]).delete()
 
-        # status counts are unchanged
-        self.assertEqual({"status:A": 2, "status:I": 4}, flow1.counts.scope_totals())
+        self.assertEqual({"status:A": 0, "status:I": 4}, flow1.counts.scope_totals())
+        self.assertEqual({"status:X": 1, "status:I": 2}, flow2.counts.scope_totals())
+
+        # but deleting exited runs doesn't change status counts
+        FlowRun.objects.filter(id__in=[r.id for r in runs1]).delete()
+
+        self.assertEqual({"status:A": 0, "status:I": 4}, flow1.counts.scope_totals())
         self.assertEqual({"status:X": 1, "status:I": 2}, flow2.counts.scope_totals())
 
     def test_msgsin_counts(self):
@@ -180,8 +198,7 @@ class FlowActivityCountTest(TembaTest):
         )
 
         # other changes to msgs shouldn't create new counts
-        in1.archive()
-        in2.archive()
+        Msg.bulk_archive(self.org, [in1, in2])
 
         self.assertEqual(6, flow1.counts.count())
         self.assertEqual(3, flow2.counts.count())

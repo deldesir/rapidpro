@@ -265,6 +265,7 @@ class Org(LegacyIDMixin, SmartModel):
     LIMIT_LLMS = "llms"
     LIMIT_TOPICS = "topics"
     LIMIT_TEAMS = "teams"
+    LIMIT_TRIGGERS = "triggers"
 
     DELETE_DELAY_DAYS = 7  # how many days after releasing that an org is deleted
     OUTBOX_WARNING_THRESHOLD = 10_000
@@ -1148,8 +1149,9 @@ class Org(LegacyIDMixin, SmartModel):
 
         # delete our contacts
         for contact in self.contacts.all():
-            # release synchronously and don't deindex as that will happen for the whole org
-            counts_for_contact = contact.release(user, immediately=True, deindex=False)
+            # release synchronously and don't deindex as that will happen for the whole org, or interrupt as we don't
+            # want to fire mailroom tasks for flows we've already released
+            counts_for_contact = contact.release(user, immediately=True, deindex=False, interrupt=False)
             contact.delete()
 
             counts.update(counts_for_contact)

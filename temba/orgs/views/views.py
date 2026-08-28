@@ -21,7 +21,6 @@ from django.contrib import messages
 from django.contrib.auth import logout
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
-from django.db import transaction
 from django.db.models import F, Prefetch, Q
 from django.db.models.functions import Lower
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
@@ -61,7 +60,7 @@ from temba.utils.views.mixins import (
 
 from ..models import DefinitionExport, Export, IntegrationType, Invitation, Org, OrgImport, OrgMembership, OrgRole, User
 from .base import BaseDeleteModal, BaseListView, BaseMenuView, BaseReadView
-from .forms import SignupForm, SMTPForm
+from .forms import SMTPForm
 from .mixins import InferOrgMixin, InferUserMixin, OrgObjPermsMixin, OrgPermsMixin, RequireFeatureMixin
 from .utils import switch_to_org
 
@@ -239,6 +238,7 @@ class UserCRUDL(SmartCRUDL):
 
         form_class = Form
         require_feature = Org.FEATURE_USERS
+        submit_button_name = _("Save")
 
         def get_object_org(self):
             return self.request.org
@@ -348,6 +348,7 @@ class UserCRUDL(SmartCRUDL):
         form_class = Form
         success_url = "@orgs.user_edit"
         success_message = _("Your profile has been updated successfully.")
+        submit_button_name = _("Save")
 
         def get_context_data(self, **kwargs):
             context = super().get_context_data(**kwargs)
@@ -395,7 +396,6 @@ class InvitationMixin:
 class OrgCRUDL(SmartCRUDL):
     model = Org
     actions = (
-        "signup",
         "start",
         "switch",
         "edit",
@@ -923,6 +923,7 @@ class OrgCRUDL(SmartCRUDL):
 
         form_class = Form
         success_url = "@orgs.org_list"
+        submit_button_name = _("Save")
 
         def get_object_org(self):
             return self.request.org
@@ -999,6 +1000,7 @@ class OrgCRUDL(SmartCRUDL):
 
         form_class = Form
         require_feature = (Org.FEATURE_NEW_ORGS, Org.FEATURE_CHILD_ORGS)
+        submit_button_name = _("Create")
 
         def get_form_kwargs(self):
             kwargs = super().get_form_kwargs()
@@ -1130,6 +1132,7 @@ class OrgCRUDL(SmartCRUDL):
         form_class = Form
         fields = ("organization",)
         title = _("Select your Workspace")
+        submit_button_name = _("Submit")
 
         def pre_process(self, request, *args, **kwargs):
             user = self.request.user
@@ -1160,7 +1163,8 @@ class OrgCRUDL(SmartCRUDL):
                     return HttpResponseRedirect(reverse("orgs.org_start"))
 
             if not org:
-                return HttpResponseRedirect(reverse("orgs.org_signup"))
+                # brands that offer self-serve signup can redirect users without a workspace there
+                return HttpResponseRedirect(request.branding.get("signup_url") or reverse("orgs.user_edit"))
 
         def get_context_data(self, **kwargs):
             context = super().get_context_data(**kwargs)
@@ -1308,60 +1312,6 @@ class OrgCRUDL(SmartCRUDL):
                 language=settings.DEFAULT_LANGUAGE,
             )
             self.object.add_user(user, OrgRole.ADMINISTRATOR)
-            return self.object
-
-    class Signup(ComponentFormMixin, NonAtomicMixin, SmartCreateView):
-        title = _("Sign Up")
-        form_class = SignupForm
-        permission = None
-
-        @staticmethod
-        def get_current_user_org(user) -> Org | None:
-            membership = (
-                OrgMembership.objects.filter(user=user, org__is_active=True)
-                .select_related("org")
-                .order_by(F("last_seen_on").desc(nulls_last=True), "-id")
-                .first()
-            )
-            return membership.org if membership else None
-
-        def get_success_url(self):
-            return "%s?start" % reverse("public.public_welcome")
-
-        def pre_process(self, request, *args, **kwargs):
-            # only authenticated users can come here
-            if not request.user.is_authenticated:
-                return HttpResponseRedirect(reverse("account_signup"))
-
-            # if we already have an org, just go there
-            if request.org:
-                return HttpResponseRedirect(reverse("orgs.org_start"))
-
-            # if user has memberships but no org in session, switch to their most recent org
-            if user_org := self.get_current_user_org(request.user):
-                switch_to_org(self.request, user_org)
-                return HttpResponseRedirect(reverse("orgs.org_start"))
-
-            # if our brand doesn't allow signups, then redirect to the account page
-            if "signups" not in request.branding.get("features", []):  # pragma: needs cover
-                return HttpResponseRedirect(reverse("orgs.user_edit"))
-
-            return super().pre_process(request, *args, **kwargs)
-
-        def derive_initial(self):
-            initial = super().get_initial()
-            return initial
-
-        def save(self, obj):
-            # Lock the user row so concurrent signup submissions can't create multiple orgs.
-            with transaction.atomic():
-                user = User.objects.select_for_update().get(pk=self.request.user.pk)
-                self.object = self.get_current_user_org(user)
-                if not self.object:
-                    self.object = Org.create(user, self.form.cleaned_data["name"], self.form.cleaned_data["timezone"])
-
-            switch_to_org(self.request, self.object)
-
             return self.object
 
     class Resthooks(SpaMixin, ComponentFormMixin, InferOrgMixin, OrgPermsMixin, SmartUpdateView):
@@ -1558,6 +1508,7 @@ class OrgCRUDL(SmartCRUDL):
 
         success_url = "@orgs.org_languages"
         form_class = LanguageForm
+        submit_button_name = _("Save")
 
         def get_form_kwargs(self):
             kwargs = super().get_form_kwargs()
@@ -1742,6 +1693,9 @@ class OrgImportCRUDL(SmartCRUDL):
                 try:
                     json_data = json.loads(force_str(data))
                 except DjangoUnicodeDecodeError, ValueError:
+                    raise ValidationError(_("This file is not a valid flow definition file."))
+
+                if not isinstance(json_data, dict):
                     raise ValidationError(_("This file is not a valid flow definition file."))
 
                 if Version(str(json_data.get("version", 0))) < Version(Org.EARLIEST_IMPORT_VERSION):

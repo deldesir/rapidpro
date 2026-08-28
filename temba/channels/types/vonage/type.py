@@ -1,7 +1,8 @@
+from django.core.exceptions import ValidationError
 from django.urls import re_path
 from django.utils.translation import gettext_lazy as _
 
-from temba.channels.models import ChannelType, ConfigUI
+from temba.channels.models import Channel, ChannelType, ConfigUI
 from temba.contacts.models import URN
 from temba.utils.timezones import timezone_to_country_code
 
@@ -63,13 +64,14 @@ class VonageType(ChannelType):
 
     unique_addresses = True
 
-    courier_url = r"^nx/(?P<uuid>[a-z0-9\-]+)/(?P<action>status|receive)$"
     schemes = [URN.TEL_SCHEME]
 
     claim_blurb = _("Easily add a two way number you have configured with %(link)s using their APIs.") % {
         "link": '<a target="_blank" href="https://www.vonage.com/">Vonage</a>'
     }
     claim_view = ClaimView
+
+    async_activation = False
 
     config_ui = ConfigUI(
         blurb=_(
@@ -97,6 +99,34 @@ class VonageType(ChannelType):
 
     def is_recommended_to(self, org, user):
         return timezone_to_country_code(org.timezone) in RECOMMENDED_COUNTRIES
+
+    def activate(self, channel):
+        config = channel.config
+        client = VonageClient(api_key=config[self.CONFIG_API_KEY], api_secret=config[self.CONFIG_API_SECRET])
+
+        # if the number supports voice, create a voice application for it
+        if Channel.ROLE_ANSWER in channel.role:
+            app_id, app_private_key = client.create_application(channel.callback_domain, channel.uuid)
+            channel.config[self.CONFIG_APP_ID] = app_id
+            channel.config[self.CONFIG_APP_PRIVATE_KEY] = app_private_key
+            channel.save(update_fields=("config",))
+
+        # update the delivery URLs for the number
+        try:
+            client.update_number(
+                str(channel.country),
+                channel.address,
+                channel.courier_url("receive"),
+                channel.config.get(self.CONFIG_APP_ID),
+            )
+        except Exception as e:  # pragma: no cover
+            # short codes don't seem to claim correctly, move forward anyways
+            if channel.address.startswith("+"):
+                raise ValidationError(
+                    _("There was a problem claiming that number, please check the balance on your account.")
+                    + "\n"
+                    + str(e)
+                )
 
     def deactivate(self, channel):
         app_id = channel.config.get(self.CONFIG_APP_ID)

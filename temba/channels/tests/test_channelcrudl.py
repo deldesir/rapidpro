@@ -1,10 +1,13 @@
+from unittest.mock import patch
+
 from django.test.utils import override_settings
 from django.urls import reverse
 
-from temba.tests import CRUDLTestMixin, TembaTest, mock_mailroom
+from temba.tests import CRUDLTestMixin, TembaTest
 from temba.utils.views.mixins import TEMBA_MENU_SELECTION
 
 from ..models import Channel, ChannelLog
+from ..types.external.type import ExternalType
 
 
 class ChannelCRUDLTest(TembaTest, CRUDLTestMixin):
@@ -87,6 +90,29 @@ class ChannelCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual(response.context["channel_types"]["SOCIAL_MEDIA"][2].code, "IG")
         self.assertEqual(response.context["channel_types"]["SOCIAL_MEDIA"][-2].code, "WAC")
         self.assertEqual(response.context["channel_types"]["SOCIAL_MEDIA"][-1].code, "ZVW")
+
+    def test_claim_view_availability(self):
+        claim_url = reverse("channels.types.external.claim")
+
+        self.login(self.admin)
+
+        num_channels = self.org.channels.count()
+
+        # a type which isn't available to the org at all can't be claimed
+        with patch.object(ExternalType, "is_available_to", lambda self, org, user: (False, False)):
+            self.assertEqual(404, self.client.get(claim_url).status_code)
+            self.assertEqual(404, self.client.post(claim_url, {}).status_code)
+
+        self.assertEqual(num_channels, self.org.channels.count())
+
+        # but a type which is only unavailable because of the org's region is still claimable, because the claim all
+        # page lists those
+        with patch.object(ExternalType, "is_available_to", lambda self, org, user: (False, True)):
+            self.assertEqual(200, self.client.get(claim_url).status_code)
+
+        # e.g. SMSCentral is only available to orgs in Nepal but this org is in Rwanda
+        self.assertEqual("Africa/Kigali", str(self.org.timezone))
+        self.assertEqual(200, self.client.get(reverse("channels.types.smscentral.claim")).status_code)
 
     def test_configuration(self):
         config_url = reverse("channels.channel_configuration", args=[self.ex_channel.uuid])
@@ -191,6 +217,22 @@ class ChannelCRUDLTest(TembaTest, CRUDLTestMixin):
             choose_org=self.org,
         )
 
+    def test_read_menu(self):
+        # normal channel types get a logs menu item on their read page
+        self.assertContentMenu(
+            reverse("channels.channel_read", args=[self.ex_channel.uuid]),
+            self.admin,
+            ["Configuration", "Logs", "Edit", "Delete"],
+        )
+
+        # but not types whose channels don't have logs
+        webchat_channel = self.create_channel("WCH", "WebChat", "123")
+        self.assertContentMenu(
+            reverse("channels.channel_read", args=[webchat_channel.uuid]),
+            self.admin,
+            ["Configuration", "Edit", "Delete"],
+        )
+
     def test_logs_list(self):
         channel = self.create_channel("T", "My Channel", "+250785551212")
 
@@ -225,6 +267,12 @@ class ChannelCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual(logs[4].uuid, response.context["logs"][0].uuid)
         self.assertEqual(logs[0].uuid, response.context["logs"][-1].uuid)
 
+        # channels of types that don't have logs return a 404
+        webchat_channel = self.create_channel("WCH", "WebChat", "123")
+        self.login(self.admin)
+        response = self.client.get(reverse("channels.channel_logs_list", args=[webchat_channel.uuid]))
+        self.assertEqual(404, response.status_code)
+
     def test_logs_read(self):
         log1 = self.create_channel_log(
             self.channel,
@@ -247,6 +295,12 @@ class ChannelCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertIsNone(response.context["call"])
         self.assertEqual(1, len(response.context["logs"]))
         self.assertContains(response, "GET https://foo.bar/send1")
+
+        # channels of types that don't have logs return a 404
+        webchat_channel = self.create_channel("WCH", "WebChat", "123")
+        self.login(self.admin)
+        response = self.client.get(reverse("channels.channel_logs_read", args=[webchat_channel.uuid, "log", log1.uuid]))
+        self.assertEqual(404, response.status_code)
 
     def test_logs_msg(self):
         contact = self.create_contact("Fred", phone="+12067799191")
@@ -385,8 +439,7 @@ class ChannelCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual("https://foo.bar/call1", response.context["logs"][0]["http_logs"][0]["url"])
         self.assertEqual("https://foo.bar/call2", response.context["logs"][1]["http_logs"][0]["url"])
 
-    @mock_mailroom
-    def test_delete(self, mr_mocks):
+    def test_delete(self):
         delete_url = reverse("channels.channel_delete", args=[self.ex_channel.uuid])
 
         self.assertRequestDisallowed(delete_url, [None, self.agent, self.admin2])

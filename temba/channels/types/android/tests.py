@@ -5,15 +5,13 @@ from django.urls import reverse
 from temba.contacts.models import URN
 from temba.orgs.models import Org
 from temba.tests import CRUDLTestMixin, TembaTest
-from temba.tests.mailroom import mock_mailroom
 from temba.users.models import User
 
 from ...models import Channel
 
 
 class AndroidTypeTest(TembaTest, CRUDLTestMixin):
-    @mock_mailroom
-    def test_claim(self, mr_mocks):
+    def test_claim(self):
         # remove our explicit country so it needs to be derived from channels
         self.org.root_location = None
         self.org.timezone = "UTC"
@@ -117,9 +115,7 @@ class AndroidTypeTest(TembaTest, CRUDLTestMixin):
                 Channel.CONFIG_AUTH_TOKEN: "123456789",
             },
         )
-        Channel.create(
-            self.org, self.admin, "RW", "NX", "", "+250788123123", schemes=[URN.TEL_SCHEME], role=Channel.ROLE_SEND
-        )
+        self.create_channel("NX", "", "+250788123123", country="RW", role=Channel.ROLE_SEND)
 
         # claim our channel
         response = self.client.post(

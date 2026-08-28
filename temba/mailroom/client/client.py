@@ -2,9 +2,6 @@ import logging
 from dataclasses import asdict
 
 import requests
-from packaging.version import Version
-
-from django.conf import settings
 
 from temba.contacts.models import Contact
 from temba.flows.models import FlowStart
@@ -126,7 +123,7 @@ class MailroomClient:
 
         return {c: resp[str(c.id)] for c in contacts}
 
-    def contact_interrupt(self, org, user, contacts) -> int:
+    def contact_interrupt(self, org, user, contacts):
         self._request(
             "contact/interrupt", {"org_id": org.id, "user_id": user.id, "contact_ids": [c.id for c in contacts]}
         )
@@ -184,11 +181,7 @@ class MailroomClient:
         return self._request("flow/clone", {"flow": definition, "dependency_mapping": dependency_mapping})
 
     def flow_inspect(self, org, definition: dict, is_import=False):
-        payload = {"flow": definition, "is_import": is_import}
-
-        # can't do dependency checking during tests because mailroom can't see unit test data created in a transaction
-        if not settings.TESTING:
-            payload["org_id"] = org.id
+        payload = {"org_id": org.id, "flow": definition, "is_import": is_import}
 
         return self._request("flow/inspect", payload, encode_json=True)
 
@@ -203,14 +196,6 @@ class MailroomClient:
 
         if not to_version:  # pragma: no cover
             to_version = Flow.CURRENT_SPEC_VERSION
-
-        # in tests fixtures are kept at the current spec (see the migrate_bundled_flows command), so skip the HTTP
-        # round-trip when the definition is already at or beyond the target. in production we always defer to
-        # mailroom, which may apply newer patch migrations within the same version that this client isn't aware of.
-        if settings.TESTING:
-            current = definition.get("spec_version")
-            if current and Version(current) >= Version(to_version):
-                return definition
 
         return self._request("flow/migrate", {"flow": definition, "to_version": to_version}, encode_json=True)
 
@@ -320,6 +305,9 @@ class MailroomClient:
 
         return RecipientsPreview(query=resp["query"], total=resp["total"])
 
+    def msg_archive(self, org, msgs):
+        return self._request("msg/archive", {"org_id": org.id, "msg_uuids": [str(m.uuid) for m in msgs]})
+
     def msg_delete(self, org, user, msgs):
         return self._request(
             "msg/delete", {"org_id": org.id, "user_id": user.id, "msg_uuids": [str(m.uuid) for m in msgs]}
@@ -333,6 +321,9 @@ class MailroomClient:
             "msg/resend",
             {"org_id": org.id, "user_id": user.id, "msg_uuids": [str(m.uuid) for m in msgs]},
         )
+
+    def msg_restore(self, org, msgs):
+        return self._request("msg/restore", {"org_id": org.id, "msg_uuids": [str(m.uuid) for m in msgs]})
 
     def msg_search(self, org, text: str, contact=None, in_ticket=False) -> list[tuple[Contact, dict]]:
         resp = self._request(

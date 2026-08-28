@@ -78,6 +78,29 @@ describe('temba-content-list', () => {
     expect(list.shadowRoot!.querySelector('.resize-handle')).to.equal(null);
   });
 
+  it('rebuilds its column labels when the locale lands', async () => {
+    // The workspace locale arrives long after the lists are constructed,
+    // so the labels a list resolved before then have to be rebuilt -
+    // otherwise every header stays in the source language.
+    const list = (await getComponent('temba-msg-list', {}, '', 700)) as MsgList;
+    list.columns = list.columns.map((column) => ({
+      ...column,
+      label: 'stale'
+    }));
+    await list.updateComplete;
+
+    window.dispatchEvent(
+      new CustomEvent('lit-localize-status', { detail: { status: 'ready' } })
+    );
+    await list.updateComplete;
+
+    expect(list.columns.map((column) => column.label)).to.deep.equal([
+      'Contact',
+      'Message',
+      'Sent'
+    ]);
+  });
+
   it('fires temba-bulk-action when an action is clicked', async () => {
     const list = (await getList({
       endpoint: '/test-assets/content-list/items.json'
@@ -947,6 +970,28 @@ describe('temba-content-list', () => {
     await assertScreenshot('content-list/messages', getClip(list));
   });
 
+  it('renders the messages list pager in cursor mode (screenshot)', async () => {
+    // The message list is cursor-paginated, so its pager reports how many
+    // messages the folder holds rather than a "N-M of Total" position - a
+    // cursor slice has no ordinal position to report. The fixture above is
+    // page-shaped (a count with no nav URLs), so it can't cover this.
+    await loadStore();
+    const list = (await getComponent(
+      'temba-msg-list',
+      { endpoint: '/test-assets/content-list/messages-cursor.json' },
+      '',
+      1100
+    )) as MsgList;
+    await new Promise<void>((resolve) => {
+      list.addEventListener(CustomEventType.FetchComplete, () => resolve(), {
+        once: true
+      });
+    });
+    await list.updateComplete;
+    expect((list as any).cursorMode).to.equal(true);
+    await assertScreenshot('content-list/messages-cursor', getClip(list));
+  });
+
   it('renders attachment thumbnails immediately after the message text', async () => {
     await loadStore();
     const list = (await getComponent(
@@ -1702,7 +1747,9 @@ describe('temba-content-list', () => {
       const restash = events.find((e) => e.replace && e.state?.url);
       assert.exists(restash, 'restore should re-bubble a replacing stash');
       expect(restash.state.url).to.equal('/msgs.json?cursor=abc');
-      expect(restash.state.page).to.equal(2);
+      // the cursor URL is the whole restoration mechanism — `page` is
+      // pinned to 1 in cursor mode, where it carries no meaning
+      expect(restash.state.page).to.equal(1);
     } finally {
       history.replaceState({}, '');
     }
@@ -1966,8 +2013,10 @@ describe('temba-content-list', () => {
       endpoint: '/test-assets/content-list/items.json'
     })) as ContentList;
     // Cursor list that also carries a count (e.g. the message list's
-    // cheap folder count) — the pager should still show "N–M of Total".
-    // `last` is derived from the rows shown, so seed a full page of items.
+    // cheap folder count) — the pager reports how many rows exist, not
+    // which of them you're looking at, because a cursor slice has no
+    // ordinal position. `page` is seeded non-1 to prove it no longer
+    // reaches the label.
     Object.assign(list as any, {
       cursorMode: true,
       hasCount: true,
@@ -1986,9 +2035,86 @@ describe('temba-content-list', () => {
     ) as HTMLElement;
     assert.exists(status, 'pager status should render in counted cursor mode');
     const text = status.textContent!.replace(/\s+/g, ' ').trim();
-    expect(text).to.contain('11');
-    expect(text).to.contain('20');
-    expect(text).to.contain('of 42');
+    expect(text).to.equal('42 total');
+  });
+
+  it('shows matches instead of total when the rows are a search result', async () => {
+    const list = (await getList({
+      endpoint: '/test-assets/content-list/items.json'
+    })) as ContentList;
+    Object.assign(list as any, {
+      cursorMode: true,
+      hasCount: true,
+      total: 42,
+      search: 'flow',
+      items: Array.from({ length: 10 }, (_, i) => ({ uuid: `u-${i}` })),
+      nextCursor: '/x?cursor=b'
+    });
+    (list as any).requestUpdate();
+    await list.updateComplete;
+
+    const status = list.shadowRoot!.querySelector(
+      '.pager-status'
+    ) as HTMLElement;
+    expect(status.textContent!.replace(/\s+/g, ' ').trim()).to.equal(
+      '42 matches'
+    );
+  });
+
+  it('shows a position range on a page-counted list', async () => {
+    const list = (await getList({
+      endpoint: '/test-assets/content-list/items.json'
+    })) as ContentList;
+    // Page-counted lists have a real position, so the range framing
+    // holds on every page — including the first.
+    Object.assign(list as any, {
+      cursorMode: false,
+      hasCount: true,
+      total: 42,
+      pageSize: 10,
+      page: 1,
+      items: Array.from({ length: 10 }, (_, i) => ({ uuid: `u-${i}` }))
+    });
+    (list as any).requestUpdate();
+    await list.updateComplete;
+
+    const status = list.shadowRoot!.querySelector(
+      '.pager-status'
+    ) as HTMLElement;
+    expect(status.textContent!.replace(/\s+/g, ' ').trim()).to.equal(
+      '1–10 of 42'
+    );
+
+    (list as any).page = 2;
+    (list as any).requestUpdate();
+    await list.updateComplete;
+    expect(status.textContent!.replace(/\s+/g, ' ').trim()).to.equal(
+      '11–20 of 42'
+    );
+
+    // a searched list carries its filtered-set context in the range
+    (list as any).search = 'flow';
+    (list as any).requestUpdate();
+    await list.updateComplete;
+    expect(status.textContent!.replace(/\s+/g, ' ').trim()).to.equal(
+      '11–20 of 42 matches'
+    );
+  });
+
+  it('keeps cursor framing for a single-page response the server marks as cursor-paged', async () => {
+    // A single-page cursor response has no nav URLs to inspect, so
+    // without `paged_by` it would be mistaken for a page-counted one
+    // and flip the pager into "1–N of N" framing — jarring next to a
+    // bigger folder on the same endpoint showing a plain total.
+    const list = (await getList({
+      endpoint: '/test-assets/content-list/messages.json'
+    })) as ContentList;
+    expect((list as any).cursorMode).to.equal(true);
+
+    const status = list.shadowRoot!.querySelector(
+      '.pager-status'
+    ) as HTMLElement;
+    expect(status.textContent!.replace(/\s+/g, ' ').trim()).to.equal('7 total');
   });
 
   it('stays in cursor mode when a count is returned alongside cursor URLs', async () => {
@@ -2010,6 +2136,27 @@ describe('temba-content-list', () => {
         results: [],
         count: 42,
         next: '/x/?page=2',
+        previous: null
+      })
+    ).to.equal(false);
+
+    // `paged_by` is authoritative — it settles the single-page case
+    // that has no nav URLs to inspect, in both directions.
+    expect(
+      (list as any).detectCursorMode({
+        results: [],
+        count: 7,
+        paged_by: 'cursor',
+        next: null,
+        previous: null
+      })
+    ).to.equal(true);
+    expect(
+      (list as any).detectCursorMode({
+        results: [],
+        count: 7,
+        paged_by: 'page',
+        next: null,
         previous: null
       })
     ).to.equal(false);
@@ -2042,7 +2189,10 @@ describe('temba-content-list', () => {
     const pageEvent = events[events.length - 1];
     expect(pageEvent.key).to.equal('msgs');
     expect(pageEvent.replace).to.equal(false);
-    expect(pageEvent.state.page).to.equal(2);
+    // stepping a cursor list advances the stashed cursor URL, not a page
+    // number — `page` stays pinned at 1
+    expect(pageEvent.state.page).to.equal(1);
+    expect(pageEvent.state.url).to.contain('cursor-page2');
     // list position stays out of the address-bar URL — it restores
     // from the history stash instead
     expect(pageEvent.url).to.not.contain('page=');

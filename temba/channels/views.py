@@ -7,15 +7,15 @@ from uuid import UUID
 import phonenumbers
 import requests
 import twilio.base.exceptions
-import vonage
 from smartmin.views import SmartCRUDL, SmartFormView, SmartModelActionView, SmartTemplateView, SmartUpdateView
 from twilio.base.exceptions import TwilioRestException
+from vonage_http_client.errors import HttpRequestError
 
 from django import forms
 from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.http import HttpResponse, HttpResponseRedirect
+from django.http import Http404, HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.template import Context, Engine, TemplateDoesNotExist
 from django.urls import reverse
@@ -60,6 +60,7 @@ class ChannelTypeMixin(SpaMixin):
 class ClaimViewMixin(ChannelTypeMixin, OrgPermsMixin, ComponentFormMixin):
     permission = "channels.channel_claim"
     menu_path = "/settings/channels/new-channel"
+    submit_button_name = _("Submit")
 
     class Form(forms.Form):
         def __init__(self, **kwargs):
@@ -85,8 +86,16 @@ class ClaimViewMixin(ChannelTypeMixin, OrgPermsMixin, ComponentFormMixin):
             return super().clean()
 
     def pre_process(self, request, *args, **kwargs):
-        if request.org and Channel.is_limit_reached(request.org):
-            return HttpResponseRedirect(reverse("orgs.org_workspace"))
+        if request.org:
+            # only the region ignoring flag is a real gate - the region aware one just decides whether the type is
+            # listed on the default claim page, and the claim all page deliberately lists types which fail it
+            # note that staff aren't exempt - types which want to allow servicing staff do so in is_available_to
+            available = self.channel_type.is_available_to(request.org, request.user)[1]
+            if not available:
+                raise Http404()
+
+            if Channel.is_limit_reached(request.org):
+                return HttpResponseRedirect(reverse("orgs.org_workspace"))
 
         return super().pre_process(request, *args, **kwargs)
 
@@ -358,12 +367,15 @@ class BaseClaimNumberMixin(ClaimViewMixin):
             return HttpResponseRedirect("%s?success" % reverse("public.public_welcome"))
 
         except (
-            vonage.AuthenticationError,
-            vonage.ClientError,
+            HttpRequestError,
             twilio.base.exceptions.TwilioRestException,
         ) as e:  # pragma: no cover
             logger.warning(f"Unable to claim a number: {str(e)}", exc_info=True)
             error_message = form.error_class([str(e)])
+
+        except ValidationError as e:
+            logger.warning(f"Unable to claim a number: {str(e)}", exc_info=True)
+            error_message = form.error_class(e.messages)
 
         except Exception as e:  # pragma: needs cover
             logger.error(f"Unable to claim a number: {str(e)}", exc_info=True)
@@ -467,7 +479,8 @@ class ChannelCRUDL(SmartCRUDL):
             if obj.type.config_ui:
                 menu.add_link(_("Configuration"), reverse("channels.channel_configuration", args=[obj.uuid]))
 
-            menu.add_link(_("Logs"), reverse("channels.channel_logs_list", args=[obj.uuid]))
+            if obj.type.has_logs:
+                menu.add_link(_("Logs"), reverse("channels.channel_logs_list", args=[obj.uuid]))
 
             if obj.type.template_type:
                 menu.add_link(_("Template Logs"), reverse("request_logs.httplog_channel", args=[obj.uuid]))
@@ -688,6 +701,7 @@ class ChannelCRUDL(SmartCRUDL):
             return response
 
     class Update(ComponentFormMixin, ModalFormMixin, OrgObjPermsMixin, SmartUpdateView):
+        submit_button_name = _("Save")
         field_config = {
             "is_enabled": {
                 "help": _("Makes channel available for sending. Incoming messages will be archived if not enabled.")
@@ -820,6 +834,12 @@ class ChannelCRUDL(SmartCRUDL):
         def derive_url_pattern(cls, path, action):
             return r"^%s/logs/(?P<uuid>[0-9a-f-]{36})/$" % path
 
+        def get_object(self, *args, **kwargs):
+            channel = super().get_object(*args, **kwargs)
+            if not channel.type.has_logs:
+                raise Http404()
+            return channel
+
         def derive_menu_path(self):
             return f"/settings/channels/{self.kwargs['uuid']}"
 
@@ -849,6 +869,12 @@ class ChannelCRUDL(SmartCRUDL):
         @classmethod
         def derive_url_pattern(cls, path, action):
             return r"^%s/logs/(?P<uuid>[0-9a-f-]{36})/(?P<reftype>log|msg|call)/(?P<refid>[0-9a-f-]{36})/$" % path
+
+        def get_object(self, *args, **kwargs):
+            channel = super().get_object(*args, **kwargs)
+            if not channel.type.has_logs:
+                raise Http404()
+            return channel
 
         def derive_menu_path(self):
             return f"/settings/channels/{self.kwargs['uuid']}"

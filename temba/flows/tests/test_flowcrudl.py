@@ -552,8 +552,7 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         flow.refresh_from_db()
         self.assertEqual("New Name", flow.name)
 
-    @mock_mailroom
-    def test_list_views(self, mr_mocks):
+    def test_list_views(self):
         flow1 = self.create_flow("Flow 1")
         flow2 = self.create_flow("Flow 2")
 
@@ -663,8 +662,7 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         response = self.client.get(reverse("flows.flow_filter", args=[label2.uuid]))
         self.assertEqual(f"/flow/labels/{label2.uuid}", response.headers.get(TEMBA_MENU_SELECTION))
 
-    @mock_mailroom
-    def test_list_component(self, mr_mocks):
+    def test_list_component(self):
         flow1 = self.create_flow("Flow 1")
         flow2 = self.create_flow("Flow 2")
         label = FlowLabel.create(self.org, self.admin, "Important")
@@ -720,12 +718,14 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         # a malformed flow uuid in `objects` fails form validation rather than raising (no 500 on garbage input)
         response = self.client.post(list_url, {"action": "archive", "objects": "not-a-uuid"})
         self.assertEqual(200, response.status_code)
+        self.assertToast(response, "error", "Your selection is no longer valid. Please refresh and try again.")
         flow2.refresh_from_db()
         self.assertFalse(flow2.is_archived)
 
         # a malformed label uuid is likewise a form error rather than a raise
         response = self.client.post(list_url, {"action": "label", "objects": str(flow2.uuid), "label": "not-a-uuid"})
         self.assertEqual(200, response.status_code)
+        self.assertToast(response, "error", "Your selection is no longer valid. Please refresh and try again.")
         self.assertEqual(set(), set(flow2.labels.all()))
 
         # the export modal accepts uuids as well as ids
@@ -739,8 +739,7 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         response = self.client.get(f"{export_url}?ids=foo")
         self.assertEqual([], list(response.context["form"].initial["flows"]))
 
-    @mock_mailroom
-    def test_get_definition(self, mr_mocks):
+    def test_get_definition(self):
         flow = self.get_flow("color")
 
         # if definition is outdated, metadata values are updated from db object
@@ -776,8 +775,7 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
 
         self.assertEqual("Amazing Flow 2", flow.get_definition()["metadata"]["name"])
 
-    @mock_mailroom
-    def test_revisions(self, mr_mocks):
+    def test_revisions(self):
         flow = self.create_flow("Color")
 
         revisions_url = reverse("flows.flow_revisions", args=[flow.uuid])
@@ -1617,8 +1615,7 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
             ),
         )
 
-    @mock_mailroom
-    def test_copy_view(self, mr_mocks):
+    def test_copy_view(self):
         flow = self.get_flow("color")
 
         self.login(self.admin)
@@ -1718,8 +1715,7 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         response = self.assertReadFetch(chart_url_invalid, [self.editor, self.admin])
         self.assertEqual({"data": {"labels": [], "datasets": []}}, response.json())
 
-    @mock_mailroom
-    def test_results(self, mr_mocks):
+    def test_results(self):
         flow = self.create_flow("Test 1")
 
         results_url = reverse("flows.flow_results", args=[flow.uuid])
@@ -1937,8 +1933,7 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
             response.json(),
         )
 
-    @mock_mailroom
-    def test_activity_inactive_flow(self, mr_mocks):
+    def test_activity_inactive_flow(self):
         flow = self.create_flow("Deleted")
         flow.release(self.admin)
 
@@ -2201,7 +2196,8 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
             export.config,
         )
 
-    def test_simulate(self):
+    @mock_mailroom
+    def test_simulate(self, mr_mocks):
         flow = self.create_flow("Test")
 
         payload = {
@@ -2213,104 +2209,81 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         self.login(self.admin)
         simulate_url = reverse("flows.flow_simulate", args=[flow.uuid])
 
-        with override_settings(MAILROOM_AUTH_TOKEN="sesame", MAILROOM_URL="https://mailroom.temba.io"):
-            with patch("requests.post") as mock_post:
-                mock_post.return_value = MockJsonResponse(400, {"session": {}})
-                response = self.client.post(simulate_url, json.dumps(payload), content_type="application/json")
-                self.assertEqual(500, response.status_code)
+        # a mailroom error becomes a 500
+        mr_mocks.exception(mailroom.RequestException("sim/start", {}, MockJsonResponse(400, {"error": "boom"})))
 
-            # start a flow
-            with patch("requests.post") as mock_post:
-                mock_post.return_value = MockJsonResponse(200, {"session": {}})
-                response = self.client.post(simulate_url, json.dumps(payload), content_type="application/json")
-                self.assertEqual(200, response.status_code)
-                self.assertEqual({}, response.json()["session"])
+        response = self.client.post(simulate_url, json.dumps(payload), content_type="application/json")
+        self.assertEqual(500, response.status_code)
 
-                actual_url = mock_post.call_args_list[0][0][0]
-                actual_payload = json.loads(mock_post.call_args_list[0][1]["data"])
-                actual_headers = mock_post.call_args_list[0][1]["headers"]
+        # start a flow
+        response = self.client.post(simulate_url, json.dumps(payload), content_type="application/json")
+        self.assertEqual(200, response.status_code)
+        self.assertEqual({}, response.json()["session"])
 
-                self.assertEqual(actual_url, "https://mailroom.temba.io/mi/sim/start")
-                self.assertEqual(actual_payload["org_id"], flow.org_id)
-                self.assertEqual(
-                    {"type": "manual", "user": {"uuid": str(self.admin.uuid), "name": "Andy"}},
-                    actual_payload["trigger"],
-                )
-                self.assertEqual(len(actual_payload["assets"]["channels"]), 1)  # fake channel
-                self.assertEqual(actual_headers["Authorization"], "Token sesame")
-                self.assertEqual(actual_headers["Content-Type"], "application/json")
+        (sent,) = mr_mocks.calls["sim_start"][0].args
 
-            # try a resume
-            payload = {
-                "contact": {"uuid": "8ada55d2-2f5e-4d56-8f10-26971332cd1c", "fields": {"age": Decimal("39")}},
-                "session": {"uuid": "01979ebb-044a-7768-a0d0-0455ef356441", "status": "waiting"},
-                "resume": {},
-                "flow": {},
-            }
+        self.assertEqual(flow.org_id, sent["org_id"])
+        self.assertEqual({"uuid": "8ada55d2-2f5e-4d56-8f10-26971332cd1c"}, sent["contact"])
+        self.assertEqual({"type": "manual", "user": {"uuid": str(self.admin.uuid), "name": "Andy"}}, sent["trigger"])
+        self.assertEqual(1, len(sent["assets"]["channels"]))  # fake channel
 
-            with patch("requests.post") as mock_post:
-                mock_post.return_value = MockJsonResponse(400, {"session": {}})
-                response = self.client.post(simulate_url, json.dumps(payload), content_type="application/json")
-                self.assertEqual(500, response.status_code)
+        # try a resume
+        payload = {
+            "contact": {"uuid": "8ada55d2-2f5e-4d56-8f10-26971332cd1c", "fields": {"age": Decimal("39")}},
+            "session": {"uuid": "01979ebb-044a-7768-a0d0-0455ef356441", "status": "waiting"},
+            "resume": {},
+            "flow": {},
+        }
 
-            with patch("requests.post") as mock_post:
-                mock_post.return_value = MockJsonResponse(200, {"session": {}})
-                response = self.client.post(simulate_url, json.dumps(payload), content_type="application/json")
-                self.assertEqual(200, response.status_code)
-                self.assertEqual({}, response.json()["session"])
+        mr_mocks.exception(mailroom.RequestException("sim/resume", {}, MockJsonResponse(400, {"error": "boom"})))
 
-                actual_url = mock_post.call_args_list[0][0][0]
-                actual_payload = json.loads(mock_post.call_args_list[0][1]["data"])
-                actual_headers = mock_post.call_args_list[0][1]["headers"]
+        response = self.client.post(simulate_url, json.dumps(payload), content_type="application/json")
+        self.assertEqual(500, response.status_code)
 
-                self.assertEqual(actual_url, "https://mailroom.temba.io/mi/sim/resume")
-                self.assertEqual(actual_payload["org_id"], flow.org_id)
-                self.assertEqual(len(actual_payload["assets"]["channels"]), 1)  # fake channel
-                self.assertEqual(actual_headers["Authorization"], "Token sesame")
-                self.assertEqual(actual_headers["Content-Type"], "application/json")
+        response = self.client.post(simulate_url, json.dumps(payload), content_type="application/json")
+        self.assertEqual(200, response.status_code)
+        self.assertEqual({}, response.json()["session"])
 
-    def test_simulate_voice(self):
+        (sent,) = mr_mocks.calls["sim_resume"][0].args
+
+        self.assertEqual(flow.org_id, sent["org_id"])
+        self.assertEqual({"uuid": "01979ebb-044a-7768-a0d0-0455ef356441", "status": "waiting"}, sent["session"])
+        self.assertEqual(1, len(sent["assets"]["channels"]))  # fake channel
+
+    @mock_mailroom
+    def test_simulate_voice(self, mr_mocks):
         flow = self.create_flow("Test", flow_type=Flow.TYPE_VOICE)
 
         self.login(self.admin)
         simulate_url = reverse("flows.flow_simulate", args=[flow.uuid])
 
-        with override_settings(MAILROOM_AUTH_TOKEN="sesame", MAILROOM_URL="https://mailroom.temba.io"):
-            with patch("requests.post") as mock_post:
-                mock_post.return_value = MockJsonResponse(200, {"session": {}})
-                response = self.client.post(
-                    simulate_url,
-                    {
-                        "contact": {"uuid": "8ada55d2-2f5e-4d56-8f10-26971332cd1c"},
-                        "trigger": {"type": "manual"},
-                        "flow": {},
-                    },
-                    content_type="application/json",
-                )
+        response = self.client.post(
+            simulate_url,
+            {
+                "contact": {"uuid": "8ada55d2-2f5e-4d56-8f10-26971332cd1c"},
+                "trigger": {"type": "manual"},
+                "flow": {},
+            },
+            content_type="application/json",
+        )
 
-                self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.json(), {"session": {}})
+        self.assertEqual(200, response.status_code)
+        self.assertEqual({"session": {}, "events": []}, response.json())
 
-                # since this is an IVR flow, we need to include a call
-                payload = json.loads(mock_post.call_args[1]["data"])
-                self.assertEqual(
-                    {
-                        "uuid": "01979e0b-3072-7345-ae19-879750caaaf6",
-                        "channel": {"uuid": "440099cf-200c-4d45-a8e7-4a564f4a0e8b", "name": "Test Channel"},
-                        "urn": "tel:+12065551212",
-                    },
-                    payload["call"],
-                )
-                self.assertEqual(
-                    {
-                        "type": "manual",
-                        "user": {"uuid": str(self.admin.uuid), "name": "Andy"},
-                    },
-                    payload["trigger"],
-                )
+        (sent,) = mr_mocks.calls["sim_start"][0].args
 
-    @mock_mailroom
-    def test_delete(self, mr_mocks):
+        # since this is an IVR flow, we need to include a call
+        self.assertEqual(
+            {
+                "uuid": "01979e0b-3072-7345-ae19-879750caaaf6",
+                "channel": {"uuid": "440099cf-200c-4d45-a8e7-4a564f4a0e8b", "name": "Test Channel"},
+                "urn": "tel:+12065551212",
+            },
+            sent["call"],
+        )
+        self.assertEqual({"type": "manual", "user": {"uuid": str(self.admin.uuid), "name": "Andy"}}, sent["trigger"])
+
+    def test_delete(self):
         child = self.create_flow("Child")
         parent = self.create_flow("Parent")
         parent.field_dependencies.add(self.create_field("age", "Age"))
@@ -2337,8 +2310,7 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual(0, parent.field_dependencies.all().count())
         self.assertEqual(0, parent.flow_dependencies.all().count())
 
-    @mock_mailroom
-    def test_delete_of_inactive_flow(self, mr_mocks):
+    def test_delete_of_inactive_flow(self):
         flow = self.create_flow("Test")
         flow.release(self.admin)
 
