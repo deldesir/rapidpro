@@ -1,5 +1,5 @@
 import { css, html, PropertyValues, TemplateResult } from 'lit';
-import { msg, str } from '@lit/localize';
+import { LOCALE_STATUS_EVENT, msg, str } from '@lit/localize';
 import { property, state } from 'lit/decorators.js';
 import { RapidElement } from '../RapidElement';
 import { Icon } from '../Icons';
@@ -108,6 +108,10 @@ interface FetchResponse<T = any> {
   count?: number;
   next?: string;
   previous?: string;
+  /** How the endpoint paginates — `cursor` or `page`. The internal API
+   * always says; it's the only thing that distinguishes the two when
+   * the results fit on one page. See {@link detectCursorMode}. */
+  paged_by?: string;
   /** Server-adjusted/normalized form of the search that produced these
    * results (rapidpro's contact search echoes the parsed `query`).
    * When present after a search, it's adopted as the basis of the
@@ -1171,10 +1175,10 @@ export class ContentList<T = any> extends RapidElement {
         --icon-color: var(--danger);
       }
 
-      /* Pager — a compact "‹ 1–N of Total ›" stepper that lives in
-         the header's actions cluster: chevron-only paging buttons
-         bracketing a plain count, no borders or labels, matching the
-         quiet Search action it sits beside. */
+      /* Pager — a compact stepper that lives in the header's actions
+         cluster: chevron-only paging buttons bracketing a plain count,
+         no borders or labels, matching the quiet Search action it sits
+         beside. */
       .pager {
         display: flex;
         align-items: center;
@@ -1302,7 +1306,7 @@ export class ContentList<T = any> extends RapidElement {
     }
   }
 
-  /** Column definitions. Subclasses set this in the constructor;
+  /** Column definitions. Subclasses build these in {@link buildColumns};
    * consumers may also override at the element level. */
   @property({ type: Array, attribute: false })
   columns: ContentListColumn[] = [];
@@ -1446,6 +1450,19 @@ export class ContentList<T = any> extends RapidElement {
    * constructors, which would freeze the source-locale string. */
   protected defaultEmptyMessage(): string {
     return msg('Nothing to show');
+  }
+
+  /** Label for the pager's total when the list is cursor-paginated.
+   * A cursor slice has no ordinal position — the rows keep their
+   * identity while the total moves underneath them — so the pager
+   * reports how many rows exist rather than which of them you are
+   * looking at. Says "matches" when the rows are the result of a
+   * search, plain "total" otherwise — what the rows *are* is already
+   * evident from the list itself. */
+  protected totalLabel(): string {
+    return this.search
+      ? msg(str`${formatCount(this.total)} matches`)
+      : msg(str`${formatCount(this.total)} total`);
   }
 
   /** Bump to force a refetch — useful after a bulk action so the host
@@ -1660,7 +1677,50 @@ export class ContentList<T = any> extends RapidElement {
     return items;
   }
 
+  /** Builds this list's columns. Subclasses override this rather than
+   * assigning `columns` directly, because their labels are msg()
+   * strings and the workspace locale only arrives once the store has
+   * fetched it — well after the elements are constructed — so the list
+   * builds them at render time and rebuilds them when the locale
+   * lands. Returning null leaves `columns` to whatever the subclass or
+   * the host set. */
+  protected buildColumns(): ContentListColumn[] | null {
+    return null;
+  }
+
+  /** Rebuilds the columns from {@link buildColumns} — a no-op for a
+   * list which doesn't override it. Subclasses call this when the
+   * inputs to their column set change, e.g. custom fields arriving. */
+  protected refreshColumns(): void {
+    const columns = this.buildColumns();
+    if (columns) {
+      this.columns = columns;
+    }
+  }
+
+  /** Whether the columns have been built yet. */
+  private columnsBuilt = false;
+
+  /** The workspace locale is only known once the store has fetched it,
+   * so a list mounted before then built its columns from the source
+   * strings — build them again now they can be translated. A list
+   * mounted after it lands gets translated labels first time. */
+  private handleLocaleStatus(event: Event): void {
+    if ((event as CustomEvent).detail?.status === 'ready') {
+      this.refreshColumns();
+    }
+  }
+
   protected willUpdate(changes: PropertyValues): void {
+    // Build before anything reads `columns` this cycle — notably the
+    // column-width sync below, which needs to see them. Setting a
+    // reactive property here folds into the update in progress, so
+    // `changes` picks up `columns` rather than scheduling another pass.
+    if (!this.columnsBuilt) {
+      this.columnsBuilt = true;
+      this.refreshColumns();
+    }
+
     super.willUpdate(changes);
     if (
       changes.has('columnWidthSettings') ||
@@ -1698,6 +1758,11 @@ export class ContentList<T = any> extends RapidElement {
 
   public connectedCallback(): void {
     super.connectedCallback();
+    // Deliberately not a getEventHandlers() entry: RapidElement reads
+    // that with no super-merging, so a subclass overriding it would
+    // silently stop re-translating its headers. listenTo removes the
+    // listener when we disconnect either way.
+    this.listenTo(window, LOCALE_STATUS_EVENT, this.handleLocaleStatus);
     if (this.urlState) {
       this.readUrlState();
       this.popstateHandler = () => {
@@ -2022,15 +2087,22 @@ export class ContentList<T = any> extends RapidElement {
     return url.pathname + url.search;
   }
 
-  /** Tell a cursor list from a page-counted one by inspecting the
-   * server's nav URLs. DRF CursorPagination always emits a `cursor=`
-   * query param; PageNumberPagination uses `page=`. A response that
-   * carries `count` alongside cursor URLs — e.g. a searched cursor
-   * endpoint that returns a result tally for the UI indicator — must
-   * still be navigated by following the cursor URLs, so we can't use
-   * count presence alone. Falls back to the count-absent heuristic
-   * for single-page responses where neither nav URL is populated. */
+  /** Tell a cursor list from a page-counted one. The internal API
+   * says which it used in `paged_by`, and that's authoritative —
+   * nothing else in the response distinguishes the two once the
+   * results fit on a single page, since a lone page carries no nav
+   * URLs to inspect.
+   *
+   * Without it, fall back to those URLs — DRF CursorPagination always
+   * emits a `cursor=` query param, PageNumberPagination uses `page=`.
+   * A response that carries `count` alongside cursor URLs — e.g. a
+   * searched cursor endpoint that returns a result tally for the UI
+   * indicator — must still be navigated by following the cursor URLs,
+   * so we can't use count presence alone. Last of all comes the
+   * count-absent heuristic, which is the ambiguous single-page case
+   * `paged_by` exists to settle. */
   private detectCursorMode(data: FetchResponse<T>): boolean {
+    if (data.paged_by) return data.paged_by === 'cursor';
     const hasCursor = (raw: string | undefined | null): boolean => {
       if (!raw) return false;
       try {
@@ -2098,14 +2170,12 @@ export class ContentList<T = any> extends RapidElement {
       this.cursorMode = this.detectCursorMode(data);
       this.hasCount = data.count != null;
       this.total = data.count ?? this.items.length;
-      // A cursor endpoint has no way to honor `?page=N` on first
-      // load, so a hard refresh that lands with a stale synthetic
-      // page param would leave the URL out of sync with what the
-      // server actually returned (the first slice). Snap the
-      // synthetic page back to 1 and rewrite the URL in place.
-      if (this.cursorMode && !this.prevCursor && this.page !== 1) {
+      // `page` carries no meaning for a cursor list, and nothing
+      // reads it in that mode. Pin it so a stale value restored from
+      // an older history entry can't leak into a request URL or a
+      // later page-mode render.
+      if (this.cursorMode) {
         this.page = 1;
-        this.writeUrlState(true);
       }
       // drop any selected ids that aren't visible anymore — selection
       // is per-page, not cross-page, so users don't accidentally bulk
@@ -2418,15 +2488,13 @@ export class ContentList<T = any> extends RapidElement {
     // A cursor list has no page numbers — step by following the
     // opaque next/previous URL the last response handed back. Call
     // fetchPage first so currentUrl is updated synchronously, then
-    // bubble state so the saved URL points at the new view. The
-    // synthetic page number is bumped only to position the pager's
-    // "N–M of Total" window (it never reaches the URL in cursor
-    // mode); the cursor URL stashed in history.state is what actually
+    // bubble state so the saved URL points at the new view. `page` is
+    // deliberately left alone: a cursor slice has no ordinal position
+    // to track, and the cursor URL stashed in history.state is what
     // drives restoration.
     if (this.cursorMode) {
       const target = delta > 0 ? this.nextCursor : this.prevCursor;
       if (target) {
-        this.page = Math.max(1, this.page + delta);
         this.fetchPage(target);
         this.writeUrlState();
       }
@@ -2464,7 +2532,7 @@ export class ContentList<T = any> extends RapidElement {
             ? html`
                 <span class="action" @click=${() => this.toggleSearch()}>
                   <temba-icon name=${Icon.search} size="0.95"></temba-icon>
-                  Search
+                  ${msg('Search')}
                 </span>
               `
             : null}
@@ -2531,7 +2599,7 @@ export class ContentList<T = any> extends RapidElement {
       <div class="bulk-bar ${this.bulkCollapsed ? 'collapsed' : ''}">
         ${this.bulkActions.map((a) => this.renderBulkAction(a))}
         <span class="bulk-count"
-          >${formatCount(this.selectedIds.size)} selected</span
+          >${msg(str`${formatCount(this.selectedIds.size)} selected`)}</span
         >
       </div>
     `;
@@ -3917,29 +3985,31 @@ export class ContentList<T = any> extends RapidElement {
     `;
   }
 
-  /** The pager — a compact "‹ 1–N of Total ›" stepper for the
-   * header's actions cluster. The "N–M of Total" status shows whenever
-   * the response carried a count (`hasCount`) — in cursor mode too,
-   * using the synthetic page for the range; an uncounted cursor list
-   * falls back to chevrons only, gated on whether the last response
-   * handed back a cursor for that direction. Both buttons disable
-   * while a fetch is in flight so a second step can't fire until the
-   * first comes back (or fails). Returns nothing when there is neither
-   * a page to move to nor a count worth showing. */
+  /** The pager — chevron paging buttons bracketing a count, for the
+   * header's actions cluster. The status (shown whenever the response
+   * carried a count) depends on the pagination style: a page-counted
+   * list has a real position, so it shows the "N–M of Total" range —
+   * with a "matches" suffix when the rows are a search result — while
+   * a cursor list has none and shows the plain total from
+   * {@link totalLabel} whatever the folder size, so a folder that fits
+   * on one page frames its count the same way as one that doesn't.
+   * An uncounted cursor list falls back to chevrons only, gated on
+   * whether the last response handed back a cursor for that direction.
+   * Both buttons disable while a fetch is in flight so a second step
+   * can't fire until the first comes back (or fails). Returns nothing
+   * when there is neither a page to move to nor a count worth
+   * showing. */
   private renderPager(): TemplateResult {
     const lastPage = Math.max(1, Math.ceil(this.total / this.pageSize));
     const first = this.total === 0 ? 0 : (this.page - 1) * this.pageSize + 1;
     // Derive `last` from the rows actually shown rather than page*pageSize,
-    // so a short slice (a partial cursor page, or the final page) reports
-    // the true position instead of overshooting the total.
+    // so a short final page reports the true position instead of
+    // overshooting the total.
     const last = first === 0 ? 0 : first + this.items.length - 1;
     const atStart = this.cursorMode ? !this.prevCursor : this.page <= 1;
     const atEnd = this.cursorMode ? !this.nextCursor : this.page >= lastPage;
     // Nothing to show: an empty counted list (the .list-state covers it),
-    // or an uncounted cursor list with no other page to step to. When the
-    // endpoint provides a count we show the "N–M of Total" status in both
-    // page and cursor mode (the synthetic page tracks position in cursor
-    // mode too).
+    // or an uncounted cursor list with no other page to step to.
     if (this.hasCount ? this.total === 0 : atStart && atEnd) {
       return html``;
     }
@@ -3955,11 +4025,19 @@ export class ContentList<T = any> extends RapidElement {
         </span>
         ${this.hasCount
           ? html`<span class="pager-status"
-              >${msg(
-                str`${formatCount(first)}–${formatCount(last)} of ${formatCount(
-                  this.total
-                )}`
-              )}</span
+              >${this.cursorMode
+                ? this.totalLabel()
+                : this.search
+                  ? msg(
+                      str`${formatCount(first)}–${formatCount(
+                        last
+                      )} of ${formatCount(this.total)} matches`
+                    )
+                  : msg(
+                      str`${formatCount(first)}–${formatCount(
+                        last
+                      )} of ${formatCount(this.total)}`
+                    )}</span
             >`
           : null}
         <span

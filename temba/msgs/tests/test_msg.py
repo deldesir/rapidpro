@@ -1,11 +1,9 @@
-from datetime import timedelta
 from unittest.mock import call, patch
 
 from django.utils import timezone
 
 from temba.flows.models import Flow
 from temba.msgs.models import Msg, MsgFolder
-from temba.msgs.tasks import fail_old_android_messages
 from temba.tests import CRUDLTestMixin, TembaTest, mock_mailroom
 from temba.utils.uuid import uuid7
 
@@ -20,6 +18,34 @@ class MsgTest(TembaTest, CRUDLTestMixin):
 
         self.just_joe = self.create_group("Just Joe", [self.joe])
         self.joe_and_frank = self.create_group("Joe and Frank", [self.joe, self.frank])
+
+    def test_derive_folder(self):
+        flow = self.create_flow("Test")
+
+        def assert_folder(msg, expected):
+            self.assertEqual(expected, msg.derive_folder(), f"folder mismatch for msg #{msg.id}")
+
+        assert_folder(self.create_incoming_msg(self.joe, "Hi"), Msg.FOLDER_INBOX)
+        assert_folder(self.create_incoming_msg(self.joe, "Hi", flow=flow), Msg.FOLDER_HANDLED)
+        assert_folder(self.create_incoming_msg(self.joe, "Hi", visibility=Msg.VISIBILITY_ARCHIVED), Msg.FOLDER_ARCHIVED)
+        assert_folder(self.create_outgoing_msg(self.joe, "Hi", status=Msg.STATUS_QUEUED), Msg.FOLDER_OUTBOX)
+        assert_folder(self.create_outgoing_msg(self.joe, "Hi", status=Msg.STATUS_SENT), Msg.FOLDER_SENT)
+        assert_folder(self.create_outgoing_msg(self.joe, "Hi", status=Msg.STATUS_FAILED), Msg.FOLDER_FAILED)
+
+        # incoming messages which haven't been handled yet are pending, whatever their visibility
+        assert_folder(self.create_incoming_msg(self.joe, "Hi", status=Msg.STATUS_PENDING), Msg.FOLDER_PENDING)
+        assert_folder(
+            self.create_incoming_msg(self.joe, "Hi", status=Msg.STATUS_PENDING, visibility=Msg.VISIBILITY_ARCHIVED),
+            Msg.FOLDER_PENDING,
+        )
+
+        # being deleted takes precedence over everything else
+        for visibility in (Msg.VISIBILITY_DELETED_BY_USER, Msg.VISIBILITY_DELETED_BY_SENDER):
+            assert_folder(self.create_incoming_msg(self.joe, "Hi", visibility=visibility), Msg.FOLDER_DELETED)
+            assert_folder(
+                self.create_incoming_msg(self.joe, "Hi", status=Msg.STATUS_PENDING, visibility=visibility),
+                Msg.FOLDER_DELETED,
+            )
 
     def test_as_archive_json(self):
         flow = self.create_flow("Color Flow")
@@ -100,6 +126,17 @@ class MsgTest(TembaTest, CRUDLTestMixin):
         msg = self.create_incoming_msg(self.joe, "hi")
         self.assertIsNone(msg._get_logs_url({"unrelated": "value"}))
 
+    def test_as_json_logs_url_channel_without_logs(self):
+        context = {"user": self.admin, "org": self.org}
+
+        msg1 = self.create_incoming_msg(self.joe, "hi")
+        self.assertIsNotNone(msg1._get_logs_url(context))
+
+        # msgs on channels of types that don't have logs don't get a logs URL
+        webchat_channel = self.create_channel("WCH", "WebChat", "123")
+        msg2 = self.create_incoming_msg(self.joe, "hi", channel=webchat_channel)
+        self.assertIsNone(msg2._get_logs_url(context))
+
     @patch("django.core.files.storage.default_storage.delete")
     @mock_mailroom
     def test_bulk_soft_delete(self, mr_mocks, mock_storage_delete):
@@ -110,10 +147,16 @@ class MsgTest(TembaTest, CRUDLTestMixin):
             attachments=[
                 r"audo/mp4:http://s3.com/attachments/1/a/b.jpg",
                 r"image/jpeg:http://s3.com/attachments/1/c/d%20e.jpg",
+                r"http://example.com/test.mp4",  # invalid attachments are ignored
             ],
         )
         msg2 = self.create_incoming_msg(self.frank, "ignore joe, he's a liar")
         out1 = self.create_outgoing_msg(self.frank, "hi")
+
+        label = self.create_label("Spam")
+        label.toggle_label([msg1, msg2], add=True)
+
+        self.assertEqual(2, label.get_visible_count())
 
         # can't soft delete outgoing messages
         with self.assertRaises(AssertionError):
@@ -123,8 +166,19 @@ class MsgTest(TembaTest, CRUDLTestMixin):
 
         mock_storage_delete.assert_any_call("/attachments/1/a/b.jpg")
         mock_storage_delete.assert_any_call("/attachments/1/c/d e.jpg")
+        self.assertEqual(2, mock_storage_delete.call_count)  # invalid attachment not deleted from storage
 
         self.assertEqual([call(self.org, self.admin, [msg1, msg2])], mr_mocks.calls["msg_delete"])
+
+        # mailroom clears content and labels as well as updating visibility
+        msg1.refresh_from_db()
+        self.assertEqual(Msg.VISIBILITY_DELETED_BY_USER, msg1.visibility)
+        self.assertEqual(Msg.FOLDER_DELETED, msg1.folder)
+        self.assertEqual("", msg1.text)
+        self.assertEqual([], msg1.attachments)
+        self.assertEqual(set(), set(msg1.labels.all()))
+
+        self.assertEqual(0, label.get_visible_count())
 
     @patch("django.core.files.storage.default_storage.delete")
     def test_bulk_delete(self, mock_storage_delete):
@@ -135,6 +189,7 @@ class MsgTest(TembaTest, CRUDLTestMixin):
             attachments=[
                 r"audo/mp4:http://s3.com/attachments/1/a/b.jpg",
                 r"image/jpeg:http://s3.com/attachments/1/c/d%20e.jpg",
+                r"http://example.com/test.mp4",  # invalid attachments are ignored
             ],
         )
         self.create_incoming_msg(self.frank, "ignore joe, he's a liar")
@@ -146,19 +201,21 @@ class MsgTest(TembaTest, CRUDLTestMixin):
 
         mock_storage_delete.assert_any_call("/attachments/1/a/b.jpg")
         mock_storage_delete.assert_any_call("/attachments/1/c/d e.jpg")
+        self.assertEqual(2, mock_storage_delete.call_count)  # invalid attachment not deleted from storage
 
-    def test_archive_and_release(self):
+    @mock_mailroom
+    def test_archive_and_release(self, mr_mocks):
         msg1 = self.create_incoming_msg(self.joe, "Incoming")
         label = self.create_label("Spam")
         label.toggle_label([msg1], add=True)
 
-        msg1.archive()
+        Msg.bulk_archive(self.org, [msg1])
 
         msg1 = Msg.objects.get(pk=msg1.pk)
         self.assertEqual(msg1.visibility, Msg.VISIBILITY_ARCHIVED)
         self.assertEqual(set(msg1.labels.all()), {label})  # don't remove labels
 
-        msg1.restore()
+        Msg.bulk_restore(self.org, [msg1])
 
         msg1 = Msg.objects.get(pk=msg1.id)
         self.assertEqual(msg1.visibility, Msg.VISIBILITY_VISIBLE)
@@ -170,9 +227,21 @@ class MsgTest(TembaTest, CRUDLTestMixin):
         self.assertEqual(0, label.get_messages().count())  # do remove labels
         self.assertIsNotNone(label)
 
+        # an empty selection doesn't reach mailroom at all
+        Msg.bulk_archive(self.org, [])
+        Msg.bulk_restore(self.org, [])
+
+        self.assertEqual(1, len(mr_mocks.calls["msg_archive"]))
+        self.assertEqual(1, len(mr_mocks.calls["msg_restore"]))
+
         # can't archive outgoing messages
         msg2 = self.create_outgoing_msg(self.joe, "Outgoing")
-        self.assertRaises(AssertionError, msg2.archive)
+
+        with self.assertRaises(AssertionError):
+            Msg.bulk_archive(self.org, [msg2])
+
+        with self.assertRaises(AssertionError):
+            Msg.bulk_restore(self.org, [msg2])
 
     def test_release_counts(self):
         flow = self.create_flow("Test")
@@ -202,29 +271,6 @@ class MsgTest(TembaTest, CRUDLTestMixin):
         assertReleaseCount("I", Msg.STATUS_HANDLED, Msg.VISIBILITY_VISIBLE, None, MsgFolder.INBOX)
         assertReleaseCount("I", Msg.STATUS_HANDLED, Msg.VISIBILITY_ARCHIVED, None, MsgFolder.ARCHIVED)
         assertReleaseCount("I", Msg.STATUS_HANDLED, Msg.VISIBILITY_VISIBLE, flow, MsgFolder.HANDLED)
-
-    def test_fail_old_android_messages(self):
-        msg1 = self.create_outgoing_msg(self.joe, "Hello", status=Msg.STATUS_QUEUED)
-        msg2 = self.create_outgoing_msg(
-            self.joe, "Hello", status=Msg.STATUS_QUEUED, created_on=timezone.now() - timedelta(days=8)
-        )
-        msg3 = self.create_outgoing_msg(
-            self.joe, "Hello", status=Msg.STATUS_ERRORED, created_on=timezone.now() - timedelta(days=8)
-        )
-        msg4 = self.create_outgoing_msg(
-            self.joe, "Hello", status=Msg.STATUS_SENT, created_on=timezone.now() - timedelta(days=8)
-        )
-
-        fail_old_android_messages()
-
-        def assert_status(msg, status):
-            msg.refresh_from_db()
-            self.assertEqual(status, msg.status)
-
-        assert_status(msg1, Msg.STATUS_QUEUED)
-        assert_status(msg2, Msg.STATUS_FAILED)
-        assert_status(msg3, Msg.STATUS_FAILED)
-        assert_status(msg4, Msg.STATUS_SENT)
 
     def test_big_ids(self):
         # create an incoming message with big id

@@ -44,6 +44,7 @@ from ..support import (
     ModifiedOnCursorPagination,
     OrgUserRateThrottle,
     SentOnCursorPagination,
+    record_deprecated,
 )
 from ..views import BaseAPIView, BulkWriteAPIMixin, DeleteAPIMixin, ListAPIMixin, WriteAPIMixin
 from .serializers import (
@@ -552,6 +553,7 @@ class BroadcastsEndpoint(ListAPIMixin, WriteAPIMixin, BaseEndpoint):
         # filter by id (optional, deprecated)
         broadcast_id = self.get_int_param("id")
         if broadcast_id:
+            record_deprecated(self.request.org, "broadcasts#filter:id")
             queryset = queryset.filter(id=broadcast_id)
 
         queryset = queryset.prefetch_related(
@@ -1035,6 +1037,8 @@ class ChannelEventsEndpoint(ListAPIMixin, BaseEndpoint):
         params = self.request.query_params
         org = self.request.org
 
+        record_deprecated(org, "channel_events#list")
+
         # filter by id (optional)
         call_id = self.get_int_param("id")
         if call_id:
@@ -1406,6 +1410,9 @@ class DefinitionsEndpoint(BaseEndpoint):
             return Response({})
 
         org = request.org
+
+        record_deprecated(org, "definitions#get")
+
         params = request.query_params
         flow_uuids = params.getlist("flow")
         campaign_uuids = params.getlist("campaign")
@@ -2353,10 +2360,12 @@ class MessagesEndpoint(ListAPIMixin, WriteAPIMixin, BaseEndpoint):
 
         # filter by id (optional, deprecated)
         if msg_id := self.get_int_param("id"):
+            record_deprecated(org, "messages#filter:id")
             queryset = queryset.filter(id=msg_id)
 
         # filter by broadcast (optional, deprecated)
         if broadcast_id := params.get("broadcast"):
+            record_deprecated(org, "messages#filter:broadcast")
             queryset = queryset.filter(broadcast_id=broadcast_id)
 
         # filter by contact (optional)
@@ -2867,6 +2876,7 @@ class RunsEndpoint(ListAPIMixin, BaseEndpoint):
 
         # filter by id (optional, deprecated)
         if run_id := self.get_int_param("id"):
+            record_deprecated(org, "runs#filter:id")
             queryset = queryset.filter(id=run_id)
 
         # filter by flow (optional)
@@ -2878,6 +2888,7 @@ class RunsEndpoint(ListAPIMixin, BaseEndpoint):
 
         # filter by contact (optional, deprecated)
         if contact_uuid := params.get("contact"):
+            record_deprecated(org, "runs#filter:contact")
             if contact := org.contacts.filter(is_active=True, uuid=contact_uuid).first():
                 queryset = queryset.filter(contact=contact)
             else:

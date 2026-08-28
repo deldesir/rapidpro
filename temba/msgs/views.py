@@ -137,7 +137,6 @@ class BroadcastCRUDL(SmartCRUDL):
         "scheduled_delete",
         "preview",
         "to_node",
-        "status",
         "interrupt",
     )
     model = Broadcast
@@ -286,6 +285,10 @@ class BroadcastCRUDL(SmartCRUDL):
 
     class Update(ModalHeaderMixin, OrgObjPermsMixin, SmartWizardUpdateView):
         form_list = [("target", TargetForm), ("compose", ComposeForm), ("schedule", ScheduleForm)]
+        # this wizard view resolves its object through Django's SingleObjectMixin rather than smartmin's, and that
+        # doesn't default `slug_field` to the url kwarg, so both are needed
+        slug_url_kwarg = "uuid"
+        slug_field = "uuid"
         success_url = "@msgs.broadcast_scheduled"
         submit_button_name = _("Save")
         modal_header_bg = "#8e5ea7"
@@ -386,9 +389,10 @@ class BroadcastCRUDL(SmartCRUDL):
 
     class ScheduledDelete(ModalFormMixin, OrgObjPermsMixin, SmartDeleteView):
         default_template = "broadcast_scheduled_delete.html"
+        slug_url_kwarg = "uuid"
         success_url = "@msgs.broadcast_scheduled"
         cancel_url = "@msgs.broadcast_scheduled"
-        fields = ("id",)
+        fields = ("uuid",)
         submit_button_name = _("Delete")
 
         def post(self, request, *args, **kwargs):
@@ -500,39 +504,9 @@ class BroadcastCRUDL(SmartCRUDL):
 
             return self.render_modal_response(form)
 
-    class Status(BaseListView):
-        permission = "msgs.broadcast_list"
-
-        def derive_queryset(self, **kwargs):
-            qs = super().derive_queryset(**kwargs)
-
-            id = self.request.GET.get("id", None)
-            if id:
-                qs = qs.filter(id=id)
-
-            status = self.request.GET.get("status", None)
-            if status:
-                qs = qs.filter(status=status)
-
-            return qs.order_by("-created_on")
-
-        def render_to_response(self, context, **response_kwargs):
-            results = []
-            for obj in context["object_list"]:
-                # created_on as an iso date
-                results.append(
-                    {
-                        "id": obj.id,
-                        "status": obj.get_status_display(),
-                        "created_on": obj.created_on.isoformat(),
-                        "modified_on": obj.modified_on.isoformat(),
-                        "progress": {"total": obj.contact_count, "current": obj.get_message_count()},
-                    }
-                )
-            return JsonResponse({"results": results})
-
     class Interrupt(ModalFormMixin, OrgObjPermsMixin, SmartUpdateView):
         default_template = "smartmin/delete_confirm.html"
+        slug_url_kwarg = "uuid"
         permission = "msgs.broadcast_update"
         fields = ()
         submit_button_name = _("Interrupt")
@@ -868,6 +842,7 @@ class LabelCRUDL(SmartCRUDL):
         form_class = LabelForm
         success_url = "uuid@msgs.msg_filter"
         title = _("Update Label")
+        submit_button_name = _("Save")
 
         def get_form_kwargs(self):
             kwargs = super().get_form_kwargs()

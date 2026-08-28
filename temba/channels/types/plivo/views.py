@@ -4,7 +4,6 @@ import requests
 from smartmin.views import SmartFormView
 
 from django import forms
-from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.http import HttpResponseRedirect, JsonResponse
 from django.urls import reverse
@@ -17,7 +16,6 @@ from temba.orgs.views.mixins import OrgPermsMixin
 from temba.utils import countries
 from temba.utils.fields import SelectWidget
 from temba.utils.http import http_headers
-from temba.utils.models import generate_uuid
 
 SUPPORTED_COUNTRIES = {
     "AU",  # Australia
@@ -113,14 +111,19 @@ class ClaimView(BaseClaimNumberMixin, SmartFormView):
             data = response.json()
             for number_dict in data["objects"]:
                 region = number_dict["region"]
-                country_name = region.split(",")[-1].strip().title()
-                country = pycountry.countries.get(name=country_name).alpha_2
+                country_name = region.split(",")[-1].strip()
+                try:
+                    # matches case-insensitively on name, official name or code
+                    country = pycountry.countries.lookup(country_name)
+                except LookupError:  # ignore numbers in regions we can't match to a country
+                    continue
+
                 if len(number_dict["number"]) <= 6:
                     phone_number = number_dict["number"]
                 else:
                     parsed = phonenumbers.parse("+" + number_dict["number"], None)
                     phone_number = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
-                account_numbers.append(dict(number=phone_number, country=country))
+                account_numbers.append(dict(number=phone_number, country=country.alpha_2))
 
         return account_numbers
 
@@ -130,35 +133,8 @@ class ClaimView(BaseClaimNumberMixin, SmartFormView):
 
         org = self.request.org
 
-        plivo_uuid = generate_uuid()
-        callback_domain = org.get_brand_domain()
-        app_name = "%s_%s" % (callback_domain.lower().replace(".", "_"), plivo_uuid)
-
-        message_url = f"https://{callback_domain}{reverse('courier.pl', args=[plivo_uuid, 'receive'])}"
-        answer_url = f"{settings.STORAGE_URL}/plivo_voice_unavailable.xml"
-
+        # buy the number if we don't already own it
         headers = http_headers(extra={"Content-Type": "application/json"})
-        create_app_url = "https://api.plivo.com/v1/Account/%s/Application/" % auth_id
-
-        response = requests.post(
-            create_app_url,
-            json=dict(app_name=app_name, answer_url=answer_url, message_url=message_url),
-            headers=headers,
-            auth=(auth_id, auth_token),
-        )
-
-        if response.status_code in [201, 200, 202]:
-            plivo_app_id = response.json()["app_id"]
-        else:  # pragma: no cover
-            plivo_app_id = None
-
-        plivo_config = {
-            self.channel_type.CONFIG_AUTH_ID: auth_id,
-            self.channel_type.CONFIG_AUTH_TOKEN: auth_token,
-            self.channel_type.CONFIG_APP_ID: plivo_app_id,
-            Channel.CONFIG_CALLBACK_DOMAIN: org.get_brand_domain(),
-        }
-
         plivo_number = phone_number.strip("+ ").replace(" ", "")
         response = requests.get(
             "https://api.plivo.com/v1/Account/%s/Number/%s/" % (auth_id, plivo_number),
@@ -178,33 +154,18 @@ class ClaimView(BaseClaimNumberMixin, SmartFormView):
                     _("There was a problem claiming that number, please check the balance on your account.")
                 )
 
-            response = requests.get(
-                "https://api.plivo.com/v1/Account/%s/Number/%s/" % (auth_id, plivo_number),
-                headers=headers,
-                auth=(auth_id, auth_token),
-            )
-
-        if response.status_code == 200:
-            response = requests.post(
-                "https://api.plivo.com/v1/Account/%s/Number/%s/" % (auth_id, plivo_number),
-                json=dict(app_id=plivo_app_id),
-                headers=headers,
-                auth=(auth_id, auth_token),
-            )
-
-            if response.status_code != 202:  # pragma: no cover
-                raise Exception(_("There was a problem updating that number, please try again."))
-
         phone_number = "+" + plivo_number
         phone = phonenumbers.format_number(
             phonenumbers.parse(phone_number, None), phonenumbers.PhoneNumberFormat.NATIONAL
         )
 
-        channel = Channel.create(
-            org, user, country, "PL", name=phone, address=phone_number, config=plivo_config, uuid=plivo_uuid
-        )
+        config = {
+            self.channel_type.CONFIG_AUTH_ID: auth_id,
+            self.channel_type.CONFIG_AUTH_TOKEN: auth_token,
+            Channel.CONFIG_CALLBACK_DOMAIN: org.get_brand_domain(),
+        }
 
-        return channel
+        return Channel.create(org, user, country, "PL", name=phone, address=phone_number, config=config)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

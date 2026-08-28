@@ -10,7 +10,7 @@ from temba.channels.models import Channel
 from temba.contacts.models import Contact, ContactGroup
 from temba.flows.models import Flow
 from temba.orgs.models import Org
-from temba.utils.models import TembaUUIDMixin
+from temba.utils.models import OrgLimitMixin, TembaUUIDMixin
 
 
 class TriggerType:
@@ -73,11 +73,13 @@ class ChannelTriggerType(TriggerType):
     export_fields = TriggerType.export_fields + ("channel",)
 
 
-class Trigger(TembaUUIDMixin, SmartModel):
+class Trigger(TembaUUIDMixin, OrgLimitMixin, SmartModel):
     """
     A Trigger is used to start a user in a flow based on an event. For example, triggers might fire for missed calls,
     inbound messages starting with a keyword, or on a repeating schedule.
     """
+
+    org_limit_key = Org.LIMIT_TRIGGERS
 
     TYPE_KEYWORD = "K"
     TYPE_SCHEDULE = "S"
@@ -113,6 +115,11 @@ class Trigger(TembaUUIDMixin, SmartModel):
     match_type = models.CharField(max_length=1, choices=MATCH_TYPES, null=True)
     referrer_id = models.CharField(max_length=255, null=True)
     schedule = models.OneToOneField("schedules.Schedule", on_delete=models.PROTECT, null=True, related_name="trigger")
+
+    @classmethod
+    def get_countable_for_org(cls, org):
+        # archived triggers don't fire, so they don't count against the org limit
+        return super().get_countable_for_org(org).filter(is_archived=False)
 
     @classmethod
     def create(
@@ -321,6 +328,9 @@ class Trigger(TembaUUIDMixin, SmartModel):
                 exact_match.restore(user)
 
             return exact_match
+        elif cls.is_limit_reached(org):
+            # matching an existing trigger is always allowed, but we can't create new ones over the limit
+            return None
         else:
             return cls.create(
                 org,
@@ -366,6 +376,9 @@ class Trigger(TembaUUIDMixin, SmartModel):
     def apply_action_restore(cls, user, triggers):
         # work through all the restored triggers in order of most recent used
         for trigger in triggers.order_by("-modified_on"):
+            if cls.is_limit_reached(trigger.org):
+                raise ValidationError(_("This workspace has reached its limit of triggers."))
+
             trigger.restore(user)
 
     @classmethod
@@ -384,13 +397,11 @@ class Trigger(TembaUUIDMixin, SmartModel):
         """
         Internal API shape, consumed by the temba-trigger-list component. The type slug drives the row icon and
         which of the per-type fields (keywords, schedule, referrer) the details cell renders; channel/groups/contacts
-        render as filter pills. The numeric id is included alongside the uuid for the page's update modal, whose URL
-        is still pk based.
+        render as filter pills.
         """
 
         return {
             "uuid": str(self.uuid),
-            "id": self.id,
             "type": self.type.slug,
             "flow": {"uuid": str(self.flow.uuid), "name": self.flow.name},
             "channel": (

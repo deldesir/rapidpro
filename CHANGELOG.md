@@ -1,3 +1,106 @@
+v26.3.64 (2026-08-27)
+-------------------------
+ * Remove node_modules from STATICFILES_DIRS
+ * Remove orphaned two factor auth templates
+ * Hide channel logs UI for channel types that don't have logs
+ * Remove @mock_mailroom from tests that don't use the injected mocks
+
+v26.3.63 (2026-08-27)
+-------------------------
+ * Fix infinite loop in Schedule.calculate_next_fire on DST fall-back days
+
+v26.3.62 (2026-08-27)
+-------------------------
+ * Add allowed domains support to WebChat channels
+ * Record usage of deprecated API endpoints and list filter params
+ * Don't grant session identity to cross-origin websockets connections
+ * Use a test mailroom client that can't make real HTTP requests
+
+v26.3.61 (2026-08-27)
+-------------------------
+ * Ignore invalid attachments when deleting messages
+ * Remove fail_old_android_messages task now that mailroom handles it
+
+v26.3.60 (2026-08-26)
+-------------------------
+ * Require an active contact for webchat chat socket authorization and authorize visitor chat subscriptions in the realtime subscribe proxy
+ * Resolve the contact field a split reads from workspace assets, and fill in missing dependency names even when nothing has been renamed
+ * Migrate message archiving and restoring to mailroom, skipping the call for an empty selection
+ * Allow anonymous connections in the realtime connect proxy
+ * Add staff-only WebChat channel type
+ * Track usage of deprecated API features
+
+v26.3.59 (2026-08-25)
+-------------------------
+ * Frame list pager counts on how the endpoint paginates
+ * Migrate email sending to mailers
+ * Reject import files whose top-level JSON is not an object
+ * Make form submit button labels translatable
+
+v26.3.58 (2026-08-25)
+-------------------------
+ * Report a total rather than a synthesized position when a list is cursor-paginated
+ * Add nullable folder field to Msg
+ * Order message list folders by created_on so pages read straight off the folder indexes
+
+v26.3.57 (2026-08-25)
+-------------------------
+ * Route custom prefetch querysets to the same database as their parent queryset in the API and exports
+ * Use shared pagination and search length mixin for the campaigns list endpoint
+
+v26.3.56 (2026-08-25)
+-------------------------
+ * Simplify signup views
+
+v26.3.55 (2026-08-24)
+-------------------------
+ * Enforce channel type availability when claiming a channel
+ * Don't show channel log links for deleted messages and apply deletions to open chats
+ * Fix listing existing Plivo numbers when a number's region isn't a known country
+ * Update Django to 6.1
+ * Migrate to version 4 of the Vonage client library
+ * Fix locale check in code_check.py for projects with a nested locale directory
+ * Update dependencies
+
+v26.3.54 (2026-08-20)
+-------------------------
+ * Replace ffmpeg-python and iptools with stdlib equivalents
+ * Prune dependencies not used by this project and update Django
+ * Remove the chip channel type
+ * Allow servicing staff to resolve asset names in the flow editor
+ * Seed a separate staff user in dev_db instead of making org admins staff
+
+v26.3.53 (2026-08-19)
+-------------------------
+ * Let random splits save a result, and stop discarding existing ones
+ * Remove unused broadcast status endpoint
+ * Remove vestigial is_support branches from dashboard views
+
+v26.3.52 (2026-08-19)
+-------------------------
+ * Remove channel type courier_url patterns and their placeholder URL routes
+ * Add channel_callback template tag and Channel.courier_url() and use for all courier endpoint URLs
+ * Move provider registration into activate() for Plivo, Twilio and Vonage so failures release the channel
+ * Fix rendering of activation errors on number claim pages
+
+v26.3.51 (2026-08-18)
+-------------------------
+ * Interrupt a contact's waiting session before deleting their runs
+
+v26.3.50 (2026-08-18)
+-------------------------
+ * Batch the flow activity count repair so it can run on large databases
+ * Add db trigger to decrement status/node counts for deleted active runs
+ * Enforce org trigger limit when restoring archived triggers
+ * Reduce default org limit of triggers to 250 from 500
+
+v26.3.49 (2026-08-18)
+-------------------------
+ * Extract org limit functionality into its own mixin and use for triggers
+ * Address triggers and broadcasts by uuid in their modal URLs
+ * Tell the user when a bulk action form fails validation instead of silently no-op'ing
+ * Localize the column headers on the component rendered list pages
+
 v26.3.48 (2026-08-18)
 -------------------------
  * Only offer subflows that the engine will actually let us enter

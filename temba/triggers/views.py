@@ -220,9 +220,10 @@ class TriggerCRUDL(SmartCRUDL):
                 )
             )
 
-            menu.append(
-                self.create_menu_item(name=_("New Trigger"), icon="trigger_new", href="triggers.trigger_create")
-            )
+            if not Trigger.is_limit_reached(org):
+                menu.append(
+                    self.create_menu_item(name=_("New Trigger"), icon="trigger_new", href="triggers.trigger_create")
+                )
 
             menu.append(self.create_divider())
 
@@ -271,6 +272,7 @@ class TriggerCRUDL(SmartCRUDL):
         trigger_type = None
         permission = "triggers.trigger_create"
         success_url = "@triggers.trigger_list"
+        submit_button_name = _("Create")
 
         @property
         def type(self):
@@ -358,6 +360,9 @@ class TriggerCRUDL(SmartCRUDL):
         trigger_type = Trigger.TYPE_CLOSED_TICKET
 
     class Update(ModalFormMixin, ComponentFormMixin, OrgObjPermsMixin, SmartUpdateView):
+        slug_url_kwarg = "uuid"
+        submit_button_name = _("Save")
+
         def get_form_class(self):
             return self.object.type.form
 
@@ -433,7 +438,7 @@ class TriggerCRUDL(SmartCRUDL):
         }
 
         def build_context_menu(self, menu):
-            if self.has_org_perm("triggers.trigger_create"):
+            if self.has_org_perm("triggers.trigger_create") and not self.is_limit_reached():
                 menu.add_link(_("New Trigger"), reverse("triggers.trigger_create"), as_button=True)
 
         def derive_queryset(self, *args, **kwargs):

@@ -6,15 +6,14 @@ from temba.api.v2.serializers import format_datetime
 from temba.msgs.models import Broadcast
 from temba.orgs.models import Org
 from temba.schedules.models import Schedule
-from temba.tests import cleanup, mock_mailroom
+from temba.tests import cleanup
 
 from . import APITest
 
 
 class BroadcastsEndpointTest(APITest):
-    @mock_mailroom
     @cleanup(s3=True)
-    def test_endpoint(self, mr_mocks):
+    def test_endpoint(self):
         endpoint_url = reverse("api.v2.broadcasts") + ".json"
 
         self.assertGetNotPermitted(endpoint_url, [None, self.agent])
@@ -98,8 +97,9 @@ class BroadcastsEndpointTest(APITest):
             resp_json["results"][0],
         )
 
-        # filter by id
+        # filter by id (deprecated, so recorded)
         self.assertGet(endpoint_url + f"?id={bcast3.id}", [self.editor], results=[bcast3])
+        self.assertDeprecatedRecorded("broadcasts#filter:id", 1)
 
         # filter by uuid
         self.assertGet(endpoint_url + f"?uuid={bcast3.uuid}", [self.editor], results=[bcast3])

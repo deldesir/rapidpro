@@ -9,6 +9,30 @@ from temba.utils import s3
 
 
 class MsgFolderTest(TembaTest):
+    def test_from_msg(self):
+        contact = self.create_contact("Bob", phone="0783835001")
+        flow = self.create_flow("Test")
+
+        def assert_folder(msg, expected):
+            self.assertEqual(expected, MsgFolder.from_msg(msg), f"folder mismatch for {msg.id}")
+
+        assert_folder(self.create_incoming_msg(contact, "Hi"), MsgFolder.INBOX)
+        assert_folder(self.create_incoming_msg(contact, "Hi", flow=flow), MsgFolder.HANDLED)
+        assert_folder(self.create_incoming_msg(contact, "Hi", visibility=Msg.VISIBILITY_ARCHIVED), MsgFolder.ARCHIVED)
+
+        for status in (Msg.STATUS_INITIALIZING, Msg.STATUS_QUEUED, Msg.STATUS_ERRORED):
+            assert_folder(self.create_outgoing_msg(contact, "Hi", status=status), MsgFolder.OUTBOX)
+
+        for status in (Msg.STATUS_WIRED, Msg.STATUS_SENT, Msg.STATUS_DELIVERED, Msg.STATUS_READ):
+            msg = self.create_outgoing_msg(contact, "Hi", status=status, sent_on=timezone.now())
+            assert_folder(msg, MsgFolder.SENT)
+
+        assert_folder(self.create_outgoing_msg(contact, "Hi", status=Msg.STATUS_FAILED), MsgFolder.FAILED)
+
+        # messages which aren't in a user facing folder
+        assert_folder(self.create_incoming_msg(contact, "Hi", status=Msg.STATUS_PENDING), None)
+        assert_folder(self.create_incoming_msg(contact, "Hi", visibility=Msg.VISIBILITY_DELETED_BY_USER), None)
+
     def test_get_archive_query(self):
         tcs = (
             (
@@ -90,7 +114,7 @@ class MsgFolderTest(TembaTest):
             },
         )
 
-        msg3.archive()
+        Msg.bulk_archive(self.org, [msg3])
 
         bcast1 = self.create_broadcast(
             self.editor,
@@ -121,7 +145,7 @@ class MsgFolderTest(TembaTest):
             },
         )
 
-        msg1.archive()
+        Msg.bulk_archive(self.org, [msg1])
         msg3.delete()  # deleting an archived msg
         msg4.delete()  # deleting a visible msg
         msg5.status = "F"
@@ -146,7 +170,7 @@ class MsgFolderTest(TembaTest):
             },
         )
 
-        msg1.restore()
+        Msg.bulk_restore(self.org, [msg1])
         msg5.status = "F"  # already failed
         msg5.save(update_fields=("status",))
         msg6.status = "D"

@@ -1,14 +1,40 @@
 import iso8601
+from rest_framework.request import Request
+from rest_framework.test import APIRequestFactory
 
+from django.db.models import Prefetch
 from django.urls import reverse
 
 from temba.api.v2.serializers import format_datetime
+from temba.api.v2.views import RunsEndpoint
 from temba.tests.engine import MockSessionWriter
 
 from . import APITest
 
 
 class RunsEndpointTest(APITest):
+    def test_readonly_routing(self):
+        # GET requests should route both the main queryset and any custom Prefetch querysets to the readonly
+        # database - Django 6.1 stopped routing custom prefetches by the parent queryset's database, which broke
+        # bulk_urn_cache_initialize by mixing contacts from default with URNs from readonly
+        request = Request(APIRequestFactory().get("/api/v2/runs.json"))
+        request._request.org = self.org
+
+        view = RunsEndpoint()
+        view.request = request
+        view.kwargs = {}
+
+        queryset = view.filter_queryset(view.get_queryset())
+        view.paginate_queryset(queryset)
+
+        self.assertEqual("readonly", queryset.db)
+
+        prefetches = {p.prefetch_through: p for p in queryset._prefetch_related_lookups if isinstance(p, Prefetch)}
+        self.assertEqual({"flow", "contact", "contact__org", "start"}, set(prefetches))
+        for lookup, prefetch in prefetches.items():
+            if prefetch.queryset is not None:
+                self.assertEqual("readonly", prefetch.queryset.db, f"prefetch of {lookup} not routed to readonly")
+
     def test_endpoint(self):
         endpoint_url = reverse("api.v2.runs") + ".json"
 
@@ -187,8 +213,9 @@ class RunsEndpointTest(APITest):
             results=[joe_run1, frank_run1, frank_run2, joe_run2, joe_run3],
         )
 
-        # filter by id
+        # filter by id (deprecated, so recorded)
         self.assertGet(endpoint_url + f"?id={frank_run2.id}", [self.admin], results=[frank_run2])
+        self.assertDeprecatedRecorded("runs#filter:id", 1)
 
         # anon orgs should not have a URN field
         with self.anonymous(self.org):
@@ -260,8 +287,9 @@ class RunsEndpointTest(APITest):
             endpoint_url + f"?flow={flow1.uuid}&responded=TrUe", [self.admin], results=[frank_run1, joe_run1]
         )
 
-        # filter by contact
+        # filter by contact (deprecated, so recorded)
         self.assertGet(endpoint_url + f"?contact={joe.uuid}", [self.admin], results=[joe_run3, joe_run2, joe_run1])
+        self.assertDeprecatedRecorded("runs#filter:contact", 1)
 
         # filter by invalid contact
         self.assertGet(endpoint_url + "?contact=invalid", [self.admin], results=[])

@@ -3,15 +3,13 @@ from django.urls import reverse
 from temba.campaigns.models import Campaign, CampaignEvent
 from temba.contacts.models import ContactField
 from temba.flows.models import Flow
-from temba.tests import mock_mailroom
 from temba.triggers.models import Trigger
 
 from . import APITest
 
 
 class DefinitionsEndpointTest(APITest):
-    @mock_mailroom
-    def test_endpoint(self, mr_mocks):
+    def test_endpoint(self):
         endpoint_url = reverse("api.v2.definitions") + ".json"
 
         self.assertGetNotPermitted(endpoint_url, [None, self.agent])
@@ -35,12 +33,18 @@ class DefinitionsEndpointTest(APITest):
             self.org, self.editor, Trigger.TYPE_KEYWORD, flow1, keywords=["test"], match_type=Trigger.MATCH_FIRST_WORD
         )
 
-        # nothing specified, nothing exported
+        # nothing specified, nothing exported.. but as a deprecated endpoint, usage is recorded
         self.assertGet(
             endpoint_url,
             [self.editor],
             raw=lambda j: len(j["flows"]) == 0 and len(j["campaigns"]) == 0 and len(j["triggers"]) == 0,
         )
+        self.assertDeprecatedRecorded("definitions#get", 1)
+
+        # browsing the endpoint docs doesn't count as usage
+        response = self.client.get(reverse("api.v2.definitions"))
+        self.assertEqual(200, response.status_code)
+        self.assertDeprecatedRecorded("definitions#get", 1)
 
         # flow + all dependencies by default
         self.assertGet(

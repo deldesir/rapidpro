@@ -291,8 +291,7 @@ class CampaignCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertListFetch(list_url, [self.editor, self.admin])
         self.assertContentMenu(list_url, self.admin, ["New Campaign"])
 
-    @mock_mailroom
-    def test_list_component(self, mr_mocks):
+    def test_list_component(self):
         group = self.create_group("Reporters", contacts=[])
         campaign1 = self.create_campaign(self.org, "Welcomes", group)
         campaign2 = self.create_campaign(self.org, "Follow Ups", group)
@@ -324,9 +323,10 @@ class CampaignCRUDLTest(TembaTest, CRUDLTestMixin):
         campaign1.refresh_from_db()
         self.assertFalse(campaign1.is_archived)
 
-        # a malformed uuid fails form validation rather than erroring
+        # a malformed uuid fails form validation rather than erroring, and the user is told
         response = self.client.post(list_url, {"action": "archive", "objects": "not-a-uuid"})
         self.assertEqual(200, response.status_code)
+        self.assertToast(response, "error", "Your selection is no longer valid. Please refresh and try again.")
         campaign2.refresh_from_db()
         self.assertFalse(campaign2.is_archived)
 
@@ -335,6 +335,7 @@ class CampaignCRUDLTest(TembaTest, CRUDLTestMixin):
         other_org_campaign = self.create_campaign(self.org2, "Other Org", other_org_group)
         response = self.client.post(list_url, {"action": "archive", "objects": str(other_org_campaign.uuid)})
         self.assertEqual(200, response.status_code)
+        self.assertToast(response, "error", "Your selection is no longer valid. Please refresh and try again.")
         other_org_campaign.refresh_from_db()
         self.assertFalse(other_org_campaign.is_archived)
 
@@ -356,8 +357,7 @@ class CampaignCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertListFetch(archived_url, [self.editor, self.admin])
         self.assertContentMenu(archived_url, self.admin, [])
 
-    @mock_mailroom
-    def test_archive_and_activate(self, mr_mocks):
+    def test_archive_and_activate(self):
         group = self.create_group("Reporters", contacts=[])
         campaign = self.create_campaign(self.org, "Welcomes", group)
         other_org_group = self.create_group("Reporters", contacts=[], org=self.org2)

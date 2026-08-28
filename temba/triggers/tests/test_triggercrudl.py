@@ -1,6 +1,7 @@
 from datetime import datetime, timezone as tzone
 from unittest.mock import patch
 
+from django.test import override_settings
 from django.urls import reverse
 
 from temba.channels.models import Channel
@@ -8,7 +9,6 @@ from temba.contacts.omnibox import omnibox_serialize
 from temba.flows.models import Flow
 from temba.schedules.models import Schedule
 from temba.tests import CRUDLTestMixin, TembaTest
-from temba.tests.mailroom import mock_mailroom
 from temba.triggers.models import Trigger
 from temba.utils.views.mixins import TEMBA_MENU_SELECTION
 
@@ -53,8 +53,11 @@ class TriggerCRUDLTest(TembaTest, CRUDLTestMixin):
         # the archived trigger not counted
         self.assertPageMenu(menu_url, self.editor, ["Active (1)", "Archived (1)", "New Trigger", "Messages (1)"])
 
-    @mock_mailroom
-    def test_create(self, mr_mocks):
+        # at the org limit there's no way to create a new one (the archived trigger doesn't count towards it)
+        with override_settings(ORG_LIMIT_DEFAULTS={"triggers": 1}):
+            self.assertPageMenu(menu_url, self.editor, ["Active (1)", "Archived (1)", "Messages (1)"])
+
+    def test_create(self):
         create_url = reverse("triggers.trigger_create")
         create_new_convo_url = reverse("triggers.trigger_create_new_conversation")
         create_inbound_call_url = reverse("triggers.trigger_create_inbound_call")
@@ -681,7 +684,7 @@ class TriggerCRUDLTest(TembaTest, CRUDLTestMixin):
             match_type=Trigger.MATCH_ONLY_WORD,
         )
 
-        update_url = reverse("triggers.trigger_update", args=[trigger.id])
+        update_url = reverse("triggers.trigger_update", args=[trigger.uuid])
 
         self.assertRequestDisallowed(update_url, [None, self.agent, self.admin2])
         self.assertUpdateFetch(
@@ -753,7 +756,7 @@ class TriggerCRUDLTest(TembaTest, CRUDLTestMixin):
         )
         trigger = Trigger.create(self.org, self.admin, Trigger.TYPE_INBOUND_CALL, flow2, channel=call_channel)
 
-        update_url = reverse("triggers.trigger_update", args=[trigger.id])
+        update_url = reverse("triggers.trigger_update", args=[trigger.uuid])
 
         self.assertRequestDisallowed(update_url, [None, self.agent, self.admin2])
         self.assertUpdateFetch(
@@ -823,7 +826,7 @@ class TriggerCRUDLTest(TembaTest, CRUDLTestMixin):
         next_fire = trigger.schedule.calculate_next_fire(datetime(2021, 6, 23, 12, 0, 0, 0, tzone.utc))  # Wed 23rd
         self.assertEqual(datetime(2021, 6, 25, 12, 0, 0, 0).replace(tzinfo=tz), next_fire)  # Fri 25th
 
-        update_url = reverse("triggers.trigger_update", args=[trigger.id])
+        update_url = reverse("triggers.trigger_update", args=[trigger.uuid])
 
         self.assertRequestDisallowed(update_url, [None, self.agent, self.admin2])
         self.assertUpdateFetch(
@@ -1215,6 +1218,26 @@ class TriggerCRUDLTest(TembaTest, CRUDLTestMixin):
         # check that the active trigger is unaffected by the bulk "delete all"
         trigger7.refresh_from_db()
         self.assertTrue(trigger7.is_active)
+
+    def test_archived_restore_limit(self):
+        flow = self.create_flow("Test")
+
+        trigger1 = Trigger.create(self.org, self.admin, Trigger.TYPE_CATCH_ALL, flow, is_archived=True)
+        trigger2 = Trigger.create(self.org, self.admin, Trigger.TYPE_INBOUND_CALL, flow, is_archived=True)
+
+        archived_url = reverse("triggers.trigger_archived")
+        self.login(self.admin)
+
+        # trying to restore more triggers than the limit allows restores what fits and toasts about the rest
+        with override_settings(ORG_LIMIT_DEFAULTS={"triggers": 1}):
+            response = self.client.post(
+                archived_url, {"action": "restore", "objects": [str(trigger1.uuid), str(trigger2.uuid)]}
+            )
+            self.assertToast(response, "info", "This workspace has reached its limit of triggers.")
+
+        # exactly one was restored, the other left archived
+        self.assertEqual(1, self.org.triggers.filter(is_archived=False).count())
+        self.assertEqual(1, self.org.triggers.filter(is_archived=True).count())
 
     def test_folder(self):
         flow1 = self.create_flow("Flow 1")

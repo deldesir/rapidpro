@@ -1,8 +1,23 @@
 {
+  // Test container for components: used by CI (devcontainers/ci) and locally as a
+  // `devcontainer exec` target, driven with --workspace-folder pointed at the repo
+  // root. The repo mounts at /workspaces/temba and commands run from its components/
+  // subdirectory.
   "name": "temba-components-ci",
-  "dockerComposeFile": "docker-compose.yml",
-  "service": "components",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
   "workspaceFolder": "/workspaces/temba/components",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/temba,type=bind,consistency=cached",
+  "runArgs": [
+    // name + grouping label; a launcher may append suffixes to keep side-by-side
+    // checkouts apart
+    "--name", "components${localEnv:DEVCON_NAME_SUFFIX}",
+    "--label", "com.docker.compose.project=dev${localEnv:DEVCON_PROJECT_SUFFIX}",
+    // Chromium needs a larger /dev/shm than docker's 64MB default or it crashes
+    // rendering big screenshots
+    "--shm-size", "1g"
+  ],
   "features": {
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
