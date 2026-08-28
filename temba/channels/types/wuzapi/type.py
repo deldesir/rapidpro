@@ -16,7 +16,6 @@ class WuzapiType(ChannelType):
     category = ChannelType.Category.PHONE
     name = "Wuzapi"
     
-    courier_url = r"^c/wz/(?P<uuid>[a-z0-9\-]+)/(?P<action>receive|status)$"
     
     # We don't expose a unified courier URL pattern here because we use a specific view
     # But ChannelType requires get_urls() to return them.
