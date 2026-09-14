@@ -78,6 +78,14 @@ class ColorPickerWidget(TembaWidgetMixin, forms.TextInput):  # pragma: needs cov
     template_name = "utils/forms/color_picker.html"
 
 
+class ColorInputWidget(TembaWidgetMixin, forms.TextInput):
+    """
+    A color chosen with the browser's own picker - a swatch with the hex alongside, clearable unless required.
+    """
+
+    template_name = "utils/forms/color_input.html"
+
+
 class ImagePickerWidget(TembaWidgetMixin, forms.ClearableFileInput):
     template_name = "utils/forms/image_picker.html"
 

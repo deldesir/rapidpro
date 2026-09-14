@@ -174,6 +174,14 @@ export class HelpdeskCards extends RapidElement {
         width: 100%;
       }
 
+      /* whatever the host puts above the cards sits in the same column, and scrolls away with them */
+      .banner {
+        display: block;
+        margin: 0 auto 12px;
+        max-width: 800px;
+        width: 100%;
+      }
+
       .rows {
         display: block;
       }
@@ -768,6 +776,9 @@ export class HelpdeskCards extends RapidElement {
     // so only forward when the host actually gave us one
     const hasSubtitle = this.querySelector('[slot="subtitle"]');
 
+    // anything the host wants shown above the cards - the site's domain, say - goes at the top of the column
+    const hasBanner = this.querySelector('[slot="banner"]');
+
     return html`
       <temba-page-header content-menu-endpoint=${this.contentMenuEndpoint}>
         <slot name="title" slot="title">${this.listTitle}</slot>
@@ -776,6 +787,9 @@ export class HelpdeskCards extends RapidElement {
           : null}
       </temba-page-header>
       <div class="cards">
+        ${hasBanner
+          ? html`<div class="banner"><slot name="banner"></slot></div>`
+          : null}
         ${this.loaded && this.sections.length === 0
           ? html`<div class="empty-message">${this.emptyMessage}</div>`
           : html`

@@ -27,6 +27,7 @@ from temba.channels.models import Channel, ChannelEvent, ChannelLog
 from temba.contacts.models import URN, Contact, ContactField, ContactGroup, ContactImport
 from temba.flows.models import Flow, FlowRun, FlowSession, FlowStart
 from temba.ivr.models import Call
+from temba.knowledge.models import HelpSite
 from temba.locations.models import AdminBoundary, BoundaryAlias
 from temba.mailroom.events import Event
 from temba.msgs.models import Broadcast, Label, Msg
@@ -129,6 +130,9 @@ class TembaTest(SmartminTest):
         for role in OrgRole:
             role.group  # noqa
             role.permissions  # noqa
+
+        # likewise the help site domains that every request is checked against are cached, so warm that cache
+        HelpSite.get_domains()
 
         self.maxDiff = None
 

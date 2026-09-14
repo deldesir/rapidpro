@@ -276,6 +276,29 @@ describe(TAG, () => {
     });
   });
 
+  it('shows what the host puts above the cards, and nothing when it puts nothing', async () => {
+    const plain = await getCards();
+    assert.isNull(plain.shadowRoot.querySelector('.banner'));
+
+    const cards = (await getComponent(
+      TAG,
+      { endpoint: ENDPOINT },
+      '<div slot="banner" id="site-domain">help.example.com</div>',
+      800
+    )) as HelpdeskCards;
+    await waitForCondition(() => (cards as any).sections.length > 0);
+    await cards.updateComplete;
+
+    const banner = cards.shadowRoot.querySelector(
+      '.banner slot'
+    ) as HTMLSlotElement;
+    assert.isOk(banner);
+    assert.equal(
+      (banner.assignedElements()[0] as HTMLElement).id,
+      'site-domain'
+    );
+  });
+
   it('renders a card per section with its articles', async () => {
     const cards = await getCards();
 

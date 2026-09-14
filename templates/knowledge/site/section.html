@@ -1,0 +1,33 @@
+{% extends "knowledge/site/base.html" %}
+{% load i18n %}
+
+{% block title %}
+  {{ section.title }} | {{ site.title }}
+{% endblock title %}
+{% block description %}
+  {% if section.description %}
+    {{ section.description }}
+  {% else %}
+    {{ section.title }}
+  {% endif %}
+{% endblock description %}
+{% block content %}
+  <nav class="breadcrumbs" aria-label="{% trans "Breadcrumb" %}">
+    <a href="{{ prefix }}/">{% trans "Home" %}</a>
+    <span>{{ section.title }}</span>
+  </nav>
+  <header class="page-header">
+    <h1>{{ section.title }}</h1>
+    {% if section.description %}<p class="lead">{{ section.description }}</p>{% endif %}
+  </header>
+  <div class="article-list">
+    {% for article in articles %}
+      <a class="article-item" href="{{ prefix }}/{{ section.slug }}/{{ article.slug }}/">
+        <h2>{{ article.title }}</h2>
+        {% with excerpt=article.excerpt %}
+          {% if excerpt %}<p>{{ excerpt }}</p>{% endif %}
+        {% endwith %}
+      </a>
+    {% endfor %}
+  </div>
+{% endblock content %}

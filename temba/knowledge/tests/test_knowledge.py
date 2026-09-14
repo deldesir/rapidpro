@@ -7,8 +7,10 @@ from django.test.utils import override_settings
 
 from temba.knowledge.models import (
     Article,
+    ArticleCount,
     ArticleImage,
     ColumnStylesProcessor,
+    HelpSite,
     Knowledge,
     KnowledgeChunk,
     KnowledgeItem,
@@ -176,12 +178,16 @@ class KnowledgeTest(TembaTest):
             size=3,
             created_by=self.admin,
         )
+        ArticleCount.record_view(parent)
+        site = HelpSite.get_or_create(helpdesk, self.admin)
 
         helpdesk.delete()
 
         self.assertFalse(Knowledge.objects.filter(id=helpdesk.id).exists())
         self.assertFalse(Article.objects.filter(id__in=(parent.id, child.id)).exists())
         self.assertEqual(0, ArticleImage.objects.count())
+        self.assertEqual(0, ArticleCount.objects.count())
+        self.assertFalse(HelpSite.objects.filter(id=site.id).exists())
         self.assertEqual(0, KnowledgeChunk.objects.count())
         self.assertFalse(public_file_storage.exists(image_path))
 
@@ -492,6 +498,15 @@ class ArticleTest(TembaTest):
         # images survive, since screenshots are the point of them
         article.body = "![shot](https://example.com/shot.png)"
         self.assertEqual('<p><img alt="shot" src="https://example.com/shot.png"></p>', article.as_html())
+
+        # an uploaded image is referenced by its storage key, which is resolved to where storage serves it from only
+        # as the article is rendered - the fragment riding along
+        article.body = "![shot](orgs/1/knowledge/shot.png#size=small) ![abs](/local/shot.png)"
+        self.assertEqual(
+            f'<p><img alt="shot" class="size-small" src="{public_file_storage.url("orgs/1/knowledge/shot.png")}#size=small"> '
+            '<img alt="abs" src="/local/shot.png"></p>',
+            article.as_html(),
+        )
 
         # the size and layout an image was given ride the fragment of its URL and come out as classes on the <img>,
         # with the src untouched - fragment and all

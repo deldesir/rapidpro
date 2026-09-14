@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-10 10:50-0700\n"
+"POT-Creation-Date: 2026-09-14 15:32-0700\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Language: \n"
 "MIME-Version: 1.0\n"
@@ -2793,6 +2793,66 @@ msgstr ""
 msgid "Description"
 msgstr ""
 
+msgid "The name of your help site, shown in its header."
+msgstr ""
+
+msgid "Tagline"
+msgstr ""
+
+msgid "A welcome shown above the search on the home page."
+msgstr ""
+
+msgid "Footer"
+msgstr ""
+
+msgid "Shown at the bottom of every page."
+msgstr ""
+
+msgid "Primary Color"
+msgstr ""
+
+msgid "Used for links, buttons and highlights."
+msgstr ""
+
+msgid "Header Color"
+msgstr ""
+
+msgid "The background of the header on every page."
+msgstr ""
+
+msgid "Bubble 1"
+msgstr ""
+
+msgid "None"
+msgstr ""
+
+msgid "Bubble 2"
+msgstr ""
+
+msgid "Bubble 3"
+msgstr ""
+
+msgid "Not a valid color."
+msgstr ""
+
+msgid "Domain"
+msgstr ""
+
+msgid "A domain of your own to serve your help site on, such as help.example.com."
+msgstr ""
+
+msgid "Whether the site is available to the public on its domain."
+msgstr ""
+
+msgid "Not a valid domain name."
+msgstr ""
+
+msgid "Can't use the default domain."
+msgstr ""
+
+msgid "This domain is already in use by another help site."
+msgstr ""
+
 msgid "Shortcuts"
 msgstr ""
 
@@ -2815,6 +2875,9 @@ msgid "Draft"
 msgstr ""
 
 msgid "Published"
+msgstr ""
+
+msgid "Not available"
 msgstr ""
 
 msgid "New Source"
@@ -2852,6 +2915,9 @@ msgstr ""
 msgid "New Section"
 msgstr ""
 
+msgid "Site Settings"
+msgstr ""
+
 msgid "New Article"
 msgstr ""
 
@@ -2863,6 +2929,12 @@ msgstr ""
 
 #, python-format
 msgid "Limit of %d images reached."
+msgstr ""
+
+msgid "Site Domain"
+msgstr ""
+
+msgid "No domain has been set."
 msgstr ""
 
 msgid "The name for our alias"
@@ -5489,6 +5561,54 @@ msgstr ""
 msgid "Help articles written by your workspace. Published articles are searchable by AI agents."
 msgstr ""
 
+msgid "Your help site is live on this domain."
+msgstr ""
+
+msgid "Verified, but not yet enabled for the public."
+msgstr ""
+
+msgid "Add the DNS records to verify this domain."
+msgstr ""
+
+msgid "No domain yet"
+msgstr ""
+
+msgid "Set up a domain of your own to serve your help site to the public."
+msgstr ""
+
+msgid "Set up"
+msgstr ""
+
+msgid "Not verified"
+msgstr ""
+
+msgid "Add these records to the DNS for"
+msgstr ""
+
+msgid "Verified. Your help site is served on this domain."
+msgstr ""
+
+msgid "Not verified yet. Once the records are in place, check to have your domain verified and served."
+msgstr ""
+
+msgid "Check"
+msgstr ""
+
+msgid "Save, and once the records are in place come back to check them."
+msgstr ""
+
+msgid "Checking..."
+msgstr ""
+
+msgid "The TXT record wasn't found yet. DNS changes can take a while to spread, so try again later."
+msgstr ""
+
+msgid "The check failed. Please try again."
+msgstr ""
+
+msgid "The background colors articles can give their columns."
+msgstr ""
+
 #, python-format
 msgid "You are about to delete the knowledge source <b>%(object)s</b> and everything indexed from it. There is no way to undo this. Are you sure?"
 msgstr ""
@@ -5528,6 +5648,73 @@ msgid "Pages"
 msgstr ""
 
 msgid "No pages yet"
+msgstr ""
+
+msgid "Page not found"
+msgstr ""
+
+msgid "The page you're looking for isn't here. It may have moved, or been unpublished."
+msgstr ""
+
+msgid "Back to the home page"
+msgstr ""
+
+msgid "Breadcrumb"
+msgstr ""
+
+msgid "Home"
+msgstr ""
+
+#, python-format
+msgid "Last updated %(date)s"
+msgstr ""
+
+msgid "In this section"
+msgstr ""
+
+msgid "This is a preview of your help site as its readers will see it."
+msgstr ""
+
+msgid "Site settings"
+msgstr ""
+
+msgid "Search articles"
+msgstr ""
+
+msgid "How can we help?"
+msgstr ""
+
+msgid "Search for answers"
+msgstr ""
+
+msgid "Sections"
+msgstr ""
+
+#, python-format
+msgid "%(counter)s article"
+msgid_plural "%(counter)s articles"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Nothing has been published here yet."
+msgstr ""
+
+msgid "Popular articles"
+msgstr ""
+
+#, python-format
+msgid "%(counter)s result for “%(query)s”"
+msgid_plural "%(counter)s results for “%(query)s”"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "No articles matched your search. Try different words, or browse the sections on the home page."
+msgstr ""
+
+msgid "This help site isn't available"
+msgstr ""
+
+msgid "There's nothing published at this address right now."
 msgstr ""
 
 #, python-format
@@ -5681,9 +5868,6 @@ msgstr ""
 
 #, python-format
 msgid "User %(email)s accepted an invitation to join your workspace."
-msgstr ""
-
-msgid "None"
 msgstr ""
 
 msgid "Previous"

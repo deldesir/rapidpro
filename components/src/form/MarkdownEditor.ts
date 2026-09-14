@@ -12,7 +12,7 @@ import {
   tokenCss
 } from '../excellent/token-styles';
 import { markdown } from '../markdown';
-import { getUrl, postFormData, postJSON } from '../utils';
+import { getUrl, postFormData } from '../utils';
 import {
   Block,
   blockOf,
@@ -456,9 +456,37 @@ const flattenLayoutTables = (root: Element): boolean => {
   return changed;
 };
 
+/** whether an image reference is relative - a key in the org's public storage rather than an address of its own.
+ * That's how uploads are written, so an article doesn't bake in wherever storage happens to be served from. */
+export const isRelativeImage = (reference: string): boolean =>
+  !!reference &&
+  !/^[a-z][a-z0-9+.-]*:/i.test(reference) &&
+  !reference.startsWith('/') &&
+  !reference.startsWith('#');
+
+/** the reference an image was written with - kept beside a relative one while its src carries the resolved
+ * address the browser can actually load */
+export const imageReference = (img: Element): string =>
+  img.getAttribute('data-src') ?? (img.getAttribute('src') || '');
+
+/** writes an image's reference, resolving a relative one against the storage root for display */
+const setImageReference = (
+  img: Element,
+  reference: string,
+  storageUrl: string
+): void => {
+  if (isRelativeImage(reference) && storageUrl) {
+    img.setAttribute('data-src', reference);
+    img.setAttribute('src', `${storageUrl.replace(/\/+$/, '')}/${reference}`);
+  } else {
+    img.removeAttribute('data-src');
+    img.setAttribute('src', reference);
+  }
+};
+
 /** applies what an image's fragment asks for as the classes the document styles render, touching nothing else */
 const decorateImage = (img: HTMLImageElement): void => {
-  const { size, layout } = imageOptions(img.getAttribute('src') || '');
+  const { size, layout } = imageOptions(imageReference(img));
 
   const classes = [...img.classList].filter(
     (name) => !name.startsWith('size-') && !name.startsWith('layout-')
@@ -505,6 +533,27 @@ const decorateImage = (img: HTMLImageElement): void => {
  * rendered, server sanitized HTML, which is where sanitizing belongs. Remarkable is configured to escape rather than
  * pass through raw HTML, so even the author's own markup can't execute here.
  */
+/** how a link names another article - by uuid, so the link holds through any retitling */
+export const ARTICLE_LINK = 'article:';
+
+/** an article as the articles endpoint lists it - what a link can be pointed at */
+export interface ArticleTarget {
+  uuid: string;
+  title: string;
+  status: string;
+  parent: string | null;
+  depth: number;
+}
+
+/** whether what's been typed into the link bar is an address rather than a search: it has a scheme, or reads as a
+ * path or a host. A title has none of those. */
+export const isAddress = (text: string): boolean =>
+  /^[a-z][a-z0-9+.-]*:/i.test(text) ||
+  text.startsWith('/') ||
+  text.startsWith('#') ||
+  /^www\./i.test(text) ||
+  /^[\w-]+(\.[\w-]+)+(\/|$)/.test(text);
+
 export class MarkdownEditor extends FieldElement {
   static get styles() {
     return css`
@@ -692,6 +741,58 @@ export class MarkdownEditor extends FieldElement {
         white-space: nowrap;
       }
 
+      /* the link bar stacks its matches under the box they were typed into */
+      .popover.link-popover {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .popover .link-row {
+        display: flex;
+        align-items: center;
+        gap: 0.4em;
+      }
+
+      .popover .link-kind {
+        color: var(--color-text-help);
+        flex-shrink: 0;
+      }
+
+      .popover .link-matches {
+        display: flex;
+        flex-direction: column;
+        margin-top: 0.3em;
+        border-top: 1px solid var(--color-widget-border);
+        padding-top: 0.3em;
+        max-height: 14em;
+        overflow-y: auto;
+      }
+
+      .popover .link-match {
+        cursor: pointer;
+        padding: 0.3em 0.4em;
+        border-radius: var(--curvature);
+        line-height: 1.25;
+      }
+
+      .popover .link-match:hover {
+        background: var(--color-selection);
+      }
+
+      .popover .link-match.none {
+        cursor: default;
+        color: var(--color-text-help);
+      }
+
+      .popover .link-match.draft .link-match-title {
+        color: var(--color-text-help);
+      }
+
+      .popover .link-match-section {
+        font-size: 0.85em;
+        color: var(--color-text-help);
+      }
+
       /* The column whose styling is being edited, traced in dashed blue over the gray guidelines - just that
          column, so in a two column row the other column keeps its gray. */
       .column-ring {
@@ -748,57 +849,9 @@ export class MarkdownEditor extends FieldElement {
         box-sizing: border-box;
       }
 
-      /* A palette swatch is the color input itself, wearing swatch clothes - the browser paints its value and
-         anchors the native picker to it, so the picker can only ever open where the swatch is. */
-      .popover input.swatch {
-        appearance: none;
-        -webkit-appearance: none;
-        padding: 0;
-        background: none;
-      }
-
-      .popover input.swatch::-webkit-color-swatch-wrapper {
-        padding: 0;
-      }
-
-      .popover input.swatch::-webkit-color-swatch {
-        border: none;
-        border-radius: 3px;
-      }
-
-      .popover input.swatch::-moz-color-swatch {
-        border: none;
-        border-radius: 3px;
-      }
-
       .popover .swatch.on {
         outline: 2px solid var(--color-focus);
         outline-offset: 1px;
-      }
-
-      /* The right-most color is the only one that can be removed - the palette shrinks from its end the way it
-         grew. Selecting it draws the selection border around the swatch and its trash together. */
-      .popover .swatch-cluster {
-        display: flex;
-        align-items: center;
-        gap: 3px;
-        border-radius: 5px;
-        outline: 2px solid var(--color-focus);
-        outline-offset: 1px;
-      }
-
-      .popover .swatch-trash {
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 18px;
-        height: 18px;
-        color: var(--color-text-dark);
-      }
-
-      .popover .swatch-trash:hover {
-        color: var(--color-error, #c33);
       }
 
       /* the no-color choice - blank with a slash, always first, and never the org's to edit or remove */
@@ -855,39 +908,6 @@ export class MarkdownEditor extends FieldElement {
         align-self: stretch;
         background: var(--color-widget-border);
         margin: 0 0.2em;
-      }
-
-      .popover input[type='color'] {
-        width: 24px;
-        height: 22px;
-        padding: 0;
-        border: 1px solid var(--color-widget-border);
-        border-radius: 4px;
-        background: none;
-        cursor: pointer;
-      }
-
-      /* Authoring a new palette color: a swatch-shaped white square with a centered plus, sitting in the row like
-         the color it's about to become. Its input rides invisibly under the label so the click is the label's. */
-      .popover .add-color {
-        position: relative;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: #fff;
-        color: var(--color-text-dark);
-        /* it's a label, and the field styles give every label a bottom margin that would float it off center */
-        margin: 0;
-      }
-
-      .popover .add-color input[type='color'] {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        border: none;
-        opacity: 0;
-        cursor: pointer;
       }
 
       textarea.document {
@@ -1111,10 +1131,23 @@ export class MarkdownEditor extends FieldElement {
   @property({ type: String })
   endpoint: string;
 
-  /** Where the org's shared color palette lives - GET {colors: {index: hex}}, POST the same shape back. Articles
-   * embed the index, so recoloring an entry here restyles its every use across every article. */
+  /** The root of the public storage that uploaded images live in. Their references are written relative to it -
+   * the storage key alone - so the article holds no address that storage moving would break; this is what turns a
+   * reference back into something the browser can show while it's being edited. */
+  @property({ type: String, attribute: 'storage-url' })
+  storageUrl = '';
+
+  /** Where the org's shared color palette lives - GET {colors: {index: hex}}. It's set in the help site's settings,
+   * so it's read here rather than written; articles embed the index, so recoloring an entry there restyles its
+   * every use across every article. */
   @property({ type: String, attribute: 'colors-endpoint' })
   colorsEndpoint = '';
+
+  /** Where the helpdesk's articles are listed - GET {results: [{uuid, title, status, parent, depth}]} - so a link
+   * to another article can be picked by title. Such a link is written as article:<uuid>, the target's identity
+   * rather than its address, and holds through any retitling of either article. */
+  @property({ type: String, attribute: 'articles-endpoint' })
+  articlesEndpoint = '';
 
   @property({ type: String })
   accept = 'image/gif,image/jpeg,image/png,image/webp';
@@ -1152,6 +1185,14 @@ export class MarkdownEditor extends FieldElement {
   /** the link under the caret, so it can be edited without ever showing its markdown. null when there isn't one. */
   @state()
   private linkHref: string = null;
+
+  /** the other articles a link can point at, by title - fetched once from articlesEndpoint */
+  @state()
+  private articles: ArticleTarget[] = [];
+
+  /** what's been typed into the link bar to find an article by, while it isn't an address - null when nothing has */
+  @state()
+  private linkQuery: string = null;
 
   /** the image the author clicked, ringed and offered its size controls. null when none is picked. */
   @state()
@@ -1337,6 +1378,10 @@ export class MarkdownEditor extends FieldElement {
       this.fetchColors();
     }
 
+    if (changes.has('articlesEndpoint') && this.articlesEndpoint) {
+      this.fetchArticles();
+    }
+
     if (!changes.has('value') && !changes.has('sourceMode')) {
       return;
     }
@@ -1457,6 +1502,8 @@ export class MarkdownEditor extends FieldElement {
     // Sizing classes go on before the blocks are filed, so a decorated image is part of what its block rendered as
     // rather than an edit to it - and cell breaks and column stylesheets are realized here for the same reason.
     for (const img of [...doc.querySelectorAll('img')]) {
+      // a relative reference is shown from storage but kept as written, so reading the document back leaves it
+      setImageReference(img, imageReference(img), this.storageUrl);
       decorateImage(img as HTMLImageElement);
     }
     for (const cell of [...doc.querySelectorAll('td, th')]) {
@@ -2188,6 +2235,7 @@ export class MarkdownEditor extends FieldElement {
     const href = this.anchor ? this.anchor.getAttribute('href') || '' : null;
     if (href !== this.linkHref) {
       this.linkHref = href;
+      this.linkQuery = null;
     }
 
     // markdown has no tables inside tables, so inside a cell - the caret there, or an image there selected -
@@ -2344,15 +2392,78 @@ export class MarkdownEditor extends FieldElement {
   }
 
   private handleLinkInput(evt: Event): void {
-    const href = (evt.target as HTMLInputElement).value;
+    const typed = (evt.target as HTMLInputElement).value;
     if (!this.anchor) {
       return;
     }
 
+    // with articles to choose from, anything that isn't an address is a search for one of them by title - the
+    // link keeps pointing where it did until one is picked
+    if (this.articles.length && !isAddress(typed)) {
+      this.linkQuery = typed;
+      return;
+    }
+
+    this.linkQuery = null;
+    this.setLinkHref(typed);
+  }
+
+  private handleLinkKeydown(evt: KeyboardEvent): void {
+    // enter takes the best match, escape gives up the search and shows the link as it is
+    if (evt.key === 'Enter' && this.linkQuery !== null) {
+      evt.preventDefault();
+      const [first] = this.matchingArticles();
+      if (first) {
+        this.linkToArticle(first);
+      }
+    } else if (evt.key === 'Escape' && this.linkQuery !== null) {
+      evt.preventDefault();
+      this.linkQuery = null;
+    }
+  }
+
+  private linkToArticle(article: ArticleTarget): void {
+    this.linkQuery = null;
+    this.setLinkHref(`${ARTICLE_LINK}${article.uuid}`);
+  }
+
+  private setLinkHref(href: string): void {
+    if (!this.anchor) {
+      return;
+    }
     this.anchor.setAttribute('href', href);
     this.linkHref = href;
     this.serialize();
     this.fireEvent('change');
+  }
+
+  /** the article a link points at, when it's one of ours and we know it */
+  private linkedArticle(href: string): ArticleTarget {
+    if (!href || !href.toLowerCase().startsWith(ARTICLE_LINK)) {
+      return null;
+    }
+    const uuid = href.substring(ARTICLE_LINK.length).toLowerCase();
+    return this.articles.find((a) => a.uuid.toLowerCase() === uuid) || null;
+  }
+
+  /** the articles whose titles the search matches, a few at most, sections and all - a section page is a link
+   * target too */
+  private matchingArticles(): ArticleTarget[] {
+    const query = (this.linkQuery || '').trim().toLowerCase();
+    if (!query) {
+      return [];
+    }
+    return this.articles
+      .filter((a) => a.title.toLowerCase().includes(query))
+      .slice(0, 8);
+  }
+
+  /** what to call the section an article is filed under, for telling two articles of one title apart */
+  private sectionOf(article: ArticleTarget): string {
+    const section = article.parent
+      ? this.articles.find((a) => a.uuid === article.parent)
+      : null;
+    return section ? section.title : '';
   }
 
   private handleLinkRemove(): void {
@@ -2381,10 +2492,12 @@ export class MarkdownEditor extends FieldElement {
       return;
     }
 
-    const current = imageOptions(img.getAttribute('src') || '');
-    img.setAttribute(
-      'src',
-      withImageOptions(img.getAttribute('src') || '', size, current.layout)
+    const reference = imageReference(img);
+    const current = imageOptions(reference);
+    setImageReference(
+      img,
+      withImageOptions(reference, size, current.layout),
+      this.storageUrl
     );
     decorateImage(img);
 
@@ -2440,6 +2553,15 @@ export class MarkdownEditor extends FieldElement {
   // keeps color use consistent across articles: recoloring an entry restyles its every use at once, and removing
   // one leaves its references meaning nothing until an entry exists at that index again.
 
+  private async fetchArticles(): Promise<void> {
+    try {
+      const response = await getUrl(this.articlesEndpoint);
+      this.articles = response.json?.results || [];
+    } catch (error) {
+      console.warn('Failed to fetch articles', error);
+    }
+  }
+
   private async fetchColors(): Promise<void> {
     try {
       const response = await getUrl(this.colorsEndpoint);
@@ -2463,65 +2585,6 @@ export class MarkdownEditor extends FieldElement {
       }
     }
     this.requestUpdate();
-  }
-
-  /** shows a recolor while the picker drags, before it's committed to the org */
-  private previewColor(key: string, hex: string): void {
-    this.colors = { ...this.colors, [key]: hex };
-    this.redecorate();
-  }
-
-  /** the palette as the org now wants it - shown immediately, saved behind */
-  private saveColors(next: Record<string, string>): void {
-    this.colors = next;
-    this.redecorate();
-    if (this.colorsEndpoint) {
-      postJSON(this.colorsEndpoint, { colors: next }).catch((error) => {
-        console.warn('Failed to save colors', error);
-      });
-    }
-  }
-
-  /** the slot a new color is being picked into, taken on the first movement of the picker so the block shows the
-   * choice as it's made. null when no pick is in flight. */
-  private addingSlot: number = null;
-
-  /** paints the block live as a new color is picked, before the pick is committed */
-  private previewNewColor(index: number, hex: string): void {
-    if (this.addingSlot === null) {
-      let slot = 1;
-      while (this.colors[slot]) {
-        slot++;
-      }
-      this.addingSlot = slot;
-
-      // the column takes the new index straight away, so every movement of the picker shows on the block
-      const table = this.column?.closest('table');
-      if (table) {
-        this.setColumnStyle(table, index, { background: String(slot) });
-        this.edited();
-      }
-    }
-    this.previewColor(String(this.addingSlot), hex);
-  }
-
-  /** commits the picked color to the org's palette at the slot the preview took */
-  private addColor(index: number, hex: string): void {
-    let slot = this.addingSlot;
-    if (slot === null) {
-      // the picker never moved, so no preview claimed a slot - claim one and paint the column now
-      slot = 1;
-      while (this.colors[slot]) {
-        slot++;
-      }
-      const table = this.column?.closest('table');
-      if (table) {
-        this.setColumnStyle(table, index, { background: String(slot) });
-        this.edited();
-      }
-    }
-    this.addingSlot = null;
-    this.saveColors({ ...this.colors, [slot]: hex });
   }
 
   private applyColumnBackground(index: number, key: string): void {
@@ -3096,7 +3159,23 @@ export class MarkdownEditor extends FieldElement {
           : renderBlock(source.markdown)
     );
 
+    // what was pasted was rendered from markdown, so any image in it is a bare reference again
+    this.resolveImages();
     this.edited('insertFromPaste');
+  }
+
+  /** shows every image in the document from storage that isn't already - a reference that arrived rendered rather
+   * than through populate, from a paste say */
+  private resolveImages(): void {
+    const doc = this.doc;
+    if (!doc) {
+      return;
+    }
+    for (const img of [...doc.querySelectorAll('img')]) {
+      if (!img.hasAttribute('data-src')) {
+        setImageReference(img, imageReference(img), this.storageUrl);
+      }
+    }
   }
 
   /** the markdown for pasted markup, or null when it isn't anything the document could hold */
@@ -3178,8 +3257,12 @@ export class MarkdownEditor extends FieldElement {
         // the name is alt text inside brackets, and clean_name deliberately keeps [ ] ( ) in filenames
         const alt = (response.json.name || '').replace(/[[\]()]/g, '');
 
+        // an upload is written by its storage key when the endpoint gives one, so the article never holds the
+        // address storage is served from - the url is only for showing it now
+        const written = response.json.path || response.json.url;
+
         if (source) {
-          const reference = `![${alt}](${response.json.url})`;
+          const reference = `![${alt}](${written})`;
           const document = this.value || '';
           this.value =
             document.substring(0, start) + reference + document.substring(end);
@@ -3189,7 +3272,7 @@ export class MarkdownEditor extends FieldElement {
           start += reference.length;
           end = start;
         } else {
-          target = this.insertImage(target, response.json.url, alt);
+          target = this.insertImage(target, written, response.json.url, alt);
         }
       } catch (e) {
         this.error = msg('Unable to upload file.');
@@ -3210,7 +3293,12 @@ export class MarkdownEditor extends FieldElement {
    * browser so it lands in the undo stack, which means moving the selection there first - and back again afterwards if
    * the author has moved on in the meantime, since being yanked back mid-sentence is worse than not seeing it land.
    */
-  private insertImage(target: Range, url: string, alt: string): Range {
+  private insertImage(
+    target: Range,
+    reference: string,
+    url: string,
+    alt: string
+  ): Range {
     const doc = this.doc;
     if (!doc || !target || !doc.contains(target.startContainer)) {
       return target;
@@ -3224,9 +3312,11 @@ export class MarkdownEditor extends FieldElement {
 
     doc.focus();
     this.select(target);
+    const source =
+      reference !== url ? ` data-src="${escapeHtml(reference)}"` : '';
     this.exec(
       'insertHTML',
-      `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}">`
+      `<img src="${escapeHtml(url)}"${source} alt="${escapeHtml(alt)}">`
     );
 
     const after = this.range?.cloneRange() || target;
@@ -3278,7 +3368,7 @@ export class MarkdownEditor extends FieldElement {
       return null;
     }
 
-    const current = imageOptions(this.image.getAttribute('src') || '').size;
+    const current = imageOptions(imageReference(this.image)).size;
     const sizes = [
       { value: '', label: msg('Original') },
       { value: 'small', label: msg('Small') },
@@ -3321,9 +3411,20 @@ export class MarkdownEditor extends FieldElement {
       return null;
     }
 
+    // an article link shows the article it points at rather than its uuid; while a search is being typed the box
+    // holds the search instead
+    const linked = this.linkedArticle(this.linkHref);
+    const shown =
+      this.linkQuery !== null
+        ? this.linkQuery
+        : linked
+          ? linked.title
+          : this.linkHref;
+    const matches = this.matchingArticles();
+
     return html`
       <div
-        class="popover ${rect.top < 44 ? 'below' : ''}"
+        class="popover link-popover ${rect.top < 44 ? 'below' : ''}"
         style="left:${rect.left}px;top:${rect.top < 44
           ? rect.top + rect.height + 6
           : rect.top - 6}px"
@@ -3333,15 +3434,57 @@ export class MarkdownEditor extends FieldElement {
           }
         }}
       >
-        <input
-          type="text"
-          .value=${this.linkHref}
-          placeholder="https://"
-          @input=${this.handleLinkInput}
-        />
-        <div class="popover-action" @click=${this.handleLinkRemove}>
-          ${msg('Remove')}
+        <div class="link-row">
+          ${linked && this.linkQuery === null
+            ? html`<temba-icon
+                class="link-kind"
+                name=${Icon.help}
+                title=${msg('Links to an article')}
+              ></temba-icon>`
+            : null}
+          <input
+            type="text"
+            spellcheck="false"
+            .value=${shown}
+            placeholder=${this.articles.length
+              ? msg('https:// or an article title')
+              : 'https://'}
+            @input=${this.handleLinkInput}
+            @keydown=${this.handleLinkKeydown}
+          />
+          <div class="popover-action" @click=${this.handleLinkRemove}>
+            ${msg('Remove')}
+          </div>
         </div>
+        ${matches.length
+          ? html`
+              <div class="link-matches">
+                ${matches.map(
+                  (article) => html`
+                    <div
+                      class="link-match ${article.status === 'draft'
+                        ? 'draft'
+                        : ''}"
+                      @click=${() => this.linkToArticle(article)}
+                    >
+                      <div class="link-match-title">${article.title}</div>
+                      <div class="link-match-section">
+                        ${article.parent
+                          ? this.sectionOf(article)
+                          : msg('Section')}
+                      </div>
+                    </div>
+                  `
+                )}
+              </div>
+            `
+          : this.linkQuery
+            ? html`<div class="link-matches">
+                <div class="link-match none">
+                  ${msg('No matching articles')}
+                </div>
+              </div>`
+            : null}
       </div>
     `;
   }
@@ -3428,66 +3571,16 @@ export class MarkdownEditor extends FieldElement {
           title=${msg('No color')}
           @click=${() => this.applyColumnBackground(index, '')}
         ></div>
-        ${palette.map(([key, hex], at) => {
-          const swatch = html`
-            <input
-              type="color"
-              class="swatch ${selected === key && at < palette.length - 1
-                ? 'on'
-                : ''}"
-              .value=${hex}
+        ${palette.map(
+          ([key, hex]) => html`
+            <div
+              class="swatch ${selected === key ? 'on' : ''}"
+              style="background:${hex}"
               title=${hex}
-              @click=${(evt: Event) => {
-                // the first click chooses the color; only a click on the color already worn opens its picker
-                if (selected !== key) {
-                  evt.preventDefault();
-                  this.applyColumnBackground(index, key);
-                }
-              }}
-              @input=${(evt: Event) =>
-                this.previewColor(key, (evt.target as HTMLInputElement).value)}
-              @change=${(evt: Event) =>
-                this.saveColors({
-                  ...this.colors,
-                  [key]: (evt.target as HTMLInputElement).value
-                })}
-            />
-          `;
-
-          // only the right-most color can be removed - the palette shrinks from its end the way it grew, so no
-          // index in the middle is ever orphaned by accident
-          return selected === key && at === palette.length - 1
-            ? html`
-                <div class="swatch-cluster">
-                  ${swatch}
-                  <div
-                    class="swatch-trash"
-                    title=${msg('Remove this color everywhere it is used')}
-                    @click=${() => {
-                      const next = { ...this.colors };
-                      delete next[key];
-                      this.saveColors(next);
-                    }}
-                  >
-                    <temba-icon name=${Icon.delete} size="0.9"></temba-icon>
-                  </div>
-                </div>
-              `
-            : swatch;
-        })}
-        <label class="swatch add-color" title=${msg('New color')}>
-          <temba-icon name=${Icon.add} size="0.9"></temba-icon>
-          <input
-            type="color"
-            @input=${(evt: Event) =>
-              this.previewNewColor(
-                index,
-                (evt.target as HTMLInputElement).value
-              )}
-            @change=${(evt: Event) =>
-              this.addColor(index, (evt.target as HTMLInputElement).value)}
-          />
-        </label>
+              @click=${() => this.applyColumnBackground(index, key)}
+            ></div>
+          `
+        )}
         <div class="divider"></div>
         <div class="pad-group">
           ${paddings.map(

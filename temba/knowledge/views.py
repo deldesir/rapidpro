@@ -1,8 +1,7 @@
-import re
-
 import magic
 from smartmin.views import SmartCRUDL, SmartReadView, SmartTemplateView
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db.models.functions import Lower
 from django.http import Http404, HttpResponseRedirect, JsonResponse
@@ -22,8 +21,16 @@ from temba.orgs.views.mixins import OrgObjPermsMixin, OrgPermsMixin, RequireFeat
 from temba.utils import json
 from temba.utils.views.mixins import ContextMenuMixin, PostOnlyMixin, SpaMixin
 
-from .forms import ArticleCreateForm, ArticleForm, KnowledgeForm, KnowledgeUpdateForm, SectionForm
-from .models import Article, ArticleImage, Knowledge, KnowledgeItem
+from .forms import (
+    ArticleCreateForm,
+    ArticleForm,
+    HelpSiteDomainForm,
+    HelpSiteForm,
+    KnowledgeForm,
+    KnowledgeUpdateForm,
+    SectionForm,
+)
+from .models import Article, ArticleImage, HelpSite, Knowledge, KnowledgeItem
 
 
 class KnowledgeCRUDL(SmartCRUDL):
@@ -321,6 +328,16 @@ class ArticleCRUDL(SmartCRUDL):
                     as_button=True,
                 )
 
+            # the public site is the helpdesk's, so it's set up from here - its domain from the card at the top of
+            # the page, the rest from the menu
+            if self.has_org_perm("knowledge.helpsite_update"):
+                menu.add_modax(
+                    _("Site Settings"),
+                    "site-settings",
+                    reverse("knowledge.helpsite_update"),
+                    title=_("Site Settings"),
+                )
+
         def derive_article_to_edit(self):
             """
             The article the editor should open on arrival, named by the create modal so that titling a new one drops
@@ -348,6 +365,16 @@ class ArticleCRUDL(SmartCRUDL):
                 context["publish_url"] = reverse("knowledge.article_publish")
             if self.has_org_perm("knowledge.article_create"):
                 context["create_url"] = reverse("knowledge.article_create")
+
+            context["preview_url"] = reverse("knowledge.site_home")
+
+            # the site card heads the page - the domain, so it's plain whether the site is out there and where
+            # setting one up or verifying it is picked up, and beside it the site's preview
+            site = HelpSite.objects.filter(knowledge=self.helpdesk).first()
+            if self.has_org_perm("knowledge.helpsite_domain"):
+                context["domain_url"] = reverse("knowledge.helpsite_domain")
+            if site and site.domain:
+                context["site"] = site
 
             article = self.derive_article_to_edit()
             if article:
@@ -450,6 +477,10 @@ class ArticleCRUDL(SmartCRUDL):
                     "accept": ",".join(ArticleImage.ALLOWED_CONTENT_TYPES),
                     # and resolves column colors against the org's shared palette
                     "colors-endpoint": reverse("knowledge.article_colors"),
+                    # and offers the helpdesk's other articles to link to
+                    "articles-endpoint": f"{reverse('api.internal.articles')}.json",
+                    # and shows uploaded images, which the article references by their key, from where they're served
+                    "storage-url": settings.STORAGE_URL,
                 }
             )
             return form
@@ -496,27 +527,12 @@ class ArticleCRUDL(SmartCRUDL):
 
     class Colors(HelpdeskMixin, OrgPermsMixin, SmartTemplateView):
         """
-        The org's article palette - the colors every author shares, so color use stays consistent across articles.
-        Articles embed an index into it, so a POST that recolors an entry restyles that color's every use, and one
-        that drops an entry blanks them until something new takes the index.
+        The org's article palette - the bubble colors chosen in the help site's settings, which every author's editor
+        offers for column backgrounds. Articles embed an index into it, so recoloring a bubble restyles its every use.
         """
 
         def get(self, request, *args, **kwargs):
             return JsonResponse({"colors": self.helpdesk.colors})
-
-        def post(self, request, *args, **kwargs):
-            try:
-                colors = json.loads(request.body)["colors"]
-                if not isinstance(colors, dict) or len(colors) > Knowledge.MAX_COLORS:
-                    raise ValueError("not a palette")
-                for index, color in colors.items():
-                    if not re.fullmatch(r"\d+", index) or not re.fullmatch(r"#[0-9a-f]{3,8}", str(color).lower()):
-                        raise ValueError("not a palette entry")
-            except ValueError, TypeError, KeyError:
-                return JsonResponse({"error": _("Invalid request.")}, status=400)
-
-            self.helpdesk.set_colors({index: str(color).lower() for index, color in colors.items()})
-            return JsonResponse({"status": "ok"})
 
     class Delete(BaseObject, BaseDeleteModal):
         """
@@ -603,4 +619,99 @@ class ArticleCRUDL(SmartCRUDL):
             file.content_type = detected_type  # trust the sniffed type, not the browser's
             image = ArticleImage.from_upload(obj, request.user, file)
 
-            return JsonResponse({"uuid": str(image.uuid), "name": image.name, "url": image.url})
+            # the editor writes the path - the key in storage - into the article and shows the url, so the article
+            # never holds the address storage happens to be served from
+            return JsonResponse({"uuid": str(image.uuid), "name": image.name, "path": image.path, "url": image.url})
+
+
+class HelpSiteCRUDL(SmartCRUDL):
+    model = HelpSite
+    actions = ("update", "domain", "verify")
+
+    class InferSite(HelpdeskMixin):
+        """
+        Views of the org's help site, in dialogs on the helpdesk page. The site is the org's one, inferred rather than
+        named in the URL, and made the first time anyone comes here.
+        """
+
+        @classmethod
+        def derive_url_pattern(cls, path, action):
+            return r"^%s/%s/$" % (path, action)
+
+        def get_object(self, *args, **kwargs):
+            return HelpSite.get_or_create(self.helpdesk, self.request.user)
+
+    class Update(InferSite, BaseUpdateModal):
+        """
+        The site's settings - what it says about itself, whether it's up, and its colors.
+        """
+
+        form_class = HelpSiteForm
+        title = _("Site Settings")
+        success_url = "hide"
+        success_message = ""
+
+        def derive_initial(self):
+            initial = super().derive_initial()
+            site = self.get_object()
+            initial["primary_color"] = site.primary_color
+            initial["header_color"] = site.header_color
+            for key, color in site.bubbles.items():
+                initial[f"bubble_{key}"] = color
+            return initial
+
+        def pre_save(self, obj):
+            obj = super().pre_save(obj)
+            obj.config = {
+                **obj.config,
+                HelpSite.CONFIG_PRIMARY_COLOR: self.form.cleaned_data["primary_color"],
+                HelpSite.CONFIG_HEADER_COLOR: self.form.cleaned_data["header_color"],
+            }
+            return obj
+
+        def post_save(self, obj):
+            obj = super().post_save(obj)
+            obj.set_bubbles({key: self.form.cleaned_data[f"bubble_{key}"] for key in HelpSite.BUBBLE_KEYS})
+            return obj
+
+    class Domain(InferSite, BaseUpdateModal):
+        """
+        The site's own domain, and the DNS records that put it into service: one pointing it at us, one proving it's
+        the org's, which is checked on demand from here.
+        """
+
+        form_class = HelpSiteDomainForm
+        title = _("Site Domain")
+        success_url = "hide"
+        success_message = ""
+
+        def derive_initial(self):
+            initial = super().derive_initial()
+            initial["domain"] = self.get_object().domain
+            return initial
+
+        def get_context_data(self, **kwargs):
+            context = super().get_context_data(**kwargs)
+            context["cname_target"] = self.request.branding["domain"]
+            context["verification_record_prefix"] = HelpSite.VERIFICATION_RECORD
+            context["verify_url"] = reverse("knowledge.helpsite_verify")
+            return context
+
+        def post_save(self, obj):
+            obj = super().post_save(obj)
+            # a change of domain starts verification over
+            obj.set_domain(self.request.user, self.form.cleaned_data["domain"])
+            return obj
+
+    class Verify(InferSite, PostOnlyMixin, OrgPermsMixin, SmartTemplateView):
+        """
+        Checks for the TXT record that proves the site's domain is the org's, asked for by the button in the domain
+        dialog once the record has been added. Verified is what gets the domain served.
+        """
+
+        def post(self, request, *args, **kwargs):
+            site = self.get_object()
+            if not site.domain:
+                return JsonResponse({"error": _("No domain has been set.")}, status=400)
+
+            return JsonResponse({"domain": site.domain, "verified": site.verify_domain()})

@@ -802,6 +802,34 @@ class MailroomClientTest(TembaTest):
         )
 
     @patch("requests.post")
+    def test_knowledge_search(self, mock_post):
+        mock_post.return_value = MockJsonResponse(
+            200,
+            {
+                "results": [
+                    {
+                        "knowledge_uuid": "97180291-8d95-4a6b-8a1a-63c44bb84b77",
+                        "item_key": "e0d47f61-9531-46a5-89dd-8e8437bee883",
+                        "item_name": "Refunds",
+                        "text": "We offer full refunds within 30 days...",
+                        "score": 0.9034,
+                    }
+                ]
+            },
+        )
+
+        results = self.client.knowledge_search(self.org, "how do I get a refund?", limit=5)
+
+        self.assertEqual(1, len(results))
+        self.assertEqual("Refunds", results[0]["item_name"])
+
+        mock_post.assert_called_once_with(
+            "http://localhost:8090/mi/knowledge/search",
+            headers={"User-Agent": "Temba", "Authorization": "Token sesame"},
+            json={"org_id": self.org.id, "query": "how do I get a refund?", "limit": 5},
+        )
+
+    @patch("requests.post")
     def test_msg_search(self, mock_post):
         ann = self.create_contact("Ann", urns=["tel:+12340000001"])
         bob = self.create_contact("Bob", urns=["tel:+12340000002"])

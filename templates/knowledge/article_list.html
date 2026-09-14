@@ -37,6 +37,83 @@
         Help articles written by your workspace. Published articles are searchable by AI agents.
       {% endblocktrans %}
     </div>
+    {% comment %}
+      The site card heads the page. Its domain is the way out to the live site once it's verified and on; until
+      then - or until there's a domain at all - it opens the domain dialog, where setting it up is picked up. Its
+      preview pill opens the site as its readers will see it, in a tab of its own.
+    {% endcomment %}
+    <div slot="banner">
+      {% if site and site.is_available %}
+        <a class="domain-card"
+           id="site-domain-card"
+           href="https://{{ site.domain }}/"
+           target="_blank"
+           rel="noopener">
+          <temba-icon name="website" size="1.2" class="domain-icon">
+          </temba-icon>
+          <div class="domain-text">
+            <div class="domain-name">{{ site.domain }}</div>
+            <div class="domain-note">{% trans "Your help site is live on this domain." %}</div>
+          </div>
+          <span class="domain-badge verified">
+            <temba-icon name="check">
+            </temba-icon>
+          {% trans "Verified" %}</span>
+          <span class="domain-pill"
+                role="button"
+                tabindex="0"
+                onclick="previewHelpSite(event)"
+                onkeydown="if (event.key === 'Enter' || event.key === ' ') { previewHelpSite(event); }">
+            <temba-icon name="show">
+            </temba-icon>
+          {% trans "Preview" %}</span>
+          <temba-icon name="link" class="domain-arrow">
+          </temba-icon>
+        </a>
+      {% else %}
+        <div class="domain-card{% if domain_url %} clickable{% endif %}"
+             id="site-domain-card"
+             {% if domain_url %}role="button" tabindex="0" onclick="showSiteDomain()" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); showSiteDomain(); }"{% endif %}>
+          <temba-icon name="website" size="1.2" class="domain-icon">
+          </temba-icon>
+          <div class="domain-text">
+            {% if site %}
+              <div class="domain-name">{{ site.domain }}</div>
+              <div class="domain-note">
+                {% if site.is_domain_verified %}
+                  {% trans "Verified, but not yet enabled for the public." %}
+                {% else %}
+                  {% trans "Add the DNS records to verify this domain." %}
+                {% endif %}
+              </div>
+            {% else %}
+              <div class="domain-name">{% trans "No domain yet" %}</div>
+              <div class="domain-note">{% trans "Set up a domain of your own to serve your help site to the public." %}</div>
+            {% endif %}
+          </div>
+          {% if not site %}
+            {% if domain_url %}
+              <span class="domain-badge setup">{% trans "Set up" %}</span>
+            {% endif %}
+          {% elif site.is_domain_verified %}
+            <span class="domain-badge verified">
+              <temba-icon name="check">
+              </temba-icon>
+            {% trans "Verified" %}</span>
+          {% else %}
+            <span class="domain-badge unverified">{% trans "Not verified" %}</span>
+          {% endif %}
+          <span class="domain-pill"
+                role="button"
+                tabindex="0"
+                onclick="previewHelpSite(event)"
+                onkeydown="if (event.key === 'Enter' || event.key === ' ') { previewHelpSite(event); }">
+            <temba-icon name="show">
+            </temba-icon>
+          {% trans "Preview" %}</span>
+        </div>
+      {% endif %}
+    </div>
   </temba-helpdesk-cards>
 {% endblock content %}
 {% block extra-script %}
@@ -60,6 +137,28 @@
     function refreshArticles() {
       document.querySelector('#article-list').refresh();
     }
+
+    function previewHelpSite(event) {
+      // the site as its readers will see it, in a tab of its own - and not also whatever the card around the pill
+      // does when clicked
+      event.preventDefault();
+      event.stopPropagation();
+      window.open("{{ preview_url }}", "_blank");
+    }
+
+    function refreshHelpdesk() {
+      // the domain card reflects what the domain dialog just did
+      spaGet(window.location.pathname);
+    }
+
+    {% if domain_url %}
+    function showSiteDomain() {
+      showModax('{{ _("Site Domain") |escapejs }}', '{{ domain_url }}', {
+        id: 'site-domain',
+        onSubmit: 'refreshHelpdesk()'
+      });
+    }
+    {% endif %}
 
     onSpload(function() {
       var list = document.querySelector('#article-list');
@@ -95,6 +194,139 @@
        the contact page's do. */
     .spa-content {
       padding: 0 !important;
+    }
+
+    /* the domain card - the same surface as the section cards below it, in a single line */
+    .domain-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-sm);
+      box-shadow: var(--shadow-2);
+      color: var(--text-1);
+      text-decoration: none;
+      transition: box-shadow 150ms ease, border-color 150ms ease;
+    }
+
+    a.domain-card,
+    .domain-card.clickable {
+      cursor: pointer;
+    }
+
+    a.domain-card:hover,
+    .domain-card.clickable:hover {
+      border-color: var(--accent-300);
+      box-shadow: var(--shadow-3);
+    }
+
+    .domain-card:focus-visible {
+      outline: 2px solid var(--accent-400);
+      outline-offset: 1px;
+    }
+
+    .domain-icon {
+      flex: none;
+      --icon-color: var(--accent-500);
+    }
+
+    .domain-text {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .domain-name {
+      font-weight: var(--w-semibold);
+      font-size: 14px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .domain-note {
+      font-size: 12px;
+      color: var(--text-3);
+      margin-top: 1px;
+    }
+
+    .domain-badge {
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: var(--w-semibold);
+      line-height: 1.3;
+      white-space: nowrap;
+    }
+
+    .domain-badge temba-icon {
+      --icon-color: currentColor;
+    }
+
+    .domain-badge.verified {
+      background: var(--success-bg);
+      border: 1px solid var(--success-border);
+      color: var(--success);
+    }
+
+    .domain-badge.unverified {
+      background: var(--warning-bg);
+      border: 1px solid var(--warning-border);
+      color: var(--warning);
+    }
+
+    .domain-badge.setup {
+      background: var(--accent-100);
+      border: 1px solid var(--accent-200);
+      color: var(--accent-700);
+    }
+
+    .domain-arrow {
+      flex: none;
+      --icon-color: var(--text-4);
+    }
+
+    a.domain-card:hover .domain-arrow {
+      --icon-color: var(--accent-500);
+    }
+
+    /* the preview pill - a button in its own right, riding the card */
+    .domain-pill {
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px 4px 8px;
+      border-radius: 999px;
+      background: var(--sunken);
+      border: 1px solid var(--border-strong);
+      color: var(--text-2);
+      font-size: 11px;
+      font-weight: var(--w-semibold);
+      line-height: 1.3;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+    }
+
+    .domain-pill temba-icon {
+      --icon-color: currentColor;
+    }
+
+    .domain-pill:hover {
+      background: var(--accent-400);
+      border-color: var(--accent-400);
+      color: #fff;
+    }
+
+    .domain-pill:focus-visible {
+      outline: 2px solid var(--accent-400);
+      outline-offset: 1px;
     }
   </style>
 {% endblock extra-style %}
