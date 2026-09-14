@@ -1,3 +1,9 @@
+v26.3.89 (2026-09-14)
+-------------------------
+ * Include archived messages in label lists, counts and exports
+ * Remove archived as a message visibility now that the folder is the only record of it
+ * Remove unused node_uuid field from broadcasts
+
 v26.3.88 (2026-09-14)
 -------------------------
  * Add migration to clear archived visibility from existing messages
