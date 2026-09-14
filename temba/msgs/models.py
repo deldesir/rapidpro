@@ -1017,9 +1017,11 @@ class Label(TembaModel, DependencyMixin):
     def get_messages(self):
         return self.msgs.all()
 
-    def get_visible_count(self):
+    def get_message_count(self):
         """
-        Returns the count of visible, non-test message tagged with this label
+        Returns the count of messages tagged with this label, whatever folder they're in - a label is the user's own
+        tag and is independent of where a message is filed. Deleted messages have their labellings removed so
+        contribute nothing.
         """
 
         return LabelCount.get_totals([self])[self]
@@ -1086,11 +1088,9 @@ class LabelCount(BaseSquashableCount):
         """
         Gets total counts for all the given labels
         """
-        counts = (
-            cls.objects.filter(label__in=labels, is_archived=False)
-            .values_list("label_id")
-            .annotate(count_sum=Sum("count"))
-        )
+        # the triggers still bucket counts by whether the message is archived (see is_archived) but a label's
+        # messages are counted regardless of folder, so sum across both buckets
+        counts = cls.objects.filter(label__in=labels).values_list("label_id").annotate(count_sum=Sum("count"))
         counts_by_label_id = {c[0]: c[1] for c in counts}
         return {lb: counts_by_label_id.get(lb.id, 0) for lb in labels}
 
@@ -1204,7 +1204,8 @@ class MessageExport(ExportType):
         if folder:
             where = folder.get_archive_query()
         elif label:
-            where = {"visibility": "visible", "__raw__": f"'{label.uuid}' IN s.labels[*].uuid"}
+            # a label's messages are exported regardless of folder, and deleted messages are never archived
+            where = {"__raw__": f"'{label.uuid}' IN s.labels[*].uuid"}
         else:
             where = {"visibility": "visible"}
 
@@ -1229,7 +1230,7 @@ class MessageExport(ExportType):
             messages = folder.get_queryset(export.org, after=start_date, before=end_date)
             order_by = "uuid"
         elif label:
-            messages = label.get_messages()
+            messages = label.get_messages().exclude(folder=Msg.FOLDER_DELETED)
         else:
             messages = export.org.msgs.exclude(folder__in=(Msg.FOLDER_ARCHIVED, Msg.FOLDER_DELETED))
 
