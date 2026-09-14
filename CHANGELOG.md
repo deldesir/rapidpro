@@ -1,3 +1,10 @@
+v26.3.90 (2026-09-14)
+-------------------------
+ * Index old Android messages by folder rather than status
+ * Stop recording label filtering on messages endpoint as deprecated usage
+ * Remove unused flows_flowrun_contacts_at_node index
+ * Stop bucketing label counts by archived state
+
 v26.3.89 (2026-09-14)
 -------------------------
  * Include archived messages in label lists, counts and exports
