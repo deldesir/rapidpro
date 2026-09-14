@@ -262,3 +262,81 @@ class BackfillMsgVisibilityNoMessagesTest(MigrationTest):
     def test_migration(self):
         # a workspace with no messages at all has no id range to walk
         self.assertEqual(0, Msg.objects.count())
+
+
+class BackfillMsgNextAttemptTest(MigrationTest):
+    app = "msgs"
+    migrate_from = "0321_msg_outgoing_awaiting_retry"
+    migrate_to = "0322_backfill_msg_next_attempt"
+
+    def setUpBeforeMigration(self, apps):
+        contact = self.create_contact("Bob", phone="+1234567890")
+        self.next_attempt = timezone.now()
+
+        # messages awaiting a retry keep theirs
+        self.errored = self.create_outgoing_msg(
+            contact, "Hi", status=Msg.STATUS_ERRORED, next_attempt=self.next_attempt
+        )
+        self.initializing = self.create_outgoing_msg(
+            contact, "Hi", status=Msg.STATUS_INITIALIZING, next_attempt=self.next_attempt
+        )
+
+        # messages which moved on but were left with the retry they no longer need
+        self.wired = self.create_outgoing_msg(
+            contact, "Hi", status=Msg.STATUS_WIRED, sent_on=timezone.now(), next_attempt=self.next_attempt
+        )
+        self.failed = self.create_outgoing_msg(contact, "Hi", status=Msg.STATUS_FAILED, next_attempt=self.next_attempt)
+
+        # and one that never had one
+        self.queued = self.create_outgoing_msg(contact, "Hi", status=Msg.STATUS_QUEUED)
+
+    def test_migration(self):
+        def next_attempt(msg):
+            msg.refresh_from_db()
+            return msg.next_attempt
+
+        self.assertEqual(self.next_attempt, next_attempt(self.errored))
+        self.assertEqual(self.next_attempt, next_attempt(self.initializing))
+        self.assertIsNone(next_attempt(self.wired))
+        self.assertIsNone(next_attempt(self.failed))
+        self.assertIsNone(next_attempt(self.queued))
+
+
+class BackfillMsgNextAttemptPagingTest(MigrationTest):
+    """
+    The backfill clears BATCH_SIZE rows at a time until nothing is left, so with a realistic batch size a test fixture
+    never runs the loop more than once. Shrink it so that looping - and terminating - is actually exercised.
+    """
+
+    app = "msgs"
+    migrate_from = "0321_msg_outgoing_awaiting_retry"
+    migrate_to = "0322_backfill_msg_next_attempt"
+
+    def setUp(self):
+        # has to be patched before super() runs the migration
+        migration = import_module("temba.msgs.migrations.0322_backfill_msg_next_attempt")
+        patcher = patch.object(migration, "BATCH_SIZE", 1)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+        super().setUp()
+
+    def setUpBeforeMigration(self, apps):
+        contact = self.create_contact("Bob", phone="+1234567890")
+        now = timezone.now()
+
+        # enough stale rows to span several batches
+        self.stale = [
+            self.create_outgoing_msg(contact, f"Hi {m}", status=Msg.STATUS_SENT, sent_on=now, next_attempt=now)
+            for m in range(5)
+        ]
+        self.errored = self.create_outgoing_msg(contact, "Hi", status=Msg.STATUS_ERRORED, next_attempt=now)
+
+    def test_migration(self):
+        # every stale row cleared, so no batch was skipped and the loop terminated
+        for msg in self.stale:
+            msg.refresh_from_db()
+            self.assertIsNone(msg.next_attempt, f"next_attempt still set on msg #{msg.id}")
+
+        self.errored.refresh_from_db()
+        self.assertIsNotNone(self.errored.next_attempt)
