@@ -56,6 +56,44 @@ class MsgFolderTest(TembaTest):
         assert_range([msg4, msg3, msg2, msg1], before=msg3.created_on, after=msg3.created_on)
         assert_range([msg0], before=msg0.created_on, after=msg0.created_on)
 
+    def test_outbox_matches_unsent_statuses(self):
+        """
+        The index on old Android messages is partial on folder = Outbox rather than on the statuses a message waiting
+        to be sent can have, so the two have to pick out the same messages.
+        """
+
+        contact = self.create_contact("Bob", phone="0783835001")
+
+        waiting = (Msg.STATUS_INITIALIZING, Msg.STATUS_QUEUED, Msg.STATUS_ERRORED)
+        gone = (Msg.STATUS_WIRED, Msg.STATUS_SENT, Msg.STATUS_DELIVERED, Msg.STATUS_READ, Msg.STATUS_FAILED)
+
+        for status in waiting:
+            msg = self.create_outgoing_msg(contact, "Hi", status=status)
+            self.assertEqual(Msg.FOLDER_OUTBOX, msg.folder, f"{status} should be in the outbox")
+
+        for status in gone:
+            # a message that reached the channel has to carry a sent_on
+            sent_on = timezone.now() if status != Msg.STATUS_FAILED else None
+            msg = self.create_outgoing_msg(contact, "Hi", status=status, sent_on=sent_on)
+            self.assertNotEqual(Msg.FOLDER_OUTBOX, msg.folder, f"{status} should not be in the outbox")
+
+        # so selecting visible outgoing messages by folder and by status gives the same set
+        outgoing = Msg.objects.filter(org=self.org, direction=Msg.DIRECTION_OUT, visibility=Msg.VISIBILITY_VISIBLE)
+
+        self.assertEqual(
+            set(outgoing.filter(folder=Msg.FOLDER_OUTBOX).values_list("id", flat=True)),
+            set(outgoing.filter(status__in=waiting).values_list("id", flat=True)),
+        )
+
+        # selecting by folder is narrower than selecting by status alone though - a message deleted whilst still
+        # waiting to be sent keeps its status but moves to the deleted folder, and isn't ours to fail any more
+        deleted = self.create_outgoing_msg(contact, "Hi", status=Msg.STATUS_QUEUED)
+        Msg.objects.filter(id=deleted.id).update(visibility=Msg.VISIBILITY_DELETED_BY_USER, folder=Msg.FOLDER_DELETED)
+        deleted.refresh_from_db()
+
+        self.assertEqual(Msg.STATUS_QUEUED, deleted.status)
+        self.assertEqual(Msg.FOLDER_DELETED, deleted.folder)
+
     def test_get_archive_query(self):
         tcs = (
             (

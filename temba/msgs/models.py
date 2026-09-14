@@ -839,11 +839,19 @@ class Msg(models.Model):
                 fields=["next_attempt", "created_on", "id"],
                 condition=Q(direction="O", status__in=("I", "E"), next_attempt__isnull=False),
             ),
-            # used for finding old Android messages to fail
+            # used for finding old Android messages to fail. The predicate is on the folder rather than the statuses
+            # it's derived from so that changing a message's status doesn't touch this index - outbox membership is
+            # exactly the visible outgoing messages still waiting to be sent (the folder derivation lives in mailroom
+            # and courier). Postgres can only make a heap-only (HOT) update when no column that actually changed is
+            # referenced by any index, and a partial index's predicate counts.
+            #
+            # Being keyed on the folder makes this narrower than indexing the statuses would: an outgoing message
+            # that was deleted whilst still waiting to be sent is in the deleted folder, not the outbox. That's what
+            # the query wants - there's nothing to fail on a message the user can no longer see.
             models.Index(
-                name="msgs_outgoing_android_to_fail",
+                name="msgs_android_outbox",
                 fields=["created_on"],
-                condition=Q(direction="O", is_android=True, status__in=("I", "Q", "E")),
+                condition=Q(direction="O", folder="O", is_android=True),
             ),
             # used by the folder views and API folders, which filter by folder and page by uuid (time ordered as
             # message uuids are v7) - see MsgFolder.get_queryset. Partial on the user facing folders so it doesn't
