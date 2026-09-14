@@ -1,3 +1,8 @@
+v26.3.91 (2026-09-14)
+-------------------------
+ * Index messages awaiting a retry by next_attempt rather than status
+ * Serve static files with WhiteNoise so no web server is needed in front
+
 v26.3.90 (2026-09-14)
 -------------------------
  * Index old Android messages by folder rather than status
