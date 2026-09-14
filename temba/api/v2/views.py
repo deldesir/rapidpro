@@ -2188,7 +2188,7 @@ class MessagesEndpoint(ListAPIMixin, WriteAPIMixin, BaseEndpoint):
      * **text** - the text of the message received (string). Note this is the logical view and the message may have been received as multiple physical messages.
      * **attachments** - the attachments on the message (array of objects).
      * **quick_replies** - the quick_replies on the message (array of objects).
-     * **labels** - any labels set on this message (array of objects).
+     * **labels** - any labels set on this message (array of objects), filterable as `label` by UUID or name.
      * **flow** - the UUID and name of the flow if message was part of a flow (object, optional).
      * **created_on** - when this message was either received by the channel or created (datetime), filterable as `before` and `after`.
      * **sent_on** - for outgoing messages, when the channel sent the message (null if not yet sent or an incoming message) (datetime).
@@ -2356,9 +2356,8 @@ class MessagesEndpoint(ListAPIMixin, WriteAPIMixin, BaseEndpoint):
             else:
                 queryset = queryset.none()
 
-        # filter by label name/uuid (optional, deprecated)
+        # filter by label name/uuid (optional)
         if label_ref := params.get("label"):
-            record_deprecated(org, "messages#filter:label")
             label_filter = Q(name=label_ref)
             if is_uuid(label_ref):
                 label_filter |= Q(uuid=label_ref)
