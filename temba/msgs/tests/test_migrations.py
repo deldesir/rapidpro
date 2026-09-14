@@ -1,7 +1,6 @@
 from importlib import import_module
 from unittest.mock import patch
 
-from django.db.models import Sum
 from django.utils import timezone
 
 from temba.msgs.models import Msg
@@ -191,7 +190,7 @@ class BackfillMsgVisibilityTest(MigrationTest):
         self.label.toggle_label([self.archived, self.visible], add=True)
 
         self.folder_counts_before = self.org.counts.prefix("msgs:folder:").scope_totals()
-        self.label_counts_before = dict(self.label.counts.values_list("is_archived").annotate(total=Sum("count")))
+        self.label_count_before = self.label.counts.sum()
         self.modified_on_before = dict(self.org.msgs.values_list("id", "modified_on"))
 
     def test_migration(self):
@@ -217,9 +216,7 @@ class BackfillMsgVisibilityTest(MigrationTest):
 
         # and no counts moved, because no message changed folder
         self.assertEqual(self.folder_counts_before, self.org.counts.prefix("msgs:folder:").scope_totals())
-        self.assertEqual(
-            self.label_counts_before, dict(self.label.counts.values_list("is_archived").annotate(total=Sum("count")))
-        )
+        self.assertEqual(self.label_count_before, self.label.counts.sum())
 
 
 class BackfillMsgVisibilityPagingTest(MigrationTest):
