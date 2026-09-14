@@ -30,11 +30,10 @@ from temba.orgs.views.mixins import OrgObjPermsMixin, OrgPermsMixin, UniqueNameM
 from temba.templates.models import Template
 from temba.utils import json
 from temba.utils.compose import compose_deserialize, compose_serialize
-from temba.utils.fields import CompletionTextarea, ContactSearchWidget, InputWidget, SelectWidget
+from temba.utils.fields import ContactSearchWidget, InputWidget, SelectWidget
 from temba.utils.views.mixins import (
     ModalFormMixin,
     ModalHeaderMixin,
-    NonAtomicMixin,
     PostOnlyMixin,
     SpaMixin,
     StaffOnlyMixin,
@@ -136,7 +135,6 @@ class BroadcastCRUDL(SmartCRUDL):
         "scheduled",
         "scheduled_delete",
         "preview",
-        "to_node",
         "interrupt",
     )
     model = Broadcast
@@ -451,59 +449,6 @@ class BroadcastCRUDL(SmartCRUDL):
                 }
             )
 
-    class ToNode(NonAtomicMixin, ModalFormMixin, OrgPermsMixin, SmartCreateView):
-        class Form(forms.ModelForm):
-            text = forms.CharField(
-                widget=CompletionTextarea(
-                    attrs={"placeholder": _("Hi @contact.name!"), "widget_only": True, "counter": "temba-charcount"}
-                )
-            )
-
-            class Meta:
-                model = Broadcast
-                fields = ("text",)
-
-        permission = "msgs.broadcast_create"
-        form_class = Form
-        title = _("Send Message")
-        success_url = "hide"
-        submit_button_name = _("Send")
-
-        blockers = {
-            "no_send_channel": _(
-                'To get started you need to <a href="%(link)s">add a channel</a> to your workspace which will allow '
-                "you to send messages to your contacts."
-            ),
-        }
-
-        def get_context_data(self, **kwargs):
-            context = super().get_context_data(**kwargs)
-            context["blockers"] = self.get_blockers(self.request.org)
-            context["recipient_count"] = int(self.request.GET["count"])
-            return context
-
-        def get_blockers(self, org) -> list:
-            blockers = []
-
-            if org.is_suspended:
-                blockers.append(Org.BLOCKER_SUSPENDED)
-            elif org.is_flagged:
-                blockers.append(Org.BLOCKER_FLAGGED)
-            if not org.get_send_channel():
-                blockers.append(self.blockers["no_send_channel"] % {"link": reverse("channels.channel_claim")})
-
-            return blockers
-
-        def form_valid(self, form):
-            translations = {"und": {"text": form.cleaned_data["text"]}}
-            node_uuid = self.request.GET["node"]
-
-            Broadcast.create(
-                self.request.org, self.request.user, translations, base_language="und", node_uuid=node_uuid
-            )
-
-            return self.render_modal_response(form)
-
     class Interrupt(ModalFormMixin, OrgObjPermsMixin, SmartUpdateView):
         default_template = "smartmin/delete_confirm.html"
         slug_url_kwarg = "uuid"
@@ -736,7 +681,7 @@ class MsgCRUDL(SmartCRUDL):
 
     class Filter(MsgListView):
         search_fields = ("text__icontains", "contact__name__icontains")
-        bulk_actions = ("label", "archive")
+        bulk_actions = ("label",)
 
         def derive_menu_path(self):
             return f"/msg/labels/{self.label.uuid}"
@@ -787,7 +732,7 @@ class MsgCRUDL(SmartCRUDL):
                 super()
                 .get_queryset(**kwargs)
                 .filter(labels=self.label)
-                .exclude(folder__in=(Msg.FOLDER_ARCHIVED, Msg.FOLDER_DELETED))
+                .exclude(folder=Msg.FOLDER_DELETED)
                 .prefetch_related("labels")
             )
 

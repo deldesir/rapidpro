@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-14 15:32-0700\n"
+"POT-Creation-Date: 2026-09-14 16:17-0700\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Language: \n"
 "MIME-Version: 1.0\n"
@@ -2400,6 +2400,9 @@ msgstr ""
 msgid "This workspace has reached its limit of fields."
 msgstr ""
 
+msgid "This workspace has reached its limit of groups."
+msgstr ""
+
 msgid "Required."
 msgstr ""
 
@@ -3080,12 +3083,6 @@ msgstr ""
 
 #, python-format
 msgid "To get started you need to <a href=\"%(link)s\">add a channel</a> to your workspace which will allow you to send messages to your contacts."
-msgstr ""
-
-msgid "Hi @contact.name!"
-msgstr ""
-
-msgid "Send Message"
 msgstr ""
 
 msgid "Inbox"
@@ -4394,6 +4391,9 @@ msgstr ""
 msgid "<b>%(count)s</b> scheduled contacts"
 msgstr ""
 
+msgid "Send Message"
+msgstr ""
+
 #, python-format
 msgid "Translation provided in %(langs)s"
 msgid_plural "Translations provided in %(langs)s"
@@ -5504,9 +5504,6 @@ msgid_plural ""
 msgstr[0] ""
 msgstr[1] ""
 
-msgid "to a flow node"
-msgstr ""
-
 msgid "Deleted"
 msgstr ""
 
@@ -5787,12 +5784,6 @@ msgstr ""
 
 msgid "You are about to delete this broadcast. There is no way to undo this. Are you sure?"
 msgstr ""
-
-#, python-format
-msgid "<b>%(recipients)s</b> recipient currently at this point in the flow"
-msgid_plural "<b>%(recipients)s</b> recipients currently at this point in the flow"
-msgstr[0] ""
-msgstr[1] ""
 
 msgid "No messages"
 msgstr ""

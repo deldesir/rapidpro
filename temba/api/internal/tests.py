@@ -14,7 +14,7 @@ from temba.contacts.models import Contact, ContactExport, ContactField, ContactG
 from temba.flows.models import Flow, FlowLabel
 from temba.globals.models import Global
 from temba.knowledge.models import Article, Knowledge
-from temba.msgs.models import Broadcast, Msg
+from temba.msgs.models import Broadcast
 from temba.notifications.types import ExportFinishedNotificationType
 from temba.orgs.models import Org, OrgRole
 from temba.schedules.models import Schedule
@@ -92,7 +92,8 @@ class EndpointsTest(APITestMixin, TembaTest):
         msg2.labels.add(label)
 
         # a message in another folder shouldn't appear in the inbox
-        archived = self.create_incoming_msg(contact1, "Archived", visibility=Msg.VISIBILITY_ARCHIVED)
+        archived = self.create_incoming_msg(contact1, "Archived", archived=True)
+        archived.labels.add(label)
 
         msg1_logs_url = reverse("channels.channel_logs_read", args=[self.channel.uuid, "msg", msg1.uuid])
         msg2_logs_url = reverse("channels.channel_logs_read", args=[self.channel.uuid, "msg", msg2.uuid])
@@ -198,8 +199,8 @@ class EndpointsTest(APITestMixin, TembaTest):
         sent_new = self.create_outgoing_msg(contact1, "Newer reply", sent_on=timezone.now() - timedelta(hours=2))
         self.assertGet(endpoint_url + "?folder=sent", [self.admin], results=[sent_new, sent_old])
 
-        # ?label=<uuid> filters to that label's visible messages
-        self.assertGet(endpoint_url + f"?label={label.uuid}", [self.admin], results=[msg2])
+        # ?label=<uuid> filters to that label's messages, whatever folder they're in
+        self.assertGet(endpoint_url + f"?label={label.uuid}", [self.admin], results=[archived, msg2])
 
         # a label belonging to another org isn't visible
         other_label = self.create_label("Other", org=self.org2)

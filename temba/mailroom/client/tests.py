@@ -6,7 +6,6 @@ from temba.ai.types.openai.type import OpenAIType
 from temba.campaigns.models import Campaign, CampaignEvent
 from temba.contacts.models import ContactField, ContactImport
 from temba.flows.models import Flow, FlowStart
-from temba.msgs.models import Msg
 from temba.schedules.models import Schedule
 from temba.tests import MockJsonResponse, MockResponse, TembaTest
 from temba.tickets.models import Topic
@@ -653,7 +652,6 @@ class MailroomClientTest(TembaTest):
             [ann, bob],
             ["tel:1234"],
             "age > 20",
-            "",
             Exclusions(in_a_flow=True),
             template,
             ["@contact"],
@@ -674,7 +672,6 @@ class MailroomClientTest(TembaTest):
                 "contact_ids": [ann.id, bob.id],
                 "urns": ["tel:1234"],
                 "query": "age > 20",
-                "node_uuid": "",
                 "exclude": {
                     "in_a_flow": True,
                     "non_active": False,
@@ -740,8 +737,8 @@ class MailroomClientTest(TembaTest):
     @patch("requests.post")
     def test_msg_restore(self, mock_post):
         ann = self.create_contact("Ann", urns=["tel:+12340000001"])
-        msg1 = self.create_incoming_msg(ann, "Hi", visibility=Msg.VISIBILITY_ARCHIVED)
-        msg2 = self.create_incoming_msg(ann, "Hi again", visibility=Msg.VISIBILITY_ARCHIVED)
+        msg1 = self.create_incoming_msg(ann, "Hi", archived=True)
+        msg2 = self.create_incoming_msg(ann, "Hi again", archived=True)
         mock_post.return_value = MockJsonResponse(200, {})
         response = self.client.msg_restore(self.org, [msg1, msg2])
 

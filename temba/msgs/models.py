@@ -213,7 +213,6 @@ class Broadcast(LegacyIDMixin, models.Model):
     contacts = models.ManyToManyField(Contact, related_name="addressed_broadcasts")
     urns = ArrayField(models.TextField(), null=True)
     query = models.TextField(null=True)
-    node_uuid = models.UUIDField(null=True)
     exclusions = models.JSONField(default=dict, null=True)
 
     # message content
@@ -244,13 +243,12 @@ class Broadcast(LegacyIDMixin, models.Model):
         contacts=(),
         urns=(),
         query=None,
-        node_uuid=None,
         exclude=None,
         template=None,
         template_variables=(),
         schedule=None,
     ):
-        assert groups or contacts or urns or query or node_uuid, "can't create broadcast without recipients"
+        assert groups or contacts or urns or query, "can't create broadcast without recipients"
         assert base_language and languages.get_name(base_language), f"{base_language} is not a valid language code"
         assert base_language in translations, "no translation for base language"
 
@@ -263,7 +261,6 @@ class Broadcast(LegacyIDMixin, models.Model):
             contacts=contacts,
             urns=urns,
             query=query,
-            node_uuid=node_uuid,
             exclude=exclude,
             template=template,
             template_variables=template_variables,
@@ -545,12 +542,10 @@ class Msg(models.Model):
     )
 
     VISIBILITY_VISIBLE = "V"
-    VISIBILITY_ARCHIVED = "A"
     VISIBILITY_DELETED_BY_USER = "D"
     VISIBILITY_DELETED_BY_SENDER = "X"
     VISIBILITY_CHOICES = (
         (VISIBILITY_VISIBLE, "Visible"),
-        (VISIBILITY_ARCHIVED, "Archived"),
         (VISIBILITY_DELETED_BY_USER, "Deleted by user"),
         (VISIBILITY_DELETED_BY_SENDER, "Deleted by sender"),
     )
@@ -838,17 +833,27 @@ class Msg(models.Model):
             # used by API messages endpoint hence the ordering, and general fetching by org or contact
             models.Index(name="msgs_by_org", fields=["org", "-created_on", "-id"]),
             models.Index(name="msgs_by_contact", fields=["contact", "-created_on", "-id"]),
-            # used for finding errored messages to retry
+            # used for finding errored messages to retry. Like the Android index below, the predicate doesn't
+            # reference status, so that changing a message's status alone doesn't touch it - next_attempt is only ever
+            # set whilst a message is awaiting a retry, which mailroom and courier maintain.
             models.Index(
-                name="msgs_outgoing_to_retry",
+                name="msgs_outgoing_awaiting_retry",
                 fields=["next_attempt", "created_on", "id"],
-                condition=Q(direction="O", status__in=("I", "E"), next_attempt__isnull=False),
+                condition=Q(direction="O", next_attempt__isnull=False),
             ),
-            # used for finding old Android messages to fail
+            # used for finding old Android messages to fail. The predicate is on the folder rather than the statuses
+            # it's derived from so that changing a message's status doesn't touch this index - outbox membership is
+            # exactly the visible outgoing messages still waiting to be sent (the folder derivation lives in mailroom
+            # and courier). Postgres can only make a heap-only (HOT) update when no column that actually changed is
+            # referenced by any index, and a partial index's predicate counts.
+            #
+            # Being keyed on the folder makes this narrower than indexing the statuses would: an outgoing message
+            # that was deleted whilst still waiting to be sent is in the deleted folder, not the outbox. That's what
+            # the query wants - there's nothing to fail on a message the user can no longer see.
             models.Index(
-                name="msgs_outgoing_android_to_fail",
+                name="msgs_android_outbox",
                 fields=["created_on"],
-                condition=Q(direction="O", is_android=True, status__in=("I", "Q", "E")),
+                condition=Q(direction="O", folder="O", is_android=True),
             ),
             # used by the folder views and API folders, which filter by folder and page by uuid (time ordered as
             # message uuids are v7) - see MsgFolder.get_queryset. Partial on the user facing folders so it doesn't
@@ -1021,9 +1026,11 @@ class Label(TembaModel, DependencyMixin):
     def get_messages(self):
         return self.msgs.all()
 
-    def get_visible_count(self):
+    def get_message_count(self):
         """
-        Returns the count of visible, non-test message tagged with this label
+        Returns the count of messages tagged with this label, whatever folder they're in - a label is the user's own
+        tag and is independent of where a message is filed. Deleted messages have their labellings removed so
+        contribute nothing.
         """
 
         return LabelCount.get_totals([self])[self]
@@ -1080,21 +1087,16 @@ class LabelCount(BaseSquashableCount):
     Counts of user labels maintained by database level triggers
     """
 
-    squash_over = ("label_id", "is_archived")
+    squash_over = ("label_id",)
 
     label = models.ForeignKey(Label, on_delete=models.PROTECT, related_name="counts")
-    is_archived = models.BooleanField(default=False)
 
     @classmethod
     def get_totals(cls, labels):
         """
         Gets total counts for all the given labels
         """
-        counts = (
-            cls.objects.filter(label__in=labels, is_archived=False)
-            .values_list("label_id")
-            .annotate(count_sum=Sum("count"))
-        )
+        counts = cls.objects.filter(label__in=labels).values_list("label_id").annotate(count_sum=Sum("count"))
         counts_by_label_id = {c[0]: c[1] for c in counts}
         return {lb: counts_by_label_id.get(lb.id, 0) for lb in labels}
 
@@ -1208,7 +1210,8 @@ class MessageExport(ExportType):
         if folder:
             where = folder.get_archive_query()
         elif label:
-            where = {"visibility": "visible", "__raw__": f"'{label.uuid}' IN s.labels[*].uuid"}
+            # a label's messages are exported regardless of folder, and deleted messages are never archived
+            where = {"__raw__": f"'{label.uuid}' IN s.labels[*].uuid"}
         else:
             where = {"visibility": "visible"}
 
@@ -1233,7 +1236,7 @@ class MessageExport(ExportType):
             messages = folder.get_queryset(export.org, after=start_date, before=end_date)
             order_by = "uuid"
         elif label:
-            messages = label.get_messages()
+            messages = label.get_messages().exclude(folder=Msg.FOLDER_DELETED)
         else:
             messages = export.org.msgs.exclude(folder__in=(Msg.FOLDER_ARCHIVED, Msg.FOLDER_DELETED))
 

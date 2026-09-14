@@ -36,7 +36,7 @@ class MessagesEndpointTest(APITest):
         joe_msg3 = self.create_incoming_msg(
             joe, "Good", flow=flow, attachments=["image/jpeg:https://example.com/test.jpg"]
         )
-        frank_msg3 = self.create_incoming_msg(frank, "Bien", channel=facebook, visibility="A")
+        frank_msg3 = self.create_incoming_msg(frank, "Bien", channel=facebook, archived=True)
         frank_msg4 = self.create_outgoing_msg(frank, "Ça va?", status="F")
 
         # add a failed message with no URN or channel
@@ -127,14 +127,12 @@ class MessagesEndpointTest(APITest):
         # filter by invalid contact
         self.assertGet(endpoint_url + "?contact=invalid", [self.admin], results=[])
 
-        # filter by label UUID / name (deprecated, so recorded)
+        # filter by label UUID / name
         self.assertGet(endpoint_url + f"?label={label.uuid}", [self.admin], results=[frank_msg3, joe_msg3, frank_msg1])
         self.assertGet(endpoint_url + "?label=Spam", [self.admin], results=[frank_msg3, joe_msg3, frank_msg1])
-        self.assertDeprecatedRecorded("messages#filter:label", 2)
 
         # filter by invalid label
         self.assertGet(endpoint_url + "?label=invalid", [self.admin], results=[])
-        self.assertDeprecatedRecorded("messages#filter:label", 3)
 
         # filter by before (inclusive)
         self.assertGet(

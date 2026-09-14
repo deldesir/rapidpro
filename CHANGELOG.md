@@ -1,3 +1,36 @@
+v26.3.91 (2026-09-14)
+-------------------------
+ * Index messages awaiting a retry by next_attempt rather than status
+ * Serve static files with WhiteNoise so no web server is needed in front
+
+v26.3.90 (2026-09-14)
+-------------------------
+ * Index old Android messages by folder rather than status
+ * Stop recording label filtering on messages endpoint as deprecated usage
+ * Remove unused flows_flowrun_contacts_at_node index
+ * Stop bucketing label counts by archived state
+
+v26.3.89 (2026-09-14)
+-------------------------
+ * Include archived messages in label lists, counts and exports
+ * Remove archived as a message visibility now that the folder is the only record of it
+ * Remove unused node_uuid field from broadcasts
+
+v26.3.88 (2026-09-14)
+-------------------------
+ * Add migration to clear archived visibility from existing messages
+ * Remove unused broadcast to flow node feature
+
+v26.3.87 (2026-09-10)
+-------------------------
+ * Fail contact import preview cleanly when a new group is requested at the group limit
+
+v26.3.86 (2026-09-10)
+-------------------------
+ * Read message status tags written either as a single overwritten tag or as a tag per status value
+ * Let an errored status tag win over wired or sent when it's the most recent
+ * Update repository URLs after rename to nyaruka/temba
+
 v26.3.85 (2026-09-10)
 -------------------------
  * Let agent users see ticket analytics scoped to their team

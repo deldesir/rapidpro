@@ -1,6 +1,6 @@
 [project]
 name = "temba"
-version = "26.3.85"
+version = "26.3.91"
 description = "Hosted service for visually building interactive messaging applications"
 authors = [
     {"name" = "Nyaruka", "email" = "code@nyaruka.com"}
@@ -51,10 +51,11 @@ dependencies = [
     "elasticsearch>=9.0.0,<10.0.0",
     "tzdata>=2025.2",
     "dnspython ~= 2.8.0",
+    "whitenoise[brotli]>=6.12.0,<7.0.0",
 ]
 
 [project.urls]
-repository = "http://github.com/rapidpro/rapidpro"
+repository = "https://github.com/nyaruka/temba"
 
 
 [dependency-groups]

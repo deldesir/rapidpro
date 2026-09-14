@@ -39,7 +39,7 @@ class BackfillMsgFolderTest(MigrationTest):
 
         self.inbox = self.create_incoming_msg(contact, "Hi")
         self.handled = self.create_incoming_msg(contact, "Hi", flow=flow)
-        self.archived = self.create_incoming_msg(contact, "Hi", visibility=Msg.VISIBILITY_ARCHIVED)
+        self.archived = self.create_incoming_msg(contact, "Hi", visibility="A")
         self.failed = self.create_outgoing_msg(contact, "Hi", status=Msg.STATUS_FAILED)
         self.pending = self.create_incoming_msg(contact, "Hi", status=Msg.STATUS_PENDING)
 
@@ -58,9 +58,7 @@ class BackfillMsgFolderTest(MigrationTest):
         self.deleted_by_sender = self.create_incoming_msg(
             contact, "Hi", status=Msg.STATUS_PENDING, visibility=Msg.VISIBILITY_DELETED_BY_SENDER
         )
-        self.pending_archived = self.create_incoming_msg(
-            contact, "Hi", status=Msg.STATUS_PENDING, visibility=Msg.VISIBILITY_ARCHIVED
-        )
+        self.pending_archived = self.create_incoming_msg(contact, "Hi", status=Msg.STATUS_PENDING, visibility="A")
 
         # an outgoing message that is pending belongs to no folder - unlikely, but the database permits it
         self.underivable = self.create_outgoing_msg(contact, "Hi")
@@ -74,7 +72,7 @@ class BackfillMsgFolderTest(MigrationTest):
         self.stale_sent = self.create_outgoing_msg(contact, "Hi", status=Msg.STATUS_SENT)
         Msg.objects.filter(id=self.stale_sent.id).update(folder=Msg.FOLDER_OUTBOX)
 
-        self.stale_archived = self.create_incoming_msg(contact, "Hi", visibility=Msg.VISIBILITY_ARCHIVED)
+        self.stale_archived = self.create_incoming_msg(contact, "Hi", visibility="A")
         Msg.objects.filter(id=self.stale_archived.id).update(folder=Msg.FOLDER_INBOX)
 
         # a message whose folder agrees with its state is left as it is
@@ -165,3 +163,180 @@ class BackfillMsgFolderNoMessagesTest(MigrationTest):
     def test_migration(self):
         # a workspace with no messages at all has no id range to walk
         self.assertEqual(0, Msg.objects.count())
+
+
+class BackfillMsgVisibilityTest(MigrationTest):
+    app = "msgs"
+    migrate_from = "0315_update_triggers"
+    migrate_to = "0316_backfill_msg_visibility"
+
+    def setUpBeforeMigration(self, apps):
+        contact = self.create_contact("Bob", phone="+1234567890")
+        flow = self.create_flow("Test")
+        self.label = self.create_label("Spam")
+
+        # archived messages, which stay in the Archived folder and only lose the second record of being archived
+        self.archived = self.create_incoming_msg(contact, "Hi", visibility="A", archived=True)
+        self.archived_in_flow = self.create_incoming_msg(contact, "Hi", flow=flow, visibility="A", archived=True)
+
+        # archived while still unhandled, so filed as pending rather than archived
+        self.archived_pending = self.create_incoming_msg(contact, "Hi", status=Msg.STATUS_PENDING, visibility="A")
+
+        # messages whose visibility means something still, and so is left alone
+        self.visible = self.create_incoming_msg(contact, "Hi")
+        self.deleted_by_user = self.create_incoming_msg(contact, "Hi", visibility=Msg.VISIBILITY_DELETED_BY_USER)
+        self.deleted_by_sender = self.create_incoming_msg(contact, "Hi", visibility=Msg.VISIBILITY_DELETED_BY_SENDER)
+
+        self.label.toggle_label([self.archived, self.visible], add=True)
+
+        self.folder_counts_before = self.org.counts.prefix("msgs:folder:").scope_totals()
+        self.label_count_before = self.label.counts.sum()
+        self.modified_on_before = dict(self.org.msgs.values_list("id", "modified_on"))
+
+    def test_migration(self):
+        def assert_msg(msg, visibility, folder):
+            msg.refresh_from_db()
+            self.assertEqual(visibility, msg.visibility, f"visibility mismatch for msg #{msg.id}")
+            self.assertEqual(folder, msg.folder, f"folder mismatch for msg #{msg.id}")
+
+            # correcting a redundant record isn't a change to the message itself
+            self.assertEqual(self.modified_on_before[msg.id], msg.modified_on, f"modified_on bumped on #{msg.id}")
+
+        # archived messages keep their folder, so they're still archived, and lose the redundant visibility
+        assert_msg(self.archived, Msg.VISIBILITY_VISIBLE, Msg.FOLDER_ARCHIVED)
+        assert_msg(self.archived_in_flow, Msg.VISIBILITY_VISIBLE, Msg.FOLDER_ARCHIVED)
+
+        # the one that never made it to the Archived folder becomes an ordinary pending message
+        assert_msg(self.archived_pending, Msg.VISIBILITY_VISIBLE, Msg.FOLDER_PENDING)
+
+        # everything else is untouched, deleted messages included
+        assert_msg(self.visible, Msg.VISIBILITY_VISIBLE, Msg.FOLDER_INBOX)
+        assert_msg(self.deleted_by_user, Msg.VISIBILITY_DELETED_BY_USER, Msg.FOLDER_DELETED)
+        assert_msg(self.deleted_by_sender, Msg.VISIBILITY_DELETED_BY_SENDER, Msg.FOLDER_DELETED)
+
+        # and no counts moved, because no message changed folder
+        self.assertEqual(self.folder_counts_before, self.org.counts.prefix("msgs:folder:").scope_totals())
+        self.assertEqual(self.label_count_before, self.label.counts.sum())
+
+
+class BackfillMsgVisibilityPagingTest(MigrationTest):
+    """
+    The backfill walks the id range in batches of BATCH_SIZE ids, so with a realistic batch size a test fixture never
+    runs the loop more than once. Shrink it so that advancing between batches is actually exercised.
+    """
+
+    app = "msgs"
+    migrate_from = "0315_update_triggers"
+    migrate_to = "0316_backfill_msg_visibility"
+
+    def setUp(self):
+        # has to be patched before super() runs the migration
+        migration = import_module("temba.msgs.migrations.0316_backfill_msg_visibility")
+        patcher = patch.object(migration, "BATCH_SIZE", 1)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+        super().setUp()
+
+    def setUpBeforeMigration(self, apps):
+        contact = self.create_contact("Bob", phone="+1234567890")
+
+        # enough messages to span several batches, alternately archived and not
+        self.msgs = [
+            self.create_incoming_msg(contact, f"Hi {m}", visibility="A" if m % 2 else Msg.VISIBILITY_VISIBLE)
+            for m in range(5)
+        ]
+
+    def test_migration(self):
+        # every message cleared, so no batch was skipped
+        for msg in self.msgs:
+            msg.refresh_from_db()
+            self.assertEqual(Msg.VISIBILITY_VISIBLE, msg.visibility, f"visibility mismatch for msg #{msg.id}")
+
+
+class BackfillMsgVisibilityNoMessagesTest(MigrationTest):
+    app = "msgs"
+    migrate_from = "0315_update_triggers"
+    migrate_to = "0316_backfill_msg_visibility"
+
+    def test_migration(self):
+        # a workspace with no messages at all has no id range to walk
+        self.assertEqual(0, Msg.objects.count())
+
+
+class BackfillMsgNextAttemptTest(MigrationTest):
+    app = "msgs"
+    migrate_from = "0321_msg_outgoing_awaiting_retry"
+    migrate_to = "0322_backfill_msg_next_attempt"
+
+    def setUpBeforeMigration(self, apps):
+        contact = self.create_contact("Bob", phone="+1234567890")
+        self.next_attempt = timezone.now()
+
+        # messages awaiting a retry keep theirs
+        self.errored = self.create_outgoing_msg(
+            contact, "Hi", status=Msg.STATUS_ERRORED, next_attempt=self.next_attempt
+        )
+        self.initializing = self.create_outgoing_msg(
+            contact, "Hi", status=Msg.STATUS_INITIALIZING, next_attempt=self.next_attempt
+        )
+
+        # messages which moved on but were left with the retry they no longer need
+        self.wired = self.create_outgoing_msg(
+            contact, "Hi", status=Msg.STATUS_WIRED, sent_on=timezone.now(), next_attempt=self.next_attempt
+        )
+        self.failed = self.create_outgoing_msg(contact, "Hi", status=Msg.STATUS_FAILED, next_attempt=self.next_attempt)
+
+        # and one that never had one
+        self.queued = self.create_outgoing_msg(contact, "Hi", status=Msg.STATUS_QUEUED)
+
+    def test_migration(self):
+        def next_attempt(msg):
+            msg.refresh_from_db()
+            return msg.next_attempt
+
+        self.assertEqual(self.next_attempt, next_attempt(self.errored))
+        self.assertEqual(self.next_attempt, next_attempt(self.initializing))
+        self.assertIsNone(next_attempt(self.wired))
+        self.assertIsNone(next_attempt(self.failed))
+        self.assertIsNone(next_attempt(self.queued))
+
+
+class BackfillMsgNextAttemptPagingTest(MigrationTest):
+    """
+    The backfill clears BATCH_SIZE rows at a time until nothing is left, so with a realistic batch size a test fixture
+    never runs the loop more than once. Shrink it so that looping - and terminating - is actually exercised.
+    """
+
+    app = "msgs"
+    migrate_from = "0321_msg_outgoing_awaiting_retry"
+    migrate_to = "0322_backfill_msg_next_attempt"
+
+    def setUp(self):
+        # has to be patched before super() runs the migration
+        migration = import_module("temba.msgs.migrations.0322_backfill_msg_next_attempt")
+        patcher = patch.object(migration, "BATCH_SIZE", 1)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+        super().setUp()
+
+    def setUpBeforeMigration(self, apps):
+        contact = self.create_contact("Bob", phone="+1234567890")
+        now = timezone.now()
+
+        # enough stale rows to span several batches
+        self.stale = [
+            self.create_outgoing_msg(contact, f"Hi {m}", status=Msg.STATUS_SENT, sent_on=now, next_attempt=now)
+            for m in range(5)
+        ]
+        self.errored = self.create_outgoing_msg(contact, "Hi", status=Msg.STATUS_ERRORED, next_attempt=now)
+
+    def test_migration(self):
+        # every stale row cleared, so no batch was skipped and the loop terminated
+        for msg in self.stale:
+            msg.refresh_from_db()
+            self.assertIsNone(msg.next_attempt, f"next_attempt still set on msg #{msg.id}")
+
+        self.errored.refresh_from_db()
+        self.assertIsNotNone(self.errored.next_attempt)
