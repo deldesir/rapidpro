@@ -1077,18 +1077,15 @@ class LabelCount(BaseSquashableCount):
     Counts of user labels maintained by database level triggers
     """
 
-    squash_over = ("label_id", "is_archived")
+    squash_over = ("label_id",)
 
     label = models.ForeignKey(Label, on_delete=models.PROTECT, related_name="counts")
-    is_archived = models.BooleanField(default=False)
 
     @classmethod
     def get_totals(cls, labels):
         """
         Gets total counts for all the given labels
         """
-        # the triggers still bucket counts by whether the message is archived (see is_archived) but a label's
-        # messages are counted regardless of folder, so sum across both buckets
         counts = cls.objects.filter(label__in=labels).values_list("label_id").annotate(count_sum=Sum("count"))
         counts_by_label_id = {c[0]: c[1] for c in counts}
         return {lb: counts_by_label_id.get(lb.id, 0) for lb in labels}
