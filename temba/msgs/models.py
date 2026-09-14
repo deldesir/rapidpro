@@ -833,11 +833,13 @@ class Msg(models.Model):
             # used by API messages endpoint hence the ordering, and general fetching by org or contact
             models.Index(name="msgs_by_org", fields=["org", "-created_on", "-id"]),
             models.Index(name="msgs_by_contact", fields=["contact", "-created_on", "-id"]),
-            # used for finding errored messages to retry
+            # used for finding errored messages to retry. Like the Android index below, the predicate doesn't
+            # reference status, so that changing a message's status alone doesn't touch it - next_attempt is only ever
+            # set whilst a message is awaiting a retry, which mailroom and courier maintain.
             models.Index(
-                name="msgs_outgoing_to_retry",
+                name="msgs_outgoing_awaiting_retry",
                 fields=["next_attempt", "created_on", "id"],
-                condition=Q(direction="O", status__in=("I", "E"), next_attempt__isnull=False),
+                condition=Q(direction="O", next_attempt__isnull=False),
             ),
             # used for finding old Android messages to fail. The predicate is on the folder rather than the statuses
             # it's derived from so that changing a message's status doesn't touch this index - outbox membership is
