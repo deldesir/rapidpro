@@ -23,6 +23,23 @@ class ExceptionMiddleware:
         return None
 
 
+class NoStoreMiddleware:
+    """
+    Marks responses as not to be cached unless the view has said otherwise. Almost everything served is specific to
+    the user and workspace it was requested for, so nothing - not a shared cache, not the browser's back-forward cache -
+    should keep a copy. Static files are exempt since WhiteNoise sits above this and answers those itself.
+    """
+
+    def __init__(self, get_response=None):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if not response.has_header("Cache-Control"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
+
 class OrgMiddleware:
     """
     Determines the org for this request and sets it on the request. Also sets request.branding for convenience.
