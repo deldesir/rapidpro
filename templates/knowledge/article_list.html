@@ -58,7 +58,7 @@
             </div>
             {% if import_url %}
               {# the same dialog as the menu's - the key isn't kept, so trying again means giving it again #}
-              <temba-button small name="{% trans "Try Again" %}" onclick="showImportDialog()">
+              <temba-button lined small name="{% trans "Try Again" %}" onclick="showImportDialog()">
               </temba-button>
             {% endif %}
           </div>
@@ -312,6 +312,13 @@
     .import-text {
       flex: 1 1 auto;
       min-width: 0;
+    }
+
+    /* the retry button - a quiet one, the card's tint carrying the warning, centered on the card's two lines */
+    .import-card temba-button {
+      flex: none;
+      display: flex;
+      align-self: center;
     }
 
     .import-header {
