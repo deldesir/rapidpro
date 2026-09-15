@@ -5,6 +5,7 @@ from ipaddress import ip_network
 
 from celery.schedules import crontab
 
+from django.utils.csp import CSP
 from django.utils.translation import gettext_lazy as _
 
 # Django tests these by string membership, so the network block is expanded rather than kept as a range
@@ -219,15 +220,22 @@ FORM_RENDERER = "django.forms.renderers.TemplatesSetting"
 # Middleware
 # -----------------------------------------------------------------------------------
 
+# The position of WhiteNoise matters: it answers requests for static files itself without calling anything below it, so
+# only the middleware above it touches those responses. The headers every response should carry go above it, and the
+# things that are only for the app's own responses go below it - static files are served pre-compressed with a
+# far-future max-age and mustn't be gzipped again or marked uncacheable.
 MIDDLEWARE = (
     "django.middleware.security.SecurityMiddleware",
+    "django.middleware.csp.ContentSecurityPolicyMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django.middleware.gzip.GZipMiddleware",
+    "temba.middleware.NoStoreMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
-    "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "temba.middleware.OrgMiddleware",
     "temba.knowledge.middleware.HelpSiteMiddleware",
     "temba.middleware.LanguageMiddleware",
@@ -235,6 +243,10 @@ MIDDLEWARE = (
     "temba.middleware.ToastMiddleware",
     "allauth.account.middleware.AccountMiddleware",
 )
+
+# nothing here is meant to be embedded in a frame - this is the same thing as X-Frame-Options for browsers that have
+# moved on to CSP for it
+SECURE_CSP = {"frame-ancestors": [CSP.NONE]}
 
 # -----------------------------------------------------------------------------------
 # Apps
