@@ -41,14 +41,22 @@ def get_client():
 class _Table:
     """
     A stand-in for a table resource which can be imported once but resolves to the current thread's resource on
-    each use, since the resource itself can't be shared between threads.
+    each use, since the resource itself can't be shared between threads. The thread's table handles are memoized by
+    name alongside its client, so the per-item loops in the query helpers don't rebuild one on every access.
     """
 
     def __init__(self, suffix: str):
         self._suffix = suffix
 
     def __getattr__(self, name):
-        return getattr(get_client().Table(settings.DYNAMO_TABLE_PREFIX + self._suffix), name)
+        table_name = settings.DYNAMO_TABLE_PREFIX + self._suffix
+        tables = getattr(_local, "tables", None)
+        if tables is None:
+            tables = _local.tables = {}
+        table = tables.get(table_name)
+        if table is None:
+            table = tables[table_name] = get_client().Table(table_name)
+        return getattr(table, name)
 
 
 MAIN = _Table("Main")
