@@ -1,3 +1,9 @@
+v26.3.95 (2026-09-15)
+-------------------------
+ * Set the security, caching and compression response headers from the app rather than relying on a proxy
+ * Backfill, require and index msg_uuid on message labellings
+ * Rename Knowledge to KnowledgeSource
+
 v26.3.94 (2026-09-15)
 -------------------------
  * Fix renaming the unique constraint on the message labels table on databases created before Django hashed constraint names
