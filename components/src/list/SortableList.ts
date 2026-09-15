@@ -99,6 +99,15 @@ export class SortableList extends RapidElement {
   ghostContainer: Node = null;
 
   /**
+   * Judges a vertical drop by where the dragged item's own box sits over
+   * the others rather than by the pointer: grabbed by its header, a tall
+   * item extends far beyond the cursor, and where the item sits is what
+   * the user is aiming. Off, the pointer decides, as it always has.
+   */
+  @property({ type: Boolean, attribute: 'overlap-drop' })
+  overlapDrop: boolean = false;
+
+  /**
    * Optional callback to allow parent components to customize the ghost node.
    * Called after the ghost node is cloned but before it is appended to the DOM.
    */
@@ -488,43 +497,48 @@ export class SortableList extends RapidElement {
         insertAfter: true
       };
     } else {
-      // For vertical layout the drop is judged by the dragged item's own
-      // box rather than the pointer: grabbed by its header, a tall item
-      // extends far beyond the cursor, and where the ITEM sits over the
-      // others is what the user is aiming. It lands against whichever
-      // element it most overlaps, on the side its center has crossed;
-      // clear of everything, its center scans the midpoints instead. The
-      // pointer stands in when there's no ghost to measure.
-      const ghost = this.ghostElement?.getBoundingClientRect();
-      const top = ghost ? ghost.top : mouseY;
-      const bottom = ghost ? ghost.bottom : mouseY;
-      const center = ghost ? (ghost.top + ghost.bottom) / 2 : mouseY;
+      const ghost = this.overlapDrop
+        ? this.ghostElement?.getBoundingClientRect()
+        : null;
 
-      let best: HTMLDivElement = null;
-      let bestRect: DOMRect = null;
-      let bestOverlap = 0;
-      for (const ele of elements) {
-        const rect = ele.getBoundingClientRect();
-        const overlap = Math.min(bottom, rect.bottom) - Math.max(top, rect.top);
-        if (overlap > bestOverlap) {
-          bestOverlap = overlap;
-          best = ele as HTMLDivElement;
-          bestRect = rect;
+      if (ghost) {
+        // With overlap-drop the drop is judged by the dragged item's own
+        // box rather than the pointer. It lands against whichever element
+        // it most overlaps, on the side its center has crossed; clear of
+        // everything, its center scans the midpoints below instead.
+        let best: HTMLDivElement = null;
+        let bestRect: DOMRect = null;
+        let bestOverlap = 0;
+        for (const ele of elements) {
+          const rect = ele.getBoundingClientRect();
+          const overlap =
+            Math.min(ghost.bottom, rect.bottom) - Math.max(ghost.top, rect.top);
+          if (overlap > bestOverlap) {
+            bestOverlap = overlap;
+            best = ele as HTMLDivElement;
+            bestRect = rect;
+          }
+        }
+        if (best) {
+          return {
+            element: best,
+            insertAfter:
+              (ghost.top + ghost.bottom) / 2 >
+              bestRect.top + bestRect.height / 2
+          };
         }
       }
-      if (best) {
-        return {
-          element: best,
-          insertAfter: center > bestRect.top + bestRect.height / 2
-        };
-      }
 
+      // Otherwise the pointer decides: it inserts before the first element
+      // whose midpoint it hasn't passed
+      const y = ghost ? (ghost.top + ghost.bottom) / 2 : mouseY;
       for (const ele of elements) {
         const rect = ele.getBoundingClientRect();
-        if (center < rect.top + rect.height / 2) {
+        if (y < rect.top + rect.height / 2) {
           return { element: ele as HTMLDivElement, insertAfter: false };
         }
       }
+      // If we're past all elements, insert after the last one
       return {
         element: elements[elements.length - 1] as HTMLDivElement,
         insertAfter: true
@@ -816,18 +830,18 @@ export class SortableList extends RapidElement {
 
       // only show drop placeholder and calculate drop position if internal drag
       if (!this.isExternalDrag) {
-        // In horizontal (flex-wrap) layouts the placeholder is detached
-        // before measuring so its presence can't reflow the rows and feed
-        // back into the calculation, which would cause oscillation. In
-        // vertical layouts it stays put: elements are measured where the
-        // user actually sees them - with the dragged item's slot held
-        // open - so a swap needs the ghost to genuinely cross the target
-        // as shown. Measuring the compacted layout instead would put the
-        // next element's midpoint under the ghost from the start, making
-        // the first downward swap fire almost immediately. The slot
-        // moving on each swap also shifts the next midpoint away, which
-        // is the hysteresis that keeps repeated swaps from flapping.
-        if (this.horizontal && this.dropPlaceholder) {
+        // The placeholder is detached before measuring so its presence
+        // can't reflow the layout and feed back into the calculation,
+        // which would cause oscillation. An overlap-drop list is the
+        // exception: there elements are measured where the user actually
+        // sees them - with the dragged item's slot held open - so a swap
+        // needs the ghost to genuinely cross the target as shown.
+        // Measuring the compacted layout instead would put the next
+        // element's midpoint under the ghost from the start, making the
+        // first downward swap fire almost immediately. The slot moving on
+        // each swap also shifts the next midpoint away, which is the
+        // hysteresis that keeps repeated swaps from flapping.
+        if ((this.horizontal || !this.overlapDrop) && this.dropPlaceholder) {
           this.dropPlaceholder.remove();
         }
 

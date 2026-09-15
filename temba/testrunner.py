@@ -15,7 +15,7 @@ from django.test.runner import DiscoverRunner, ParallelTestSuite, _init_worker
 def _temba_init_worker(counter, *args, **kwargs):
     """
     Django's own worker init gives each parallel test worker its own clone of the test database. This extends that
-    with a per-worker valkey database and per-worker DynamoDB tables and S3 buckets in localstack, so that workers
+    with a per-worker valkey database and per-worker DynamoDB tables and S3 buckets, so that workers
     can't see each other's state in those services.
     """
 

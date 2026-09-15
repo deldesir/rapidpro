@@ -2,6 +2,7 @@ import os
 import random
 import re
 import sys
+import threading
 import time
 from uuid import UUID, uuid4 as real_uuid4
 
@@ -60,9 +61,22 @@ def is_uuid7(val: str) -> bool:
 # See https://github.com/python/cpython/blob/362692852f13cdd1d33cc7ed35c0cbac7af1a785/Lib/uuid.py#L110
 
 
-_last_timestamp_v7 = None
-_last_counter_v7 = 0  # 42-bit counter
 _RFC_4122_VERSION_7_FLAGS = (7 << 76) | (0x8000 << 48)
+
+
+class _UUID7State:
+    """
+    The generation state shared by all uuid7() calls. The counter is read, incremented and written back, so it's
+    guarded by a lock to keep UUIDs unique and monotonic when generated concurrently.
+    """
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.last_timestamp = None
+        self.last_counter = 0  # 42-bit counter
+
+
+_v7 = _UUID7State()
 
 
 def _uuid7_timestamp_ms(when) -> int:
@@ -96,58 +110,56 @@ def uuid7(when=None) -> UUID:
     # advanced and the counter is reset to a random 42-bit integer with MSB
     # set to 0.
 
-    global _last_timestamp_v7
-    global _last_counter_v7
+    with _v7.lock:
+        if when:
+            timestamp_ms = _uuid7_timestamp_ms(when)
 
-    if when:
-        timestamp_ms = _uuid7_timestamp_ms(when)
-
-        # keep UUIDs generated for the same millisecond ordered as generated, as the clock based branch below does
-        if timestamp_ms == _last_timestamp_v7 and _last_counter_v7 < 0x3FF_FFFF_FFFF:
-            counter = _last_counter_v7 + 1
-            tail = int.from_bytes(os.urandom(4))
-        else:
-            counter, tail = _uuid7_get_counter_and_tail()
-    else:
-        nanoseconds = time.time_ns()
-        timestamp_ms = nanoseconds // 1_000_000
-
-        if _last_timestamp_v7 is None or timestamp_ms > _last_timestamp_v7:
-            counter, tail = _uuid7_get_counter_and_tail()
-        else:  # pragma: no cover
-            if timestamp_ms < _last_timestamp_v7:
-                timestamp_ms = _last_timestamp_v7 + 1
-            # advance the 42-bit counter
-            counter = _last_counter_v7 + 1
-            if counter > 0x3FF_FFFF_FFFF:
-                # advance the 48-bit timestamp
-                timestamp_ms += 1
-                counter, tail = _uuid7_get_counter_and_tail()
-            else:
-                # 32-bit random data
+            # keep UUIDs generated for the same millisecond ordered as generated, as the clock based branch below does
+            if timestamp_ms == _v7.last_timestamp and _v7.last_counter < 0x3FF_FFFF_FFFF:
+                counter = _v7.last_counter + 1
                 tail = int.from_bytes(os.urandom(4))
+            else:
+                counter, tail = _uuid7_get_counter_and_tail()
+        else:
+            nanoseconds = time.time_ns()
+            timestamp_ms = nanoseconds // 1_000_000
 
-    unix_ts_ms = timestamp_ms & 0xFFFF_FFFF_FFFF
-    counter_msbs = counter >> 30
-    # keep 12 counter's MSBs and clear variant bits
-    counter_hi = counter_msbs & 0x0FFF
-    # keep 30 counter's LSBs and clear version bits
-    counter_lo = counter & 0x3FFF_FFFF
-    # ensure that the tail is always a 32-bit integer (by construction,
-    # it is already the case, but future interfaces may allow the user
-    # to specify the random tail)
-    tail &= 0xFFFF_FFFF
+            if _v7.last_timestamp is None or timestamp_ms > _v7.last_timestamp:
+                counter, tail = _uuid7_get_counter_and_tail()
+            else:  # pragma: no cover
+                if timestamp_ms < _v7.last_timestamp:
+                    timestamp_ms = _v7.last_timestamp + 1
+                # advance the 42-bit counter
+                counter = _v7.last_counter + 1
+                if counter > 0x3FF_FFFF_FFFF:
+                    # advance the 48-bit timestamp
+                    timestamp_ms += 1
+                    counter, tail = _uuid7_get_counter_and_tail()
+                else:
+                    # 32-bit random data
+                    tail = int.from_bytes(os.urandom(4))
 
-    int_uuid_7 = unix_ts_ms << 80
-    int_uuid_7 |= counter_hi << 64
-    int_uuid_7 |= counter_lo << 32
-    int_uuid_7 |= tail
-    # by construction, the variant and version bits are already cleared
-    int_uuid_7 |= _RFC_4122_VERSION_7_FLAGS
+        unix_ts_ms = timestamp_ms & 0xFFFF_FFFF_FFFF
+        counter_msbs = counter >> 30
+        # keep 12 counter's MSBs and clear variant bits
+        counter_hi = counter_msbs & 0x0FFF
+        # keep 30 counter's LSBs and clear version bits
+        counter_lo = counter & 0x3FFF_FFFF
+        # ensure that the tail is always a 32-bit integer (by construction,
+        # it is already the case, but future interfaces may allow the user
+        # to specify the random tail)
+        tail &= 0xFFFF_FFFF
 
-    # defer global update until all computations are done
-    _last_timestamp_v7 = timestamp_ms
-    _last_counter_v7 = counter
+        int_uuid_7 = unix_ts_ms << 80
+        int_uuid_7 |= counter_hi << 64
+        int_uuid_7 |= counter_lo << 32
+        int_uuid_7 |= tail
+        # by construction, the variant and version bits are already cleared
+        int_uuid_7 |= _RFC_4122_VERSION_7_FLAGS
+
+        # defer state update until all computations are done
+        _v7.last_timestamp = timestamp_ms
+        _v7.last_counter = counter
 
     hex = "%032x" % int_uuid_7
     return UUID(f"{hex[:8]}-{hex[8:12]}-{hex[12:16]}-{hex[16:20]}-{hex[20:]}")

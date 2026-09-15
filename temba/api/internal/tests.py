@@ -13,8 +13,9 @@ from temba.campaigns.models import Campaign, CampaignEvent
 from temba.contacts.models import Contact, ContactExport, ContactField, ContactGroup, ContactURN
 from temba.flows.models import Flow, FlowLabel
 from temba.globals.models import Global
+from temba.ivr.models import Call
 from temba.knowledge.models import Article, Knowledge
-from temba.msgs.models import Broadcast
+from temba.msgs.models import Broadcast, Msg
 from temba.notifications.types import ExportFinishedNotificationType
 from temba.orgs.models import Org, OrgRole
 from temba.schedules.models import Schedule
@@ -22,7 +23,7 @@ from temba.templates.models import Template, TemplateTranslation
 from temba.tests import TembaTest, matchers, mock_mailroom
 from temba.tickets.models import Shortcut, TicketExport, Topic
 from temba.triggers.models import Trigger
-from temba.utils.uuid import uuid4
+from temba.utils.uuid import uuid4, uuid7
 
 NUM_BASE_QUERIES = 3  # number of queries required for any request (internal API is session only)
 
@@ -75,6 +76,70 @@ class EndpointsTest(APITestMixin, TembaTest):
         self.assertGet(endpoint_url + "?level=hood", [self.agent], results=[])
         self.assertGet(endpoint_url, [self.agent], results=[])
 
+    def test_calls(self):
+        endpoint_url = reverse("api.internal.calls") + ".json"
+
+        self.assertGetNotPermitted(endpoint_url, [None, self.agent])
+        self.assertPostNotAllowed(endpoint_url)
+        self.assertDeleteNotAllowed(endpoint_url)
+
+        flow = self.create_flow("IVR")
+        contact1 = self.create_contact("Ann", phone="+1234567001")
+        contact2 = self.create_contact("Bob", phone="+1234567002")
+
+        call1 = self.create_incoming_call(flow, contact1)
+        call2 = self.create_incoming_call(flow, contact2, status=Call.STATUS_ERRORED, error_reason=Call.ERROR_BUSY)
+        call2.duration = None
+        call2.save(update_fields=("duration",))
+
+        # a call in another org shouldn't appear
+        Call.objects.create(
+            uuid=uuid7(),
+            org=self.org2,
+            channel=self.channel,
+            direction=Call.DIRECTION_OUT,
+            contact=contact1,
+            contact_urn=contact1.get_urn(),
+            status=Call.STATUS_COMPLETED,
+        )
+
+        response = self.assertGet(
+            endpoint_url,
+            [self.admin],
+            results=[
+                {
+                    "uuid": str(call2.uuid),
+                    "direction": "in",
+                    "status": "errored",
+                    "error_reason": "busy",
+                    "contact": {"uuid": str(contact2.uuid), "name": "Bob"},
+                    "channel": {"uuid": str(self.channel.uuid), "name": "Test Channel"},
+                    "duration": 0,
+                    "created_on": matchers.ISODatetime(),
+                },
+                {
+                    "uuid": str(call1.uuid),
+                    "direction": "in",
+                    "status": "completed",
+                    "error_reason": None,
+                    "contact": {"uuid": str(contact1.uuid), "name": "Ann"},
+                    "channel": {"uuid": str(self.channel.uuid), "name": "Test Channel"},
+                    "duration": 15,
+                    "created_on": matchers.ISODatetime(),
+                },
+            ],
+            num_queries=NUM_BASE_QUERIES + 2,
+        )
+
+        # the list is cursor paginated but always carries the org's pre-calculated call count as its total
+        self.assertEqual("cursor", response.json()["paged_by"])
+        self.assertEqual(2, response.json()["count"])
+
+        self.assertGet(endpoint_url, [self.editor], results=[call2, call1])
+
+        # page size can be set by the client
+        self.assertGet(endpoint_url + "?page_size=1", [self.admin], results=[call2])
+
     def test_messages(self):
         endpoint_url = reverse("api.internal.messages") + ".json"
 
@@ -95,13 +160,11 @@ class EndpointsTest(APITestMixin, TembaTest):
         archived = self.create_incoming_msg(contact1, "Archived", archived=True)
         archived.labels.add(label)
 
-        msg1_logs_url = reverse("channels.channel_logs_read", args=[self.channel.uuid, "msg", msg1.uuid])
-        msg2_logs_url = reverse("channels.channel_logs_read", args=[self.channel.uuid, "msg", msg2.uuid])
+        channel_ref = {"uuid": str(self.channel.uuid), "name": "Test Channel"}
 
-        # admin has `channels.channel_logs` so as_json resolves logs_url to a real path
         response = self.assertGet(
             endpoint_url,
-            [self.admin],
+            [self.admin, self.editor],
             results=[
                 {
                     "uuid": str(msg2.uuid),
@@ -111,8 +174,8 @@ class EndpointsTest(APITestMixin, TembaTest):
                     "attachments": [{"content_type": "image/jpeg", "url": "https://example.com/a.jpg"}],
                     "labels": [{"uuid": str(label.uuid), "name": "Spam"}],
                     "flow": None,
+                    "channel": channel_ref,
                     "created_on": matchers.ISODatetime(),
-                    "logs_url": msg2_logs_url,
                 },
                 {
                     "uuid": str(msg1.uuid),
@@ -122,8 +185,8 @@ class EndpointsTest(APITestMixin, TembaTest):
                     "attachments": [],
                     "labels": [],
                     "flow": None,
+                    "channel": channel_ref,
                     "created_on": matchers.ISODatetime(),
-                    "logs_url": msg1_logs_url,
                 },
             ],
         )
@@ -132,52 +195,14 @@ class EndpointsTest(APITestMixin, TembaTest):
         # page-numbered one - the two are otherwise indistinguishable when everything fits on one page
         self.assertEqual("cursor", response.json()["paged_by"])
 
-        # editor lacks `channels.channel_logs` so logs_url is gated to None
-        self.assertGet(
-            endpoint_url,
-            [self.editor],
-            results=[
-                {
-                    "uuid": str(msg2.uuid),
-                    "type": "text",
-                    "contact": {"uuid": str(contact2.uuid), "name": "Bob"},
-                    "text": "Look at this",
-                    "attachments": [{"content_type": "image/jpeg", "url": "https://example.com/a.jpg"}],
-                    "labels": [{"uuid": str(label.uuid), "name": "Spam"}],
-                    "flow": None,
-                    "created_on": matchers.ISODatetime(),
-                    "logs_url": None,
-                },
-                {
-                    "uuid": str(msg1.uuid),
-                    "type": "text",
-                    "contact": {"uuid": str(contact1.uuid), "name": "Ann"},
-                    "text": "Hello there",
-                    "attachments": [],
-                    "labels": [],
-                    "flow": None,
-                    "created_on": matchers.ISODatetime(),
-                    "logs_url": None,
-                },
-            ],
-        )
+        # a message without a channel has no channel reference
+        no_channel = self.create_outgoing_msg(contact1, "Nochannel", failed_reason=Msg.FAILED_NO_DESTINATION)
+        response = self.assertGet(endpoint_url + "?folder=failed", [self.admin], results=[no_channel])
+        self.assertIsNone(response.json()["results"][0]["channel"])
 
-        # backdated past the channel-log retention window: logs_url is gated to None even for admin.
-        # `created_on` is passed at insert time because a DB trigger forbids changing it after the fact.
+        # a backdated message so the unfiltered listing below shows creation ordering. `created_on` is passed at
+        # insert time because a DB trigger forbids changing it after the fact.
         old_msg = self.create_incoming_msg(contact1, "Older", created_on=timezone.now() - timedelta(days=30))
-        response = self.assertGet(endpoint_url + f"?search={old_msg.text}", [self.admin], results=[old_msg])
-        self.assertIsNone(response.json()["results"][0]["logs_url"])
-
-        # inactive channel: logs_url is gated to None
-        live_msg = self.create_incoming_msg(contact1, "Liveone")
-        self.channel.is_active = False
-        self.channel.save(update_fields=("is_active",))
-        try:
-            response = self.assertGet(endpoint_url + f"?search={live_msg.text}", [self.admin], results=[live_msg])
-            self.assertIsNone(response.json()["results"][0]["logs_url"])
-        finally:
-            self.channel.is_active = True
-            self.channel.save(update_fields=("is_active",))
 
         # anonymous org with an unnamed contact: as_json returns the masked ref (not the urn) for the contact name
         anon_contact = self.create_contact("", phone="+1234567099")
@@ -229,10 +254,8 @@ class EndpointsTest(APITestMixin, TembaTest):
         # unfiltered listings carry the folder's cheap pre-calculated count (not a COUNT(*) on the messages table)
         # so the list UI can show "N of Total"; ordering is `-created_on, -id`: old_msg is backdated 30 days,
         # ancient 120 days, so they sort last
-        response = self.assertGet(
-            endpoint_url, [self.admin], results=[anon_msg, live_msg, msg2, msg1, old_msg, ancient]
-        )
-        self.assertEqual(6, response.json()["count"])
+        response = self.assertGet(endpoint_url, [self.admin], results=[anon_msg, msg2, msg1, old_msg, ancient])
+        self.assertEqual(5, response.json()["count"])
 
         # honor `?page_size=` so the list UI can request a page sized to its viewport
         msg3 = self.create_incoming_msg(contact1, "Three")

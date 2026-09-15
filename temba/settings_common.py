@@ -35,7 +35,7 @@ if TESTING:
 _db_host = "postgres"
 _valkey_host = "valkey"
 _dynamodb_host = "dynamodb"
-_localstack_host = "localstack"
+_s3_host = "s3"
 
 # -----------------------------------------------------------------------------------
 # AWS
@@ -82,9 +82,9 @@ STORAGES = {
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
 }
 
-# settings used by django-storages (defaults to localstack)
+# settings used by django-storages (defaults to the dev stack's S3)
 AWS_S3_REGION_NAME = AWS_REGION
-AWS_S3_ENDPOINT_URL = f"http://{_localstack_host}:4566"
+AWS_S3_ENDPOINT_URL = f"http://{_s3_host}:8333"
 AWS_S3_ADDRESSING_STYLE = "path"
 AWS_S3_FILE_OVERWRITE = False
 
@@ -742,6 +742,7 @@ CELERY_BEAT_SCHEDULE = {
     "squash-llm-counts": {"task": "squash_llm_counts", "schedule": timedelta(seconds=60)},
     "squash-msg-counts": {"task": "squash_msg_counts", "schedule": timedelta(seconds=60)},
     "trim-article-counts": {"task": "trim_article_counts", "schedule": crontab(hour=3, minute=0)},
+    "check-helpsite-domains": {"task": "check_helpsite_domains", "schedule": crontab(hour=4, minute=0)},
     "trim-channel-events": {"task": "trim_channel_events", "schedule": crontab(hour=3, minute=0)},
     "trim-channel-sync-events": {"task": "trim_channel_sync_events", "schedule": crontab(hour=3, minute=0)},
     "trim-exports": {"task": "trim_exports", "schedule": crontab(hour=2, minute=0)},

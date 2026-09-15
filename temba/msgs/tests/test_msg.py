@@ -129,22 +129,6 @@ class MsgTest(TembaTest, CRUDLTestMixin):
             msg2.as_archive_json(),
         )
 
-    def test_as_json_logs_url_without_user_or_org(self):
-        # defensive guard in _get_logs_url: a truthy context missing user/org returns None rather than raising
-        msg = self.create_incoming_msg(self.joe, "hi")
-        self.assertIsNone(msg._get_logs_url({"unrelated": "value"}))
-
-    def test_as_json_logs_url_channel_without_logs(self):
-        context = {"user": self.admin, "org": self.org}
-
-        msg1 = self.create_incoming_msg(self.joe, "hi")
-        self.assertIsNotNone(msg1._get_logs_url(context))
-
-        # msgs on channels of types that don't have logs don't get a logs URL
-        webchat_channel = self.create_channel("WCH", "WebChat", "123")
-        msg2 = self.create_incoming_msg(self.joe, "hi", channel=webchat_channel)
-        self.assertIsNone(msg2._get_logs_url(context))
-
     @patch("django.core.files.storage.default_storage.delete")
     @mock_mailroom
     def test_bulk_soft_delete(self, mr_mocks, mock_storage_delete):

@@ -175,8 +175,8 @@ class MessagesEndpoint(SearchLengthMixin, ListAPIMixin, BaseEndpoint):
         # messages aren't a MsgFolder slice: they're listed whatever folder they're in (archived included), which is
         # why the filter view offers no folder-dependent bulk actions. Deleted messages lose their labellings, but
         # are excluded explicitly too.
-        # `org` and `channel` are select_related because Msg.as_json reads self.org (for contact display) and
-        # self.channel.is_active/uuid (for the channel-log link gated on the channels.channel_logs perm).
+        # `org` and `channel` are select_related because Msg.as_json reads self.org (for contact display) and the
+        # channel's uuid and name
         if self.request.query_params.get("label"):
             label = self.label
             if not label:

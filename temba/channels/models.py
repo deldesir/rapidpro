@@ -12,6 +12,7 @@ from django_valkey import get_valkey_connection
 from phonenumbers import NumberParseException
 from twilio.base.exceptions import TwilioRestException
 
+from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
 from django.contrib.postgres.indexes import OpClass
 from django.db import models
@@ -826,6 +827,14 @@ class ChannelLog:
     is_error: bool
     elapsed_ms: int
     created_on: datetime
+
+    @classmethod
+    def get_retention_cutoff(cls) -> datetime:
+        """
+        Gets the time before which logs will have been deleted by retention. Pages pass this to components so they
+        only link to logs which can still be viewed.
+        """
+        return timezone.now() - settings.RETENTION_PERIODS["channellog"]
 
     @classmethod
     def get_by_uuid(cls, channel, uuids: list) -> list:

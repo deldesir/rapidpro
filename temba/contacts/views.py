@@ -15,13 +15,12 @@ from django.db.models.functions import Upper
 from django.http import Http404, HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
-from django.utils import timezone
 from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 from django.views import View
 
 from temba import mailroom
-from temba.channels.models import Channel
+from temba.channels.models import Channel, ChannelLog
 from temba.orgs.models import Org
 from temba.orgs.views.base import (
     BaseCreateModal,
@@ -312,7 +311,7 @@ class ContactCRUDL(SmartCRUDL):
 
         def get_context_data(self, **kwargs):
             context = super().get_context_data(**kwargs)
-            context["msg_logs_after"] = (timezone.now() - settings.RETENTION_PERIODS["channellog"]).isoformat()
+            context["msg_logs_after"] = ChannelLog.get_retention_cutoff().isoformat()
             # serialized for temba-card-layout's settings attribute
             context["card_settings"] = json.dumps(self.request.user.settings.get("contact_cards", {}))
             context["contact_urn_schemes"] = [

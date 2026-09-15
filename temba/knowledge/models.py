@@ -1,4 +1,5 @@
 import colorsys
+import hashlib
 import logging
 import mimetypes
 import os
@@ -852,6 +853,12 @@ class Article(models.Model):
             if parent_uuid is not None and parent_uuid not in articles:
                 raise ValueError(f"no such article: {parent_uuid}")
 
+            # a section is described and an article written, and which one is which is where it sits in the
+            # tree - so a move can put a section elsewhere among the sections, or an article in another section,
+            # but can't turn one into the other
+            if (parent_uuid is None) != (article.parent_id is None):
+                raise ValueError("a section can't become an article, nor an article a section")
+
             parents[uuid] = parent_uuid
             article.parent_id = articles[parent_uuid].id if parent_uuid else None
             article.sort_order = sort_order
@@ -917,13 +924,17 @@ class Article(models.Model):
 
     def release(self, user):
         """
-        Soft delete - a tombstone, so mailroom's delta sweep notices and drops our chunks. Children are reparented to
-        our parent so the tree stays connected, and our images go for good since nothing will render this body again.
+        Soft delete - a tombstone, so mailroom's delta sweep notices and drops our chunks. A section goes only once
+        it's empty, since its articles would otherwise be left as sections themselves; the images go for good, since
+        nothing will render this body again.
         """
+        assert not (self.is_section and self.children.filter(is_active=True).exists()), (
+            "a section with articles in it can't be released"
+        )
+
         image_paths = list(self.images.values_list("path", flat=True))
 
         with transaction.atomic():
-            self.children.update(parent=self.parent)
             self.images.all().delete()
 
             self.is_active = False
@@ -1051,16 +1062,19 @@ class ArticleCount(BaseDailyCount):
         ]
 
 
-def lookup_txt(name: str) -> list:
+def lookup_txt(name: str) -> list | None:
     """
-    The TXT records at a DNS name, as strings - none if the name doesn't resolve, has none, or can't be reached.
+    The TXT records at a DNS name, as strings - an empty list if the name doesn't resolve or has none, and None if
+    the lookup itself failed, which says nothing about what's there.
     """
     try:
         resolver = dns.resolver.Resolver()
         resolver.lifetime = 5
         answer = resolver.resolve(name, "TXT")
-    except dns.exception.DNSException, OSError, ValueError:
+    except dns.resolver.NXDOMAIN, dns.resolver.NoAnswer:
         return []
+    except dns.exception.DNSException, OSError, ValueError:
+        return None
 
     return [b"".join(record.strings).decode("utf-8", errors="replace") for record in answer]
 
@@ -1114,6 +1128,8 @@ class HelpSite(models.Model):
     POPULAR_DAYS = 30  # how far back views count towards being popular
     POPULAR_LIMIT = 6
     SEARCH_LIMIT = 20
+    SEARCH_CACHE_KEY = "helpsite_search:%d:%s"
+    SEARCH_CACHE_TTL = 60 * 5
 
     uuid = models.UUIDField(unique=True, default=uuid4)
     knowledge = models.OneToOneField(Knowledge, on_delete=models.PROTECT, related_name="site")
@@ -1217,13 +1233,32 @@ class HelpSite(models.Model):
         if not self.domain:
             return False
 
-        if self.domain_token not in lookup_txt(self.verification_record):
+        if self.domain_token not in (lookup_txt(self.verification_record) or []):
             return False
 
         if not self.domain_verified_on:
             self.domain_verified_on = timezone.now()
             self.save(update_fields=("domain_verified_on", "modified_on"))
         return True
+
+    @classmethod
+    def check_verified_domains(cls) -> dict:
+        """
+        Looks again for every verified domain's record, so a domain an org has let go of - and may not own any more -
+        stops being served and can be verified by whoever has it now. A lookup that fails outright proves nothing
+        either way and is left for next time.
+        """
+        num_checked, num_lapsed = 0, 0
+
+        for site in cls.objects.exclude(domain_verified_on=None).exclude(domain=None):
+            num_checked += 1
+            records = lookup_txt(site.verification_record)
+            if records is not None and site.domain_token not in records:
+                site.domain_verified_on = None
+                site.save(update_fields=("domain_verified_on", "modified_on"))
+                num_lapsed += 1
+
+        return {"checked": num_checked, "lapsed": num_lapsed}
 
     @property
     def org(self):
@@ -1381,8 +1416,17 @@ class HelpSite(models.Model):
         if not query:
             return []
 
-        terms = [t for t in re.split(r"\W+", query) if len(t) > 2]  # worth marking in a snippet
         readable = self._published().filter(parent__in=self._published().filter(parent=None))
+
+        # the site is public, and a search costs an embedding and a scan of every body - so the same question asked
+        # again within a few minutes is answered from the last time, less anything unpublished since
+        cache_key = self.SEARCH_CACHE_KEY % (self.id, hashlib.md5(f"{query.lower()}|{limit}".encode()).hexdigest())
+        cached = cache.get(cache_key)
+        if cached is not None:
+            by_id = {a.id: a for a in readable.filter(id__in=[i for i, _ in cached]).select_related("parent")}
+            return [(by_id[i], snippet) for i, snippet in cached if i in by_id]
+
+        terms = [t for t in re.split(r"\W+", query) if len(t) > 2]  # worth marking in a snippet
 
         ordered, snippets = [], {}
 
@@ -1418,7 +1462,9 @@ class HelpSite(models.Model):
             )
             ordered.extend(matches)
 
-        return [(a, snippets.get(str(a.uuid)) or make_snippet(a.as_plain_text(), terms)) for a in ordered[:limit]]
+        results = [(a, snippets.get(str(a.uuid)) or make_snippet(a.as_plain_text(), terms)) for a in ordered[:limit]]
+        cache.set(cache_key, [(a.id, snippet) for a, snippet in results], self.SEARCH_CACHE_TTL)
+        return results
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)

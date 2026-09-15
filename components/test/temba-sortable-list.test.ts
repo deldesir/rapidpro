@@ -168,6 +168,31 @@ describe('temba-sortable-list', () => {
     expect(changeEvent.type).to.equal('change');
   });
 
+  it('drags by overlap when asked to', async () => {
+    const list: SortableList = await createSorter(BORING_LIST);
+    expect(list.overlapDrop).to.be.false;
+    list.overlapDrop = true;
+    await list.updateComplete;
+
+    const bounds = list.getBoundingClientRect();
+
+    await moveMouse(bounds.left + 20, bounds.bottom - 10);
+    await mouseDown();
+    await moveMouse(bounds.left + 20, bounds.top + 5);
+
+    // the dragged item's box now sits over the first, so it lands there
+    const orderChanged = oneEvent(list, CustomEventType.OrderChanged, false);
+    await mouseUp();
+    clock.runAll();
+    await list.updateComplete;
+    clock.runAll();
+
+    const orderEvent = await orderChanged;
+    expect(orderEvent.detail).to.deep.equal({
+      swap: [1, 0]
+    });
+  });
+
   it('detects external drag when dragging outside container', async () => {
     const list: SortableList = await createSorter(BORING_LIST);
     list.externalDrag = true;

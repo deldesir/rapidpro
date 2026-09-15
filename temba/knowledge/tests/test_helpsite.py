@@ -5,6 +5,7 @@ from unittest.mock import call, patch
 import dns.exception
 import dns.resolver
 
+from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.test import RequestFactory
 from django.test.utils import override_settings
@@ -21,7 +22,7 @@ from temba.knowledge.models import (
     make_snippet,
     to_plain_text,
 )
-from temba.knowledge.tasks import squash_article_counts, trim_article_counts
+from temba.knowledge.tasks import check_helpsite_domains, squash_article_counts, trim_article_counts
 from temba.mailroom.client.exceptions import RequestException
 from temba.orgs.models import Org
 from temba.tests import MockJsonResponse, TembaTest, mock_mailroom
@@ -120,6 +121,8 @@ class HelpSiteTest(TembaTest):
         # the record has to hold the site's own token
         mock_lookup.return_value = []
         self.assertFalse(site.verify_domain())
+        mock_lookup.return_value = None  # a lookup that failed
+        self.assertFalse(site.verify_domain())
         mock_lookup.return_value = ["something-else", "v=spf1 -all"]
         self.assertFalse(site.verify_domain())
         self.assertFalse(site.is_domain_verified)
@@ -145,16 +148,39 @@ class HelpSiteTest(TembaTest):
                 other.domain_verified_on = timezone.now()
                 other.save(update_fields=("domain_verified_on",))
 
+        # verified domains are looked at again on a schedule, so one whose record has gone lapses - and can then
+        # be verified by whoever has the domain now. A lookup that fails outright changes nothing
+        mock_lookup.return_value = None
+        self.assertEqual({"checked": 1, "lapsed": 0}, HelpSite.check_verified_domains())
+        site.refresh_from_db()
+        self.assertTrue(site.is_domain_verified)
+
+        mock_lookup.return_value = ["v=spf1 -all"]
+        self.assertEqual({"checked": 1, "lapsed": 1}, HelpSite.check_verified_domains())
+        site.refresh_from_db()
+        self.assertFalse(site.is_domain_verified)
+        self.assertIsNone(HelpSite.get_for_host("help.nyaruka.com"))
+
+        other.refresh_from_db()  # the save that failed above left the time set on the instance
+        mock_lookup.return_value = [other.domain_token]
+        self.assertTrue(other.verify_domain())
+        self.assertEqual(other, HelpSite.get_for_host("help.nyaruka.com"))
+        self.assertEqual({"checked": 1, "lapsed": 0}, check_helpsite_domains())
+
     def test_lookup_txt(self):
         answer = [SimpleNamespace(strings=[b"first ", b"part"]), SimpleNamespace(strings=[b"second"])]
         with patch("dns.resolver.Resolver.resolve", return_value=answer):
             self.assertEqual(["first part", "second"], lookup_txt("_helpsite-verification.help.nyaruka.com"))
 
-        # a name that doesn't resolve, or a resolver that can't be reached, is simply no records
+        # a name that doesn't resolve or has no TXT records is no records...
         with patch("dns.resolver.Resolver.resolve", side_effect=dns.resolver.NXDOMAIN()):
             self.assertEqual([], lookup_txt("_helpsite-verification.nope.nyaruka.com"))
+        with patch("dns.resolver.Resolver.resolve", side_effect=dns.resolver.NoAnswer()):
+            self.assertEqual([], lookup_txt("_helpsite-verification.nope.nyaruka.com"))
+
+        # ...while a lookup that fails says nothing either way
         with patch("dns.resolver.Resolver.resolve", side_effect=dns.exception.Timeout()):
-            self.assertEqual([], lookup_txt("_helpsite-verification.help.nyaruka.com"))
+            self.assertIsNone(lookup_txt("_helpsite-verification.help.nyaruka.com"))
 
         # what a domain is stored as
         self.assertEqual("help.nyaruka.com", HelpSite.clean_domain("  WWW.Help.Nyaruka.com "))
@@ -377,9 +403,19 @@ class HelpSiteTest(TembaTest):
         self.assertEqual([nodes], [a for a, _ in results])
         self.assertEqual("A <mark>node</mark> is a step in a flow. <mark>Node</mark>s have actions.", results[0][1])
 
+        # the site is public, so the same search again is answered from the last time - one query to check the
+        # articles are still readable, rather than a scan of every body
+        with self.assertNumQueries(1):
+            self.assertEqual(results, site.search("  Node "))
+
+        nodes.unpublish(self.admin)
+        self.assertEqual([], site.search("node"))
+        nodes.publish(self.admin)
+
         self.assertEqual([actions], [a for a, _ in site.search("action")])  # no stemming, so not "actions"
         self.assertEqual([], site.search("unfinished"))
         self.assertEqual([], site.search("xyzzy"))
+        cache.clear()
 
         # once the helpdesk has been indexed, mailroom's semantic search leads, with text search filling in behind
         self.helpdesk.last_indexed_on = timezone.now()
@@ -427,6 +463,10 @@ class HelpSiteTest(TembaTest):
         self.assertEqual(
             call(self.org, "what is a node", limit=HelpSite.SEARCH_LIMIT * 3), mr_mocks.calls["knowledge_search"][0]
         )
+
+        # and isn't asked again for the same search while the answer is fresh
+        self.assertEqual([actions, nodes], [a for a, _ in site.search("what is a node")])
+        self.assertEqual(1, len(mr_mocks.calls["knowledge_search"]))
 
         # mailroom being down doesn't take search with it
         mr_mocks.exception(RequestException("knowledge/search", {}, MockJsonResponse(500, {"error": "boom"})))

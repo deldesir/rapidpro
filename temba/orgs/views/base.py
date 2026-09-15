@@ -20,6 +20,7 @@ from django.utils.functional import Promise, cached_property
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
+from temba.channels.models import ChannelLog
 from temba.contacts.models import ContactField, ContactGroup
 from temba.utils import on_transaction_commit
 from temba.utils.fields import SelectMultipleWidget, TembaDateField
@@ -189,6 +190,14 @@ class BaseListComponentView(ContextMenuMixin, BulkActionMixin, SpaMixin, BaseLis
     # optional subtitle rendered under the title
     subtitle = ""
 
+    # whether rows can link to their channel logs - the template forwards the retention cutoff to the component when
+    # the user can view logs, and the component builds the links itself
+    show_channel_logs = False
+
+    # whether the component offers a search box - the component itself is opt-in (see ContentList.searchable) and
+    # the template forwards this, so set False on lists whose contents aren't usefully searchable
+    allow_search = True
+
     # the component pages the objects itself
     paginate_by = None
 
@@ -197,7 +206,8 @@ class BaseListComponentView(ContextMenuMixin, BulkActionMixin, SpaMixin, BaseLis
 
     def derive_list_query(self) -> str:
         """
-        The query string selecting what the component should fetch, e.g. "folder=active"
+        The query string selecting what the component should fetch, e.g. "folder=active", or empty if the endpoint
+        needs none
         """
         return "folder=active"
 
@@ -220,9 +230,17 @@ class BaseListComponentView(ContextMenuMixin, BulkActionMixin, SpaMixin, BaseLis
 
         # the resolved API endpoint, the subtitle, and the bulk action configs the component expects (resolved here
         # so the template stays inert)
-        context["list_url"] = f"{reverse(self.list_endpoint)}.json?{self.derive_list_query()}"
+        list_url = f"{reverse(self.list_endpoint)}.json"
+        if query := self.derive_list_query():
+            list_url += f"?{query}"
+        context["list_url"] = list_url
         subtitle = self.derive_subtitle()
         context["list_subtitle"] = str(subtitle) if subtitle else ""
+        context["list_searchable"] = self.allow_search
+
+        user = self.request.user
+        if self.show_channel_logs and (self.has_org_perm("channels.channel_logs") or user.is_staff):
+            context["list_logs_after"] = ChannelLog.get_retention_cutoff().isoformat()
 
         actions = []
         for key in self.get_bulk_actions():

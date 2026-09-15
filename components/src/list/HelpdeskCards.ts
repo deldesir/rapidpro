@@ -675,6 +675,7 @@ export class HelpdeskCards extends RapidElement {
         class="rows ${group.articles.length ? '' : 'empty'}"
         dragHandle="drag-handle"
         .ghostContainer=${this.renderRoot}
+        .overlapDrop=${true}
         .externalDrag=${true}
         .ghostExternal=${true}
         .externalDragPadding=${8}
@@ -798,6 +799,7 @@ export class HelpdeskCards extends RapidElement {
                 gap="12px"
                 dragHandle="card-header"
                 .ghostContainer=${this.renderRoot}
+                .overlapDrop=${true}
                 .prepareGhost=${this.prepareGhost}
                 @temba-order-changed=${this.handleCardSwap}
               >

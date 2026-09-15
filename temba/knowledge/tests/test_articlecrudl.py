@@ -388,7 +388,8 @@ class ArticleCRUDLTest(TembaTest, CRUDLTestMixin):
 
     def test_sort(self):
         flows = Article.create(self.helpdesk, self.admin, "Flows")
-        nodes = Article.create(self.helpdesk, self.admin, "Nodes")
+        contacts = Article.create(self.helpdesk, self.admin, "Contacts")
+        nodes = Article.create(self.helpdesk, self.admin, "Nodes", parent=flows)
 
         sort_url = reverse("knowledge.article_sort")
 
@@ -409,16 +410,28 @@ class ArticleCRUDLTest(TembaTest, CRUDLTestMixin):
             sort_url,
             json.dumps(
                 [
-                    {"uuid": str(nodes.uuid), "parent": None, "sort_order": 0},
-                    {"uuid": str(flows.uuid), "parent": str(nodes.uuid), "sort_order": 0},
+                    {"uuid": str(contacts.uuid), "parent": None, "sort_order": 0},
+                    {"uuid": str(flows.uuid), "parent": None, "sort_order": 1},
+                    {"uuid": str(nodes.uuid), "parent": str(contacts.uuid), "sort_order": 0},
                 ]
             ),
             content_type="application/json",
         )
         self.assertEqual({"status": "ok"}, response.json())
 
+        nodes.refresh_from_db()
+        self.assertEqual(contacts, nodes.parent)
+
+        # the tree the client sends is checked, not trusted - a section can't be dropped into another section
+        response = self.client.post(
+            sort_url,
+            json.dumps([{"uuid": str(flows.uuid), "parent": str(contacts.uuid), "sort_order": 1}]),
+            content_type="application/json",
+        )
+        self.assertEqual({"error": "a section can't become an article, nor an article a section"}, response.json())
+
         flows.refresh_from_db()
-        self.assertEqual(nodes, flows.parent)
+        self.assertIsNone(flows.parent)
 
         # a malformed payload is rejected without touching anything, as is one whose sort orders aren't finite or
         # which names more articles than a helpdesk can hold
@@ -445,24 +458,24 @@ class ArticleCRUDLTest(TembaTest, CRUDLTestMixin):
         # as is a tree the model won't accept - the client is never trusted
         response = self.client.post(
             sort_url,
-            json.dumps([{"uuid": str(nodes.uuid), "parent": str(flows.uuid), "sort_order": 0}]),
+            json.dumps([{"uuid": str(nodes.uuid), "parent": str(nodes.uuid), "sort_order": 0}]),
             content_type="application/json",
         )
         self.assertEqual(400, response.status_code)
         self.assertEqual({"error": "articles can't be their own ancestor"}, response.json())
 
-        # or one that would nest an article below the two level cap - flows already sits under nodes
-        child = Article.create(self.helpdesk, self.admin, "Child")
+        # or one that would nest an article below the two level cap - nodes already sits under contacts
+        child = Article.create(self.helpdesk, self.admin, "Child", parent=contacts)
         response = self.client.post(
             sort_url,
-            json.dumps([{"uuid": str(child.uuid), "parent": str(flows.uuid), "sort_order": 0}]),
+            json.dumps([{"uuid": str(child.uuid), "parent": str(nodes.uuid), "sort_order": 0}]),
             content_type="application/json",
         )
         self.assertEqual(400, response.status_code)
         self.assertEqual({"error": "articles can't be nested more than 2 deep"}, response.json())
 
         child.refresh_from_db()
-        self.assertIsNone(child.parent)
+        self.assertEqual(contacts, child.parent)
 
         # a sort order too big for the column is clamped rather than handed to the database
         response = self.client.post(
