@@ -50,7 +50,7 @@ class Call(models.Model):
         (ERROR_SUSPENDED, _("Workspace suspended")),  # the call was never made because the workspace is suspended
     )
 
-    # slugs used for statuses in the internal API
+    # slugs used for statuses and error reasons in the internal API
     STATUS_SLUGS = {
         STATUS_PENDING: "pending",
         STATUS_QUEUED: "queued",
@@ -59,6 +59,13 @@ class Call(models.Model):
         STATUS_COMPLETED: "completed",
         STATUS_ERRORED: "errored",
         STATUS_FAILED: "failed",
+    }
+    ERROR_SLUGS = {
+        ERROR_PROVIDER: "provider",
+        ERROR_BUSY: "busy",
+        ERROR_NOANSWER: "no_answer",
+        ERROR_MACHINE: "machine",
+        ERROR_SUSPENDED: "suspended",
     }
 
     RETRY_CHOICES = ((-1, _("Never")), (30, _("After 30 minutes")), (60, _("After 1 hour")), (1440, _("After 1 day")))
@@ -98,16 +105,6 @@ class Call(models.Model):
 
         return timedelta(seconds=duration)
 
-    @property
-    def status_display(self) -> str:
-        """
-        Gets the status/error_reason as display text, e.g. Wired, Errored (No Answer)
-        """
-        status = self.get_status_display()
-        if self.status in (self.STATUS_ERRORED, self.STATUS_FAILED) and self.error_reason:
-            status += f" ({self.get_error_reason_display()})"
-        return status
-
     def get_logs(self) -> list:
         return ChannelLog.get_by_uuid(self.channel, self.log_uuids or [])
 
@@ -127,7 +124,7 @@ class Call(models.Model):
             "uuid": str(self.uuid),
             "direction": "in" if self.direction == self.DIRECTION_IN else "out",
             "status": self.STATUS_SLUGS[self.status],
-            "status_display": str(self.status_display),
+            "error_reason": self.ERROR_SLUGS[self.error_reason] if self.error_reason else None,
             "contact": {"uuid": str(self.contact.uuid), "name": contact_name},
             "channel": {"uuid": str(self.channel.uuid), "name": self.channel.name},
             "duration": int(self.get_duration().total_seconds()),

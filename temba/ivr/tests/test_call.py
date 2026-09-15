@@ -22,7 +22,6 @@ class CallTest(TembaTest):
 
         with patch("django.utils.timezone.now", return_value=datetime(2022, 9, 20, 13, 46, 50, 0, tzone.utc)):
             self.assertEqual(timedelta(seconds=20), call.get_duration())  # calculated
-            self.assertEqual("In Progress", call.status_display)
 
         call.duration = 15
         call.status = Call.STATUS_ERRORED
@@ -30,13 +29,6 @@ class CallTest(TembaTest):
         call.save(update_fields=("status", "error_reason"))
 
         self.assertEqual(timedelta(seconds=15), call.get_duration())  # from duration field
-        self.assertEqual("Errored (No Answer)", call.status_display)
-
-        call.status = Call.STATUS_FAILED
-        call.error_reason = Call.ERROR_SUSPENDED
-        call.save(update_fields=("status", "error_reason"))
-
-        self.assertEqual("Failed (Workspace suspended)", call.status_display)
 
     def test_as_json(self):
         flow = self.create_flow("IVR")
@@ -48,7 +40,7 @@ class CallTest(TembaTest):
                 "uuid": str(call.uuid),
                 "direction": "in",
                 "status": "completed",
-                "status_display": "Complete",
+                "error_reason": None,
                 "contact": {"uuid": str(contact.uuid), "name": "Bob"},
                 "channel": {"uuid": str(self.channel.uuid), "name": "Test Channel"},
                 "duration": 15,
@@ -57,7 +49,7 @@ class CallTest(TembaTest):
             call.as_json(),
         )
 
-        # an errored call includes the reason in its status display
+        # an errored call includes the reason
         call.direction = Call.DIRECTION_OUT
         call.status = Call.STATUS_ERRORED
         call.error_reason = Call.ERROR_NOANSWER
@@ -66,7 +58,7 @@ class CallTest(TembaTest):
         as_json = call.as_json()
         self.assertEqual("out", as_json["direction"])
         self.assertEqual("errored", as_json["status"])
-        self.assertEqual("Errored (No Answer)", as_json["status_display"])
+        self.assertEqual("no_answer", as_json["error_reason"])
 
         # a contact without a name is displayed by the URN that was called
         contact.name = ""

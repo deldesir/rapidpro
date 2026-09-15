@@ -5,8 +5,7 @@ import { Icon } from '../Icons';
 import { Call } from '../interfaces';
 import { formatDuration } from '../utils';
 
-/** Call status → status-pill kind. The pill's label is the server's
- * localized `status_display`, which folds in the error reason. */
+/** Call status → status-pill kind. */
 const STATUS_KINDS: { [status: string]: string } = {
   pending: 'pending',
   queued: 'pending',
@@ -15,6 +14,47 @@ const STATUS_KINDS: { [status: string]: string } = {
   completed: 'active',
   errored: 'warning',
   failed: 'error'
+};
+
+/** Localized label for a call status slug. Resolved at render time so
+ * a locale change re-renders it. */
+const statusLabel = (status: string): string => {
+  switch (status) {
+    case 'pending':
+      return msg('Pending');
+    case 'queued':
+      return msg('Queued');
+    case 'wired':
+      return msg('Wired');
+    case 'in_progress':
+      return msg('In Progress');
+    case 'completed':
+      return msg('Complete');
+    case 'errored':
+      return msg('Errored');
+    case 'failed':
+      return msg('Failed');
+    default:
+      return status || '';
+  }
+};
+
+/** Localized label for why an errored / failed call didn't connect. */
+const errorReasonLabel = (reason: string): string => {
+  switch (reason) {
+    case 'provider':
+      return msg('Provider');
+    case 'busy':
+      return msg('Busy');
+    case 'no_answer':
+      return msg('No Answer');
+    case 'machine':
+      return msg('Answering Machine');
+    case 'suspended':
+      return msg('Workspace suspended');
+    default:
+      return reason || '';
+  }
 };
 
 /**
@@ -103,11 +143,16 @@ export class CallList extends ContentList<Call> {
         const name = item.contact?.name || '';
         return html`<span class="contact-name" title=${name}>${name}</span>`;
       }
-      case 'status':
+      case 'status': {
+        // an errored or failed call carries the reason, e.g. "Errored (No Answer)"
+        const label = item.error_reason
+          ? `${statusLabel(item.status)} (${errorReasonLabel(item.error_reason)})`
+          : statusLabel(item.status);
         return this.renderStatusPill(
           STATUS_KINDS[item.status] || 'neutral',
-          item.status_display || item.status || ''
+          label
         );
+      }
       case 'duration':
         return html`<span class="duration"
           >${formatDuration(item.duration)}</span
