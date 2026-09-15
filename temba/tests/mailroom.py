@@ -597,6 +597,12 @@ class TestClient(MailroomClient):
         return {}
 
     @_client_method
+    def msg_label(self, org, label, msgs, *, add: bool):
+        label_msgs(label, msgs, add)
+
+        return {}
+
+    @_client_method
     def knowledge_search(self, org, query: str, limit: int = 10) -> list[dict]:
         assert self.mocks._knowledge_search, "missing knowledge_search mock"
 
@@ -895,6 +901,28 @@ def archive_msgs(msgs):
         msg.folder = Msg.FOLDER_ARCHIVED
         msg.modified_on = timezone.now()
         msg.save(update_fields=("folder", "modified_on"))
+
+
+def label_msgs(label, msgs, add: bool):
+    """
+    Simulates mailroom adding or removing a label on the given messages. Messages which aren't incoming or aren't
+    currently visible are ignored, and only messages whose labelling actually changes have their modified_on bumped.
+    """
+
+    for msg in msgs:
+        if msg.direction != Msg.DIRECTION_IN or msg.visibility != Msg.VISIBILITY_VISIBLE:
+            continue
+
+        has_label = msg.labels.filter(id=label.id).exists()
+        if add and not has_label:
+            msg.labels.add(label)
+        elif not add and has_label:
+            msg.labels.remove(label)
+        else:
+            continue
+
+        msg.modified_on = timezone.now()
+        msg.save(update_fields=("modified_on",))
 
 
 def restore_msgs(msgs):

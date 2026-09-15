@@ -735,6 +735,28 @@ class MailroomClientTest(TembaTest):
         )
 
     @patch("requests.post")
+    def test_msg_label(self, mock_post):
+        ann = self.create_contact("Ann", urns=["tel:+12340000001"])
+        msg1 = self.create_incoming_msg(ann, "Hi")
+        msg2 = self.create_incoming_msg(ann, "Hi again")
+        label = self.create_label("Spam")
+        mock_post.return_value = MockJsonResponse(200, {})
+        response = self.client.msg_label(self.org, label, [msg1, msg2], add=True)
+
+        self.assertEqual({}, response)
+
+        mock_post.assert_called_once_with(
+            "http://localhost:8090/mi/msg/label",
+            headers={"User-Agent": "Temba", "Authorization": "Token sesame"},
+            json={
+                "org_id": self.org.id,
+                "label_uuid": str(label.uuid),
+                "msg_uuids": [str(msg1.uuid), str(msg2.uuid)],
+                "add": True,
+            },
+        )
+
+    @patch("requests.post")
     def test_msg_restore(self, mock_post):
         ann = self.create_contact("Ann", urns=["tel:+12340000001"])
         msg1 = self.create_incoming_msg(ann, "Hi", archived=True)
