@@ -1488,14 +1488,56 @@ class HelpSite(models.Model):
         ]
 
 
+class HelpdeskImportError(Exception):
+    """
+    An import that couldn't go on, with what a user can do about it.
+    """
+
+    pass
+
+
+class HelpdeskImportType:
+    """
+    Base type for the help sites a helpdesk can be brought over from. A type asks for what it needs in its form,
+    does the import in a worker, and is registered by class name in settings.HELPDESK_IMPORT_TYPES.
+    """
+
+    slug = None
+    name = None
+
+    # the form asking for what the import needs - a HelpdeskImportForm, whose cleaned data becomes the config
+    form_class = None
+
+    # config keys dropped once the import is over - what was lent for it rather than kept
+    secret_config_keys = ()
+
+    @property
+    def template_name(self) -> str:
+        """
+        The dialog's template, which extends knowledge/helpdeskimport_create.html with the type's fields.
+        """
+        return f"knowledge/imports/{self.slug}/create.html"
+
+    def is_available_to(self, org, user) -> bool:
+        """
+        Determines whether this import type is offered to the given user.
+        """
+        return True
+
+    def perform(self, imp):  # pragma: no cover
+        """
+        Brings the site over into the import's helpdesk, advancing the import as it goes. Raises HelpdeskImportError
+        for anything the user can do something about.
+        """
+        raise NotImplementedError()
+
+
 class HelpdeskImport(models.Model):
     """
     A help site brought over into the helpdesk from somewhere else, done in the background once the workspace has
-    handed over a key to it. The page shows its progress as it goes, and what went wrong if it didn't finish.
+    handed over what its type needs to get in. The page shows its progress as it goes, and what went wrong if it
+    didn't finish.
     """
-
-    TYPE_CRISP = "crisp"
-    TYPE_CHOICES = ((TYPE_CRISP, "Crisp"),)
 
     STATUS_PENDING = "P"
     STATUS_PROCESSING = "O"
@@ -1508,21 +1550,15 @@ class HelpdeskImport(models.Model):
         (STATUS_FAILED, _("Failed")),
     )
 
-    # config keys for TYPE_CRISP
-    CONFIG_IDENTIFIER = "identifier"
-    CONFIG_KEY = "key"
-    CONFIG_WEBSITE_ID = "website_id"
-    CONFIG_LOCALE = "locale"
-
     # an import that never finished in this long is taken to have died with its worker rather than to be running
     UNFINISHED_WINDOW = timedelta(hours=4)
 
     uuid = models.UUIDField(unique=True, default=uuid4)
     org = models.ForeignKey(Org, on_delete=models.PROTECT, related_name="helpdesk_imports")
     knowledge = models.ForeignKey(Knowledge, on_delete=models.PROTECT, related_name="imports")
-    import_type = models.CharField(max_length=16, choices=TYPE_CHOICES)
+    import_type = models.CharField(max_length=16)  # the slug of a registered HelpdeskImportType
 
-    # where it's importing from and how to get in - the key is dropped once the import is over
+    # what the type needs to get in and bring the site over - its secrets are dropped once the import is over
     config = models.JSONField(default=dict)
 
     status = models.CharField(max_length=1, choices=STATUS_CHOICES, default=STATUS_PENDING)
@@ -1537,11 +1573,23 @@ class HelpdeskImport(models.Model):
     finished_on = models.DateTimeField(null=True)
 
     @classmethod
-    def create(cls, knowledge, user, import_type: str, config: dict):
+    def get_types(cls):
+        from .imports import TYPES
+
+        return TYPES.values()
+
+    @classmethod
+    def get_type(cls, slug: str):
+        from .imports import TYPES
+
+        return TYPES.get(slug)
+
+    @classmethod
+    def create(cls, knowledge, user, import_type: HelpdeskImportType, config: dict):
         assert knowledge.knowledge_type == Knowledge.TYPE_HELPDESK, "only a helpdesk can be imported into"
 
         return cls.objects.create(
-            org=knowledge.org, knowledge=knowledge, import_type=import_type, config=config, created_by=user
+            org=knowledge.org, knowledge=knowledge, import_type=import_type.slug, config=config, created_by=user
         )
 
     @classmethod
@@ -1560,20 +1608,8 @@ class HelpdeskImport(models.Model):
         return cls.objects.filter(knowledge=knowledge).order_by("-created_on").first()
 
     @property
-    def identifier(self) -> str:
-        return self.config.get(self.CONFIG_IDENTIFIER, "")
-
-    @property
-    def key(self) -> str:
-        return self.config.get(self.CONFIG_KEY, "")
-
-    @property
-    def website_id(self) -> str:
-        return self.config.get(self.CONFIG_WEBSITE_ID, "")
-
-    @property
-    def locale(self) -> str:
-        return self.config.get(self.CONFIG_LOCALE, "en")
+    def type(self) -> HelpdeskImportType | None:
+        return self.get_type(self.import_type)
 
     @property
     def is_finished(self) -> bool:
@@ -1586,19 +1622,19 @@ class HelpdeskImport(models.Model):
 
     def perform(self):
         """
-        Does the import, in a worker. Whatever the outcome the key it was given is dropped - it was lent for this.
+        Does the import, in a worker. Whatever the outcome, what was lent for it is dropped.
         """
-        from .crisp import CrispError, CrispImporter
-
         assert not self.is_finished, "can't perform a finished import"
+
+        imp_type = self.type
 
         self.status = self.STATUS_PROCESSING
         self.started_on = timezone.now()
         self.save(update_fields=("status", "started_on", "modified_on"))
 
         try:
-            CrispImporter(self).run()
-        except CrispError as e:
+            imp_type.perform(self)
+        except HelpdeskImportError as e:
             self.status = self.STATUS_FAILED
             self.error = str(e)[:255]
         except Exception:  # pragma: no cover
@@ -1609,7 +1645,8 @@ class HelpdeskImport(models.Model):
             self.status = self.STATUS_COMPLETE
             self.knowledge.mark_pending()
 
-        self.config = {k: v for k, v in self.config.items() if k != self.CONFIG_KEY}
+        secrets = imp_type.secret_config_keys if imp_type else ()
+        self.config = {k: v for k, v in self.config.items() if k not in secrets}
         self.finished_on = timezone.now()
         self.save(update_fields=("status", "error", "config", "finished_on", "modified_on"))
 

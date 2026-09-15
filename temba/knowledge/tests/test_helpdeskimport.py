@@ -1,180 +1,121 @@
-import time
-from unittest.mock import Mock, patch
-
-import requests
-
+from django import forms
+from django.test import override_settings
 from django.urls import reverse
 
-from temba.knowledge.crisp import CrispClient, CrispError
-from temba.knowledge.models import Article, HelpdeskImport, HelpSite, Knowledge
+from temba.knowledge.forms import HelpdeskImportForm
+from temba.knowledge.imports import register_import_type, reload_import_types
+from temba.knowledge.models import Article, HelpdeskImport, HelpdeskImportError, HelpdeskImportType, Knowledge
 from temba.orgs.models import Org
 from temba.tests import CRUDLTestMixin, TembaTest
-from temba.tests.requests import MockJsonResponse
-
-WEBSITE_ID = "2a810199-9469-490b-8be9-d3d994c3e788"
-FLOWS_ID = "2023f00a-2a48-4884-bd1b-32256b1ed28b"
-STARTING_ID = "69701b40-cc63-4a69-9877-26afe3f10b01"
-HIDDEN_ID = "8fd1c1f0-5d4a-4e6b-9c1e-1d9c2f3a4b5c"
-
-PNG = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
-
-SHOT_URL = "https://storage.crisp.chat/users/helpdesk/website/abc/shot_1evbdfc.png"
-SHOT2_URL = "https://storage.crisp.chat/users/helpdesk/website/abc/screen%20shot_ab12cd"  # a name cleaning alters
-MISSING_URL = "https://storage.crisp.chat/users/helpdesk/website/abc/gone_x1y2z3.png"
-
-STARTING_BODY = f"""# Starting a flow
-
-See [the flows category](/en/category/flows-6ogz7g/) and [this article](https://help.acme.com/en/article/starting-a-flow-9gcerd/#3-manually).
-
-A link to [a hidden one](https://help.acme.com/en/article/hidden-abc123/) can't be followed, nor [elsewhere](https://example.com/en/article/other-9gcerd/).
-
-![]({SHOT_URL} =600x400)
-
-![]({SHOT2_URL})
-
-![small]({MISSING_URL} =100x100)
-"""
 
 
-class CrispMock:
+class TestImportForm(HelpdeskImportForm):
+    key = forms.CharField()
+
+    def clean_key(self):
+        key = self.cleaned_data["key"]
+        if key == "wrong":
+            raise forms.ValidationError("That key is wrong.")
+        return key
+
+    def get_config(self) -> dict:
+        return {"key": self.cleaned_data["key"], "site": "help.example.com"}
+
+
+class TestImportType(HelpdeskImportType):
     """
-    A Crisp API of one website with a helpdesk of one category and two articles, answered as requests.get.
+    A site of a section and two articles, the second of which can be made to fail.
     """
 
-    def __init__(
-        self,
-        *,
-        key="secret",
-        websites=None,
-        locales=None,
-        categories=None,
-        articles=None,
-        details=None,
-        fail=None,
-        unreachable=(),
-    ):
-        self.key = key
-        self.websites = websites if websites is not None else [WEBSITE_ID]
-        self.locales = locales if locales is not None else [{"locale": "en", "url": "https://help.acme.com/en/"}]
-        self.unreachable = unreachable  # path fragments or urls that never connect
-        self.categories = (
-            categories
-            if categories is not None
-            else [
-                {
-                    "category_id": FLOWS_ID,
-                    "name": "Flows",
-                    "description": "All about flows.",
-                    "color": "#2f6391",
-                    "url": "https://help.acme.com/en/category/flows-6ogz7g/",
-                }
-            ]
-        )
-        self.articles = (
-            articles
-            if articles is not None
-            else [
-                {
-                    "article_id": STARTING_ID,
-                    "title": "Starting a flow",
-                    "status": "published",
-                    "visibility": "visible",
-                    "url": "https://help.acme.com/en/article/starting-a-flow-9gcerd/",
-                    "updated_at": 1700000000000,
-                    "category": {"category_id": FLOWS_ID, "name": "Flows"},
-                },
-                {
-                    "article_id": HIDDEN_ID,
-                    "title": "Hidden one",
-                    "status": "published",
-                    "visibility": "hidden",
-                    "url": None,
-                    "updated_at": 1700000000000,
-                    "category": None,
-                },
-            ]
-        )
-        self.details = details or {
-            STARTING_ID: {"title": "Starting a flow", "description": "How to start", "content": STARTING_BODY},
-            HIDDEN_ID: {"title": "Hidden one", "description": "", "content": "Nothing to see"},
-        }
-        self.fail = fail or {}  # path fragment -> status code
-        self.calls = []
+    name = "Test Site"
+    slug = "test"
+    form_class = TestImportForm
+    secret_config_keys = ("key",)
+    template_name = "knowledge/helpdeskimport_create.html"
 
-    def __call__(self, url, **kwargs):
-        self.calls.append(url)
+    def perform(self, imp):
+        imp.set_total(3)
 
-        if any(fragment in url for fragment in self.unreachable):
-            raise requests.ConnectionError("no route")
+        section = Article.create(imp.knowledge, imp.created_by, "Imported")
+        imp.advance()
 
-        if url.startswith(CrispClient.STORAGE_URL):
-            if url in (SHOT_URL, SHOT2_URL):
-                return Mock(status_code=200, iter_content=lambda chunk_size: [PNG])
-            return Mock(status_code=404)
-
-        if kwargs.get("auth") != ("ident", self.key):
-            return MockJsonResponse(401, {"error": True, "reason": "invalid_session"})
-
-        path = url[len(CrispClient.BASE_URL) :]
-        for fragment, status in self.fail.items():
-            if fragment in path:
-                return MockJsonResponse(status, {"error": True, "reason": "failed"})
-
-        def page(items, number):
-            return MockJsonResponse(206 if number == 1 else 200, {"data": items if number == 1 else []})
-
-        if path.startswith("/plugin/connect/websites/all"):
-            return MockJsonResponse(200, {"data": [{"website_id": w} for w in self.websites]})
-
-        base = f"/website/{WEBSITE_ID}/helpdesk"
-        if path == base:
-            return MockJsonResponse(200, {"data": {"name": "Acme", "url": "https://help.acme.com/"}})
-        if path.startswith(f"{base}/locales/"):
-            return page(self.locales, int(path.rsplit("/", 1)[1]))
-        if path.startswith(f"{base}/locale/en/categories/"):
-            return page(self.categories, int(path.rsplit("/", 1)[1]))
-        if path.startswith(f"{base}/locale/en/articles/"):
-            return page(self.articles, int(path.rsplit("/", 1)[1]))
-        if path.startswith(f"{base}/locale/en/article/"):
-            article_id = path.rsplit("/", 1)[1]
-            return MockJsonResponse(200, {"data": {"article_id": article_id, **self.details[article_id]}})
-
-        return MockJsonResponse(404, {"error": True, "reason": "not_found"})
+        for i in (1, 2):
+            if imp.config.get("fail_at") == i:
+                raise HelpdeskImportError("The site went away.")
+            Article.create(imp.knowledge, imp.created_by, f"Article {i}", parent=section)
+            imp.advance()
 
 
-class HelpdeskImportTest(TembaTest):
+class ElsewhereImportType(HelpdeskImportType):
+    """
+    A kind of import this workspace isn't offered.
+    """
+
+    name = "Elsewhere"
+    slug = "elsewhere"
+    form_class = TestImportForm
+
+    def is_available_to(self, org, user) -> bool:
+        return False
+
+
+TEST_TYPES = [
+    "temba.knowledge.tests.test_helpdeskimport.TestImportType",
+    "temba.knowledge.tests.test_helpdeskimport.ElsewhereImportType",
+]
+
+
+class ImportTypesMixin:
+    """
+    Registers the test import types for the duration of each test - the core registers none of its own.
+    """
+
     def setUp(self):
         super().setUp()
 
+        settings = override_settings(HELPDESK_IMPORT_TYPES=TEST_TYPES)
+        settings.enable()
+        reload_import_types()
+
+        def restore():
+            settings.disable()
+            reload_import_types()
+
+        self.addCleanup(restore)
+
         self.helpdesk = self.org.knowledge.get(knowledge_type=Knowledge.TYPE_HELPDESK)
+        self.test_type = HelpdeskImport.get_type("test")
 
-    def create_import(self, key="secret"):
-        return HelpdeskImport.create(
-            self.helpdesk,
-            self.admin,
-            HelpdeskImport.TYPE_CRISP,
-            {
-                HelpdeskImport.CONFIG_IDENTIFIER: "ident",
-                HelpdeskImport.CONFIG_KEY: key,
-                HelpdeskImport.CONFIG_WEBSITE_ID: WEBSITE_ID,
-                HelpdeskImport.CONFIG_LOCALE: "en",
-            },
-        )
 
-    @patch("temba.knowledge.crisp.requests.get")
-    def test_perform(self, mock_get):
-        crisp = mock_get.side_effect = CrispMock()
+class HelpdeskImportTest(ImportTypesMixin, TembaTest):
+    def create_import(self, key="secret", **config):
+        return HelpdeskImport.create(self.helpdesk, self.admin, self.test_type, {"key": key, **config})
 
-        # something already here stays, and the site's existing redirects are kept
-        existing = Article.create(self.helpdesk, self.admin, "Ours")
-        site = HelpSite.get_or_create(self.helpdesk, self.admin)
-        site.redirects = {"/old": str(existing.uuid)}
-        site.save()
+    def test_types(self):
+        self.assertEqual(["test", "elsewhere"], [t.slug for t in HelpdeskImport.get_types()])
+        self.assertIsInstance(self.test_type, TestImportType)
+        self.assertEqual("knowledge/imports/elsewhere/create.html", HelpdeskImport.get_type("elsewhere").template_name)
+        self.assertIsNone(HelpdeskImport.get_type("nope"))
 
+        # a slug is one type's alone
+        with self.assertRaises(AssertionError):
+            register_import_type(TestImportType)
+
+        # and the core ships none of its own
+        with override_settings(HELPDESK_IMPORT_TYPES=[]):
+            reload_import_types()
+            self.assertEqual([], list(HelpdeskImport.get_types()))
+
+        reload_import_types()
+        self.assertEqual(["test", "elsewhere"], [t.slug for t in HelpdeskImport.get_types()])
+
+    def test_perform(self):
         self.helpdesk.status = Knowledge.STATUS_READY
         self.helpdesk.save(update_fields=("status",))
 
         imp = self.create_import()
+        self.assertEqual("test", imp.import_type)
+        self.assertEqual(self.test_type, imp.type)
         self.assertFalse(imp.is_finished)
         self.assertEqual("Pending", imp.as_json()["status"])
 
@@ -185,290 +126,33 @@ class HelpdeskImportTest(TembaTest):
         self.assertIsNone(imp.error)
         self.assertIsNotNone(imp.started_on)
         self.assertIsNotNone(imp.finished_on)
-        self.assertEqual(3, imp.num_articles)
-        self.assertEqual(3, imp.num_imported)
-        self.assertEqual({"total": 3, "current": 3}, imp.as_json()["progress"])  # the section and both articles
+        self.assertEqual({"total": 3, "current": 3}, imp.as_json()["progress"])
+        self.assertEqual(3, self.helpdesk.articles.count())
 
-        # the key was lent for the import and isn't kept
-        self.assertEqual({"identifier": "ident", "website_id": WEBSITE_ID, "locale": "en"}, imp.config)
-
-        # the category is a section, with Crisp's id as its uuid
-        flows = self.helpdesk.articles.get(uuid=FLOWS_ID)
-        self.assertIsNone(flows.parent)
-        self.assertEqual("Flows", flows.title)
-        self.assertEqual("All about flows.", flows.description)
-        self.assertEqual(Article.STATUS_PUBLISHED, flows.status)
-
-        # a visible published article is published, filed under its section, in the locale's language
-        starting = self.helpdesk.articles.get(uuid=STARTING_ID)
-        self.assertEqual(flows, starting.parent)
-        self.assertEqual("Starting a flow", starting.title)
-        self.assertEqual("eng", starting.language)
-        self.assertEqual(Article.STATUS_PUBLISHED, starting.status)
-
-        # links to pages of the site are resolved to articles, others left alone; sized images carry the size as a
-        # fragment, and those that could be fetched are ours now while one that couldn't stays where it was
-        image = starting.images.get(name="shot_1evbdfc.png")
-        self.assertEqual("image/png", image.content_type)
-        image2 = starting.images.get(name="screen20shot_ab12cd.png")  # stored under its cleaned name
-        self.assertEqual(
-            f"""# Starting a flow
-
-See [the flows category](article:{FLOWS_ID}) and [this article](article:{STARTING_ID}).
-
-A link to [a hidden one](https://help.acme.com/en/article/hidden-abc123/) can't be followed, nor [elsewhere](https://example.com/en/article/other-9gcerd/).
-
-![]({image.path}#size=large)
-
-![]({image2.path})
-
-![small]({MISSING_URL}#size=small)
-""",
-            starting.body,
-        )
-
-        # a hidden article is a draft, in a section made for the ones Crisp has in none
-        hidden = self.helpdesk.articles.get(uuid=HIDDEN_ID)
-        self.assertEqual(Article.STATUS_DRAFT, hidden.status)
-        self.assertEqual("Uncategorized", hidden.parent.title)
-        self.assertEqual(Article.STATUS_PUBLISHED, hidden.parent.status)
-        self.assertEqual("Nothing to see", hidden.body)
-
-        # the site's old addresses lead to the new pages; the hidden article had none
-        site.refresh_from_db()
-        self.assertEqual(
-            {
-                "/old": str(existing.uuid),
-                "/en/category/flows-6ogz7g": FLOWS_ID,
-                "/en/article/starting-a-flow-9gcerd": STARTING_ID,
-            },
-            site.redirects,
-        )
+        # what was lent for the import isn't kept
+        self.assertEqual({}, imp.config)
 
         # and the helpdesk is queued for reindexing
         self.helpdesk.refresh_from_db()
         self.assertEqual(Knowledge.STATUS_PENDING, self.helpdesk.status)
 
-        self.assertEqual(5, self.helpdesk.articles.filter(is_active=True).count())
-        self.assertEqual(1, len([url for url in crisp.calls if url == SHOT_URL]))
-        self.assertEqual(1, len([url for url in crisp.calls if url == SHOT2_URL]))
-
-        # importing again updates what's here rather than making it twice, and doesn't fetch images it already has -
-        # even one whose name was cleaned on the way in. Only an article Crisp has touched since is fetched again;
-        # the other's listing is enough to republish it
-        crisp.details[STARTING_ID]["content"] = f"Changed\n\n![]({SHOT_URL})\n\n![]({SHOT2_URL})"
-        crisp.articles[0]["updated_at"] = int(time.time() * 1000) + 60_000
-        crisp.articles[0]["visibility"] = "hidden"
-        crisp.articles[1]["visibility"] = "visible"
-        crisp.categories[0]["name"] = "Flows!"
-        crisp.calls.clear()
-
-        imp2 = self.create_import()
-        imp2.perform()
-
-        imp2.refresh_from_db()
-        self.assertEqual(HelpdeskImport.STATUS_COMPLETE, imp2.status)
-        self.assertEqual(5, self.helpdesk.articles.filter(is_active=True).count())
-        self.assertEqual([], [url for url in crisp.calls if url.startswith(CrispClient.STORAGE_URL)])
-        self.assertEqual([STARTING_ID], [url.rsplit("/", 1)[1] for url in crisp.calls if "/article/" in url])
-
-        flows.refresh_from_db()
-        self.assertEqual("Flows!", flows.title)
-        starting.refresh_from_db()
-        self.assertEqual(f"Changed\n\n![]({image.path})\n\n![]({image2.path})", starting.body)
-        self.assertEqual(2, starting.images.count())
-        self.assertEqual(Article.STATUS_DRAFT, starting.status)  # hidden now, so unpublished
-        hidden.refresh_from_db()
-        self.assertEqual(Article.STATUS_PUBLISHED, hidden.status)
-        self.assertEqual(1, self.helpdesk.articles.filter(title="Uncategorized", is_active=True).count())
-
-        # a listing that doesn't say when it was touched is always fetched
-        del crisp.articles[1]["updated_at"]
-        crisp.details[HIDDEN_ID]["content"] = "Something to see"
-        crisp.calls.clear()
-
-        imp3 = self.create_import()
-        imp3.perform()
-
-        self.assertIn(HIDDEN_ID, [url.rsplit("/", 1)[1] for url in crisp.calls if "/article/" in url])
-        hidden.refresh_from_db()
-        self.assertEqual("Something to see", hidden.body)
-
-    @patch("temba.knowledge.crisp.requests.get")
-    def test_perform_uuids(self, mock_get):
-        crisp = mock_get.side_effect = CrispMock()
-
-        # another workspace has imported the same site, so its ids are taken there
-        other_helpdesk = self.org2.knowledge.get(knowledge_type=Knowledge.TYPE_HELPDESK)
-        other_flows = Article.create(other_helpdesk, self.admin2, "Flows")
-        other_flows.uuid = FLOWS_ID
-        other_flows.save(update_fields=("uuid",))
-
-        # and one of ours by Crisp's id has been deleted
-        deleted = Article.create(self.helpdesk, self.admin, "Hidden one")
-        deleted.uuid = HIDDEN_ID
-        deleted.save(update_fields=("uuid",))
-        deleted.release(self.admin)
-
-        imp = self.create_import()
-        imp.perform()
-
-        imp.refresh_from_db()
-        self.assertEqual(HelpdeskImport.STATUS_COMPLETE, imp.status)
-
-        # the section got an id of its own, which links to it resolve to
-        flows = self.helpdesk.articles.get(title="Flows")
-        self.assertNotEqual(FLOWS_ID, str(flows.uuid))
-        starting = self.helpdesk.articles.get(uuid=STARTING_ID)
-        self.assertEqual(flows, starting.parent)
-        self.assertIn(f"[the flows category](article:{flows.uuid})", starting.body)
-        self.assertIn(f"[this article](article:{STARTING_ID})", starting.body)
-
-        # the deleted article is back
-        deleted.refresh_from_db()
-        self.assertTrue(deleted.is_active)
-        self.assertEqual("Nothing to see", deleted.body)
-
-        other_flows.refresh_from_db()
-        self.assertEqual("Flows", other_flows.title)
-        self.assertEqual(other_helpdesk, other_flows.knowledge)
-
-        # importing again finds everything under the ids it has here
-        crisp.categories[0]["name"] = "Flows!"
-        imp = self.create_import()
-        imp.perform()
-
-        imp.refresh_from_db()
-        self.assertEqual(HelpdeskImport.STATUS_COMPLETE, imp.status)
-        self.assertEqual(4, self.helpdesk.articles.filter(is_active=True).count())
-        flows.refresh_from_db()
-        self.assertEqual("Flows!", flows.title)
-
-    @patch("temba.knowledge.crisp.requests.get")
-    def test_perform_failures(self, mock_get):
-        # a key Crisp doesn't accept
-        mock_get.side_effect = CrispMock(key="other")
-
-        imp = self.create_import()
+        # an import that can't go on says why, and keeps what it brought before that
+        imp = self.create_import(fail_at=2)
         imp.perform()
 
         imp.refresh_from_db()
         self.assertEqual(HelpdeskImport.STATUS_FAILED, imp.status)
-        self.assertEqual("Crisp did not accept the API key.", imp.error)
-        self.assertNotIn(HelpdeskImport.CONFIG_KEY, imp.config)
-        self.assertEqual(0, self.helpdesk.articles.count())
+        self.assertEqual("The site went away.", imp.error)
+        self.assertEqual({"total": 3, "current": 2}, imp.as_json()["progress"])
+        self.assertEqual({"fail_at": 2}, imp.config)
+        self.assertEqual(5, self.helpdesk.articles.count())
 
-        # a helpdesk bigger than ours can be
-        mock_get.side_effect = CrispMock()
-
-        with patch("temba.knowledge.models.Article.MAX_ARTICLES", 2):
-            imp = self.create_import()
+        with self.assertRaises(AssertionError):
             imp.perform()
-
-        imp.refresh_from_db()
-        self.assertEqual(HelpdeskImport.STATUS_FAILED, imp.status)
-        self.assertEqual("The helpdesk would exceed its limit of 2 articles.", imp.error)
-        self.assertEqual(0, self.helpdesk.articles.count())
-
-        # crisp falling over partway through
-        mock_get.side_effect = CrispMock(fail={f"/article/{HIDDEN_ID}": 500})
-
-        with patch("temba.knowledge.crisp.time.sleep") as mock_sleep:
-            imp = self.create_import()
-            imp.perform()
-
-        imp.refresh_from_db()
-        self.assertEqual(HelpdeskImport.STATUS_FAILED, imp.status)
-        self.assertEqual("Crisp could not be reached. Please try again later.", imp.error)
-        self.assertEqual([1, 2, 4, 8], [c.args[0] for c in mock_sleep.call_args_list])
-        self.assertEqual(2, imp.num_imported)  # what came before stays
-
-        # its quota running out is said as such, and a run picking up after it doesn't refetch what it got
-        crisp = mock_get.side_effect = CrispMock(fail={f"/article/{HIDDEN_ID}": 429})
-
-        with patch("temba.knowledge.crisp.time.sleep"):
-            imp = self.create_import()
-            imp.perform()
-
-        imp.refresh_from_db()
-        self.assertEqual(HelpdeskImport.STATUS_FAILED, imp.status)
-        self.assertEqual("Crisp's rate limit was reached. Please try again later.", imp.error)
-
-        crisp.fail = {}
-        crisp.calls.clear()
-        imp = self.create_import()
-        imp.perform()
-
-        imp.refresh_from_db()
-        self.assertEqual(HelpdeskImport.STATUS_COMPLETE, imp.status)
-        self.assertEqual([HIDDEN_ID], [url.rsplit("/", 1)[1] for url in crisp.calls if "/article/" in url])
-        self.assertEqual(4, self.helpdesk.articles.filter(is_active=True).count())
-
-        # a website the token can't see
-        mock_get.side_effect = CrispMock(fail={"/helpdesk": 404})
-
-        imp = self.create_import()
-        imp.perform()
-
-        imp.refresh_from_db()
-        self.assertEqual(HelpdeskImport.STATUS_FAILED, imp.status)
-        self.assertEqual("Crisp has no helpdesk for that website.", imp.error)
-
-        # something unexpected
-        mock_get.side_effect = CrispMock(fail={"/helpdesk": 418})
-
-        imp = self.create_import()
-        imp.perform()
-
-        imp.refresh_from_db()
-        self.assertEqual(HelpdeskImport.STATUS_FAILED, imp.status)
-        self.assertEqual("Crisp returned an unexpected response.", imp.error)
-
-    @patch("temba.knowledge.crisp.requests.get")
-    def test_client(self, mock_get):
-        crisp = mock_get.side_effect = CrispMock(websites=["w1", "w2"])
-        client = CrispClient("ident", "secret")
-
-        self.assertEqual(["w1", "w2"], client.get_websites())
-        self.assertEqual({"name": "Acme", "url": "https://help.acme.com/"}, client.get_helpdesk(WEBSITE_ID))
-        self.assertEqual([{"locale": "en", "url": "https://help.acme.com/en/"}], client.get_locales(WEBSITE_ID))
-        self.assertEqual(2, len(client.get_articles(WEBSITE_ID, "en")))
-
-        # a rate limit is waited out
-        crisp.fail = {"/categories/": 429}
-        with patch("temba.knowledge.crisp.time.sleep") as mock_sleep:
-            with self.assertRaises(CrispError):
-                client.get_categories(WEBSITE_ID, "en")
-
-        self.assertEqual([1, 2, 4, 8], [c.args[0] for c in mock_sleep.call_args_list])
-
-        # a client on a short budget gives up sooner
-        with patch("temba.knowledge.crisp.time.sleep") as mock_sleep:
-            with self.assertRaises(CrispError):
-                CrispClient("ident", "secret", attempts=2, timeout=10).get_categories(WEBSITE_ID, "en")
-
-        self.assertEqual([1], [c.args[0] for c in mock_sleep.call_args_list])
-        self.assertEqual(10, mock_get.call_args.kwargs["timeout"])
-
-        # an image too big isn't downloaded
-        self.assertIsNone(client.download(SHOT_URL, max_size=4))
-        self.assertEqual((PNG, "image/png"), client.download(SHOT_URL, max_size=1024))
-        self.assertIsNone(client.download(MISSING_URL, max_size=1024))
-
-        # nor is one that can't be reached, and an API that can't be is retried before giving up
-        crisp.fail = {}
-        crisp.unreachable = (SHOT_URL, "/categories/")
-        self.assertIsNone(client.download(SHOT_URL, max_size=1024))
-
-        with patch("temba.knowledge.crisp.time.sleep") as mock_sleep:
-            with self.assertRaises(CrispError) as cm:
-                client.get_categories(WEBSITE_ID, "en")
-
-        self.assertEqual("Crisp could not be reached. Please try again later.", str(cm.exception))
-        self.assertEqual(4, mock_sleep.call_count)
 
     def test_get_unfinished(self):
         self.assertIsNone(HelpdeskImport.get_unfinished(self.helpdesk))
+        self.assertIsNone(HelpdeskImport.get_latest(self.helpdesk))
 
         imp = self.create_import()
         self.assertEqual(imp, HelpdeskImport.get_unfinished(self.helpdesk))
@@ -485,110 +169,52 @@ A link to [a hidden one](https://help.acme.com/en/article/hidden-abc123/) can't 
         self.assertIsNone(HelpdeskImport.get_unfinished(self.helpdesk))
 
 
-class HelpdeskImportCRUDLTest(TembaTest, CRUDLTestMixin):
+class HelpdeskImportCRUDLTest(ImportTypesMixin, TembaTest, CRUDLTestMixin):
     def setUp(self):
         super().setUp()
 
-        self.helpdesk = self.org.knowledge.get(knowledge_type=Knowledge.TYPE_HELPDESK)
         self.org.features = [Org.FEATURE_AGENTS]
         self.org.save(update_fields=("features",))
 
-    @patch("temba.knowledge.crisp.requests.get")
-    def test_create(self, mock_get):
-        crisp = mock_get.side_effect = CrispMock()
-
-        create_url = reverse("knowledge.helpdeskimport_create")
-        self.assertEqual("/helpdeskimport/create/", create_url)
+    def test_create(self):
+        create_url = reverse("knowledge.helpdeskimport_create", args=["test"])
+        self.assertEqual("/helpdeskimport/create/test/", create_url)
 
         self.assertRequestDisallowed(create_url, [None, self.agent])
-        self.assertCreateFetch(create_url, [self.editor, self.admin], form_fields=("identifier", "key", "website_id"))
+        self.assertCreateFetch(create_url, [self.editor, self.admin], form_fields=("key",))
 
-        # both halves of the token are needed before crisp is asked anything
-        self.assertCreateSubmit(
-            create_url, self.admin, {"identifier": "ident"}, form_errors={"key": "This field is required."}
-        )
-        self.assertEqual([], crisp.calls)
+        # a kind of import that isn't registered, or isn't offered to this workspace, isn't there
+        self.requestView(reverse("knowledge.helpdeskimport_create", args=["nope"]), self.admin, status=404)
+        self.requestView(reverse("knowledge.helpdeskimport_create", args=["elsewhere"]), self.admin, status=404)
 
-        # the key is checked with crisp before anything is queued
-        self.assertCreateSubmit(
-            create_url,
-            self.admin,
-            {"identifier": "ident", "key": "wrong"},
-            form_errors={"__all__": "Crisp did not accept the API key."},
-        )
+        # the type's form checks what it's given before anything is queued
+        self.assertCreateSubmit(create_url, self.admin, {"key": "wrong"}, form_errors={"key": "That key is wrong."})
         self.assertEqual(0, HelpdeskImport.objects.count())
 
-        # the dialog doesn't wait long on a crisp that's rate limiting - one retry, then it says so
-        crisp.fail = {"/websites/all": 429}
-        with patch("temba.knowledge.crisp.time.sleep") as mock_sleep:
-            self.assertCreateSubmit(
-                create_url,
-                self.admin,
-                {"identifier": "ident", "key": "secret"},
-                form_errors={"__all__": "Crisp's rate limit was reached. Please try again later."},
-            )
-        self.assertEqual(1, mock_sleep.call_count)
-        crisp.fail = {}
-
-        # a helpdesk with nothing in it has no locale to import
-        crisp.locales = []
-        self.assertCreateSubmit(
-            create_url,
-            self.admin,
-            {"identifier": "ident", "key": "secret"},
-            form_errors={"__all__": "That website's helpdesk has no articles."},
-        )
-        crisp.locales = [{"locale": "en", "url": "https://help.acme.com/en/"}]
-
-        # a token that reaches several websites is asked which
-        crisp.websites = [WEBSITE_ID, "other"]
-        self.assertCreateSubmit(
-            create_url,
-            self.admin,
-            {"identifier": "ident", "key": "secret"},
-            form_errors={"__all__": "That token has access to several websites, so a website ID is needed."},
-        )
-        self.assertCreateSubmit(
-            create_url,
-            self.admin,
-            {"identifier": "ident", "key": "secret", "website_id": "another"},
-            form_errors={"__all__": "That token has no access to that website."},
-        )
-        crisp.websites = []
-        self.assertCreateSubmit(
-            create_url,
-            self.admin,
-            {"identifier": "ident", "key": "secret"},
-            form_errors={"__all__": "That token has no access to any website."},
-        )
-        crisp.websites = [WEBSITE_ID]
-
-        # with a good key the import is queued - and run, since tasks are eager in tests
+        # given something good the import is queued - and run, since tasks are eager in tests
         self.assertCreateSubmit(
             create_url,
             self.editor,
-            {"identifier": "ident", "key": "secret"},
+            {"key": "secret"},
             new_obj_query=HelpdeskImport.objects.filter(
-                org=self.org, knowledge=self.helpdesk, import_type=HelpdeskImport.TYPE_CRISP, created_by=self.editor
+                org=self.org, knowledge=self.helpdesk, import_type="test", created_by=self.editor
             ),
         )
 
         imp = HelpdeskImport.objects.get()
         self.assertEqual(HelpdeskImport.STATUS_COMPLETE, imp.status)
-        self.assertEqual({"identifier": "ident", "website_id": WEBSITE_ID, "locale": "en"}, imp.config)
-        self.assertEqual(4, self.helpdesk.articles.count())
+        self.assertEqual({"site": "help.example.com"}, imp.config)
+        self.assertEqual(3, self.helpdesk.articles.count())
 
         # while one is running, the dialog offers nothing but to wait
         imp.status = HelpdeskImport.STATUS_PROCESSING
         imp.save(update_fields=("status",))
 
-        response = self.assertCreateFetch(create_url, [self.admin], form_fields=("identifier", "key", "website_id"))
+        response = self.assertCreateFetch(create_url, [self.admin], form_fields=("key",))
         self.assertEqual("existing-import", response.context["blocker"])
         self.assertContains(response, "An import is already in progress.")
 
-        response = self.requestView(
-            create_url, self.admin, post_data={"identifier": "ident", "key": "secret"}, choose_org=self.org
-        )
+        response = self.requestView(create_url, self.admin, post_data={"key": "secret"}, choose_org=self.org)
         self.assertEqual(200, response.status_code)
         self.assertContains(response, "An import is already in progress.")
         self.assertEqual(1, HelpdeskImport.objects.count())
@@ -602,7 +228,7 @@ class HelpdeskImportCRUDLTest(TembaTest, CRUDLTestMixin):
         response = self.requestView(status_url, self.editor)
         self.assertEqual({"results": []}, response.json())
 
-        imp = HelpdeskImport.create(self.helpdesk, self.admin, HelpdeskImport.TYPE_CRISP, {})
+        imp = HelpdeskImport.create(self.helpdesk, self.admin, self.test_type, {})
         imp.set_total(10)
         imp.advance()
 
@@ -622,32 +248,45 @@ class HelpdeskImportCRUDLTest(TembaTest, CRUDLTestMixin):
     def test_list_shows_import(self):
         list_url = reverse("knowledge.article_list")
 
+        # the menu offers each kind of import the workspace can do
+        self.assertContentMenu(list_url, self.admin, ["New Section", "Site Settings", "Import from Test Site"])
+
         # nothing to say until there's an import
         response = self.requestView(list_url, self.admin)
         self.assertNotIn("helpdesk_import", response.context)
         self.assertNotContains(response, 'id="import-card"')
 
         # one underway is shown with its progress and kept current
-        imp = HelpdeskImport.create(self.helpdesk, self.admin, HelpdeskImport.TYPE_CRISP, {})
+        imp = HelpdeskImport.create(self.helpdesk, self.admin, self.test_type, {})
 
         response = self.requestView(list_url, self.admin)
         self.assertEqual(imp, response.context["helpdesk_import"])
         self.assertEqual(reverse("knowledge.helpdeskimport_status"), response.context["import_status_url"])
-        self.assertContains(response, "Importing from Crisp")
+        self.assertContains(response, "Importing from Test Site")
         self.assertContains(response, "pollHelpdeskImport(1)")
 
-        # one that failed says why
+        # one that failed says why, and offers to try again
         imp.status = HelpdeskImport.STATUS_FAILED
-        imp.error = "Crisp did not accept the API key."
+        imp.error = "The site went away."
         imp.save(update_fields=("status", "error"))
 
         response = self.requestView(list_url, self.admin)
         self.assertEqual(imp, response.context["helpdesk_import"])
-        self.assertEqual(reverse("knowledge.helpdeskimport_create"), response.context["import_url"])
-        self.assertContains(response, "The import from Crisp did not finish.")
-        self.assertContains(response, "Crisp did not accept the API key.")
+        self.assertEqual(reverse("knowledge.helpdeskimport_create", args=["test"]), response.context["import_url"])
+        self.assertEqual("Import from Test Site", response.context["import_title"])
+        self.assertContains(response, "The import from Test Site did not finish.")
+        self.assertContains(response, "The site went away.")
         self.assertContains(response, "Try Again")
         self.assertNotContains(response, "pollHelpdeskImport(1)")
+
+        # unless its kind of import is no longer on
+        imp.import_type = "gone"
+        imp.save(update_fields=("import_type",))
+
+        response = self.requestView(list_url, self.admin)
+        self.assertEqual("gone", response.context["import_type_name"])
+        self.assertNotIn("import_url", response.context)
+        self.assertNotContains(response, "Try Again")
 
         # and one that finished is nothing to mention
         imp.status = HelpdeskImport.STATUS_COMPLETE

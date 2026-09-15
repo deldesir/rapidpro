@@ -53,7 +53,11 @@
             <temba-icon name="alert_warning" size="1.2" class="import-icon">
             </temba-icon>
             <div class="import-text">
-              <div class="import-title">{% trans "The import from Crisp did not finish." %}</div>
+              <div class="import-title">
+              {% blocktrans trimmed with name=import_type_name %}
+                The import from {{ name }} did not finish.
+              {% endblocktrans %}
+            </div>
               <div class="import-note">{{ helpdesk_import.error }}</div>
             </div>
             {% if import_url %}
@@ -68,7 +72,11 @@
             </temba-icon>
             <div class="import-text">
               <div class="import-header">
-                <div class="import-title">{% trans "Importing from Crisp" %}</div>
+                <div class="import-title">
+                  {% blocktrans trimmed with name=import_type_name %}
+                    Importing from {{ name }}
+                  {% endblocktrans %}
+                </div>
                 {# what the import is at, beside the title rather than in the bar, which has room only for its meter #}
                 <div class="import-status" id="import-status">
                   {% if not helpdesk_import.num_articles %}
@@ -194,7 +202,7 @@
 
     {% if import_url %}
     function showImportDialog() {
-      showModax('{{ _("Import from Crisp") |escapejs }}', '{{ import_url }}', {
+      showModax('{{ import_title|escapejs }}', '{{ import_url }}', {
         id: 'import-crisp',
         onSubmit: 'refreshHelpdesk()'
       });

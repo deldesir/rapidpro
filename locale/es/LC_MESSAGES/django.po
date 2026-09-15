@@ -13,7 +13,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-15 03:55+0000\n"
+"POT-Creation-Date: 2026-09-15 16:43+0000\n"
 "PO-Revision-Date: 2019-05-13 20:14+0000\n"
 "Language: es\n"
 "MIME-Version: 1.0\n"
@@ -2786,25 +2786,6 @@ msgstr "Nunca"
 msgid "Calls"
 msgstr "Llamadas"
 
-msgid "Crisp's rate limit was reached. Please try again later."
-msgstr "Se alcanzó el límite de solicitudes de Crisp. Vuelva a intentarlo más tarde."
-
-msgid "Crisp could not be reached. Please try again later."
-msgstr "No se pudo conectar con Crisp. Vuelva a intentarlo más tarde."
-
-msgid "Crisp did not accept the API key."
-msgstr "Crisp no aceptó la clave de API."
-
-msgid "Crisp has no helpdesk for that website."
-msgstr "Crisp no tiene un centro de ayuda para ese sitio web."
-
-msgid "Crisp returned an unexpected response."
-msgstr "Crisp devolvió una respuesta inesperada."
-
-#, python-format
-msgid "The helpdesk would exceed its limit of %d articles."
-msgstr "El centro de ayuda superaría su límite de %d artículos."
-
 #, fuzzy
 #| msgid "Website Language"
 msgid "Website"
@@ -2893,33 +2874,6 @@ msgstr "No se puede usar el dominio predeterminado."
 msgid "This domain is already in use by another help site."
 msgstr "Este dominio ya está en uso por otro sitio de ayuda."
 
-msgid "Identifier"
-msgstr "Identificador"
-
-msgid "The identifier of a plugin token made in the Crisp marketplace."
-msgstr "El identificador de un token de plugin creado en el marketplace de Crisp."
-
-msgid "The token's key. It's used for this import and not kept."
-msgstr "La clave del token. Se usa para esta importación y no se guarda."
-
-msgid "Website ID"
-msgstr "ID del sitio web"
-
-msgid "Only needed if the token has access to more than one website."
-msgstr "Solo es necesario si el token tiene acceso a más de un sitio web."
-
-msgid "That token has no access to any website."
-msgstr "Ese token no tiene acceso a ningún sitio web."
-
-msgid "That token has access to several websites, so a website ID is needed."
-msgstr "Ese token tiene acceso a varios sitios web, por lo que se necesita un ID de sitio web."
-
-msgid "That token has no access to that website."
-msgstr "Ese token no tiene acceso a ese sitio web."
-
-msgid "That website's helpdesk has no articles."
-msgstr "El centro de ayuda de ese sitio web no tiene artículos."
-
 msgid "Shortcuts"
 msgstr "Atajos"
 
@@ -2999,8 +2953,9 @@ msgstr "Nueva sección"
 msgid "Site Settings"
 msgstr "Configuración del sitio"
 
-msgid "Import from Crisp"
-msgstr "Importar desde Crisp"
+#, python-format
+msgid "Import from %(name)s"
+msgstr "Importar desde %(name)s"
 
 msgid "New Article"
 msgstr "Nuevo artículo"
@@ -5670,14 +5625,16 @@ msgstr "Sin artículos"
 msgid "Help articles written by your workspace. Published articles are searchable by AI agents."
 msgstr "Artículos de ayuda escritos por su workspace. Los agentes de IA pueden buscar en los artículos publicados."
 
-msgid "The import from Crisp did not finish."
-msgstr "La importación desde Crisp no terminó."
+#, python-format
+msgid "The import from %(name)s did not finish."
+msgstr "La importación desde %(name)s no terminó."
 
 msgid "Try Again"
 msgstr "Intentar de nuevo"
 
-msgid "Importing from Crisp"
-msgstr "Importando desde Crisp"
+#, python-format
+msgid "Importing from %(name)s"
+msgstr "Importando desde %(name)s"
 
 msgid "Fetching articles…"
 msgstr "Obteniendo artículos…"
@@ -5705,12 +5662,6 @@ msgstr "No verificado"
 
 msgid "An import is already in progress. Wait for it to finish before starting another."
 msgstr "Ya hay una importación en curso. Espere a que termine antes de iniciar otra."
-
-msgid "Brings every category and article of your Crisp help site into the helpdesk, along with their images. Articles published in Crisp are published here; hidden and draft ones come over as drafts. Links between articles are kept, and your site's old addresses will lead to the right pages once your domain points here."
-msgstr "Trae todas las categorías y artículos de su sitio de ayuda de Crisp al centro de ayuda, junto con sus imágenes. Los artículos publicados en Crisp se publican aquí; los ocultos y los borradores llegan como borradores. Los enlaces entre artículos se conservan, y las antiguas direcciones de su sitio llevarán a las páginas correctas una vez que su dominio apunte aquí."
-
-msgid "Make a plugin token for your website in the Crisp marketplace and enter it below."
-msgstr "Cree un token de plugin para su sitio web en el marketplace de Crisp e introdúzcalo a continuación."
 
 msgid "Add these records to the DNS for"
 msgstr "Añade estos registros al DNS de"

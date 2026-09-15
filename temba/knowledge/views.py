@@ -24,7 +24,6 @@ from temba.utils.views.mixins import ContextMenuMixin, PostOnlyMixin, SpaMixin
 from .forms import (
     ArticleCreateForm,
     ArticleForm,
-    HelpdeskImportForm,
     HelpSiteDomainForm,
     HelpSiteForm,
     KnowledgeForm,
@@ -339,15 +338,19 @@ class ArticleCRUDL(SmartCRUDL):
                     title=_("Site Settings"),
                 )
 
-            # a help site elsewhere can be brought over wholesale, with progress shown on the page as it comes
+            # a help site elsewhere can be brought over wholesale, from whichever sites the deployment knows how to
+            # import, with progress shown on the page as it comes
             if self.has_org_perm("knowledge.helpdeskimport_create"):
-                menu.add_modax(
-                    _("Import from Crisp"),
-                    "import-crisp",
-                    reverse("knowledge.helpdeskimport_create"),
-                    title=_("Import from Crisp"),
-                    on_submit="refreshHelpdesk()",
-                )
+                for imp_type in HelpdeskImport.get_types():
+                    if imp_type.is_available_to(self.request.org, self.request.user):
+                        title = _("Import from %(name)s") % {"name": imp_type.name}
+                        menu.add_modax(
+                            title,
+                            f"import-{imp_type.slug}",
+                            reverse("knowledge.helpdeskimport_create", args=[imp_type.slug]),
+                            title=title,
+                            on_submit="refreshHelpdesk()",
+                        )
 
         def derive_article_to_edit(self):
             """
@@ -387,15 +390,23 @@ class ArticleCRUDL(SmartCRUDL):
             if site and site.domain:
                 context["site"] = site
 
-            # an import underway is shown as a bar the page keeps current; one that failed, as why
+            # an import underway is shown as a bar the page keeps current; one that failed, as why, with the offer
+            # to try again if its kind of import is still on
             latest_import = HelpdeskImport.get_latest(self.helpdesk)
             if latest_import and (
                 not latest_import.is_finished or latest_import.status == HelpdeskImport.STATUS_FAILED
             ):
+                imp_type = latest_import.type
                 context["helpdesk_import"] = latest_import
+                context["import_type_name"] = imp_type.name if imp_type else latest_import.import_type
                 context["import_status_url"] = reverse("knowledge.helpdeskimport_status")
-                if self.has_org_perm("knowledge.helpdeskimport_create"):
-                    context["import_url"] = reverse("knowledge.helpdeskimport_create")
+                if (
+                    imp_type
+                    and self.has_org_perm("knowledge.helpdeskimport_create")
+                    and imp_type.is_available_to(self.request.org, self.request.user)
+                ):
+                    context["import_url"] = reverse("knowledge.helpdeskimport_create", args=[imp_type.slug])
+                    context["import_title"] = _("Import from %(name)s") % {"name": imp_type.name}
 
             article = self.derive_article_to_edit()
             if article:
@@ -651,25 +662,45 @@ class HelpdeskImportCRUDL(SmartCRUDL):
 
     class Create(HelpdeskMixin, BaseCreateModal):
         """
-        Starts bringing a help site over from Crisp, given a key to it. The import runs in the background from here;
-        the helpdesk page shows how it's going.
+        Starts bringing a help site over, of a kind the deployment knows how to import, given what that kind needs
+        to get in. The import runs in the background from here; the helpdesk page shows how it's going.
         """
 
-        form_class = HelpdeskImportForm
-        title = _("Import from Crisp")
         submit_button_name = _("Import")
         success_url = "hide"
         success_message = ""
 
         @classmethod
         def derive_url_pattern(cls, path, action):
-            return r"^%s/%s/$" % (path, action)
+            return r"^%s/%s/(?P<type>[\w-]+)/$" % (path, action)
+
+        @cached_property
+        def import_type(self):
+            imp_type = HelpdeskImport.get_type(self.kwargs["type"])
+            if not imp_type or not imp_type.is_available_to(self.request.org, self.request.user):
+                raise Http404()
+            return imp_type
+
+        def derive_title(self):
+            return _("Import from %(name)s") % {"name": self.import_type.name}
+
+        def get_form_class(self):
+            return self.import_type.form_class
+
+        def get_form_kwargs(self):
+            kwargs = super().get_form_kwargs()
+            kwargs["import_type"] = self.import_type
+            return kwargs
+
+        def get_template_names(self):
+            return [self.import_type.template_name, "knowledge/helpdeskimport_create.html"]
 
         def get_blocker(self) -> str:
             return "existing-import" if HelpdeskImport.get_unfinished(self.helpdesk) else ""
 
         def get_context_data(self, **kwargs):
             context = super().get_context_data(**kwargs)
+            context["import_type"] = self.import_type
             context["blocker"] = self.get_blocker()
             return context
 
@@ -681,15 +712,7 @@ class HelpdeskImportCRUDL(SmartCRUDL):
 
         def save(self, obj):
             self.object = HelpdeskImport.create(
-                self.helpdesk,
-                self.request.user,
-                HelpdeskImport.TYPE_CRISP,
-                {
-                    HelpdeskImport.CONFIG_IDENTIFIER: self.form.cleaned_data["identifier"],
-                    HelpdeskImport.CONFIG_KEY: self.form.cleaned_data["key"],
-                    HelpdeskImport.CONFIG_WEBSITE_ID: self.form.cleaned_data["website_id"],
-                    HelpdeskImport.CONFIG_LOCALE: self.form.cleaned_data["locale"],
-                },
+                self.helpdesk, self.request.user, self.import_type, self.form.get_config()
             )
             self.object.start_async()
 

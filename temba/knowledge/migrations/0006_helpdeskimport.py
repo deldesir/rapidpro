@@ -21,7 +21,7 @@ class Migration(migrations.Migration):
             fields=[
                 ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
                 ("uuid", models.UUIDField(default=temba.utils.uuid.uuid4, unique=True)),
-                ("import_type", models.CharField(choices=[("crisp", "Crisp")], max_length=16)),
+                ("import_type", models.CharField(max_length=16)),
                 ("config", models.JSONField(default=dict)),
                 (
                     "status",

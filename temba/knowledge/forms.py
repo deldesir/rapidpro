@@ -301,67 +301,22 @@ class HelpSiteDomainForm(forms.ModelForm):
 
 class HelpdeskImportForm(forms.ModelForm):
     """
-    The key to a Crisp help site, checked with Crisp before the import is queued so the dialog says now if it's
-    wrong. A key that reaches more than one website is asked which.
+    Base form for what an import type needs to bring a help site over. A type's own form declares the fields, and
+    what they collect - checked with the other site here, so the dialog says now if it's wrong - becomes the
+    import's config.
     """
 
-    identifier = forms.CharField(
-        label=_("Identifier"),
-        help_text=_("The identifier of a plugin token made in the Crisp marketplace."),
-        widget=InputWidget(),
-    )
-    key = forms.CharField(
-        label=_("Key"),
-        help_text=_("The token's key. It's used for this import and not kept."),
-        widget=InputWidget(attrs={"password": True}),
-    )
-    website_id = forms.CharField(
-        label=_("Website ID"),
-        required=False,
-        help_text=_("Only needed if the token has access to more than one website."),
-        widget=InputWidget(),
-    )
-
-    def __init__(self, org, *args, **kwargs):
+    def __init__(self, org, import_type, *args, **kwargs):
+        self.org = org
+        self.import_type = import_type
         super().__init__(*args, **kwargs)
 
-    def clean(self):
-        from .crisp import CrispClient, CrispError
-
-        cleaned_data = super().clean()
-        identifier, key = cleaned_data.get("identifier"), cleaned_data.get("key")
-        if not identifier or not key:
-            return cleaned_data
-
-        # checked here, in the request, so with a budget that can't hold it up for long - the import itself
-        # gets the client's full patience
-        client = CrispClient(identifier, key, attempts=2, timeout=10)
-        try:
-            websites = client.get_websites()
-            website_id = cleaned_data.get("website_id") or (websites[0] if len(websites) == 1 else "")
-
-            if not websites:
-                raise forms.ValidationError(_("That token has no access to any website."))
-            if not website_id:
-                raise forms.ValidationError(_("That token has access to several websites, so a website ID is needed."))
-            if website_id not in websites:
-                raise forms.ValidationError(_("That token has no access to that website."))
-
-            cleaned_data["website_id"] = website_id
-            cleaned_data["locale"] = self._pick_locale(client.get_locales(website_id))
-        except CrispError as e:
-            raise forms.ValidationError(str(e))
-
-        return cleaned_data
-
-    def _pick_locale(self, locales: list) -> str:
+    def get_config(self) -> dict:
         """
-        The helpdesk's locale - Crisp helpdesks are single-locale in practice, but if one has several, the first.
+        What the import is given to work with - the type's own fields, not the modal's plumbing.
         """
-        if not locales:
-            raise forms.ValidationError(_("That website's helpdesk has no articles."))
-        return locales[0]["locale"]
+        return {name: self.cleaned_data[name] for name in self.declared_fields if name in self.cleaned_data}
 
     class Meta:
         model = HelpdeskImport
-        fields = ("identifier", "key", "website_id")
+        fields = ()

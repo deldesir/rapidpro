@@ -858,6 +858,9 @@ CHANNEL_TYPES = [
     "temba.channels.types.android.AndroidType",
 ]
 
+# the help sites a helpdesk can be imported from, by class name - none in the core; a deployment adds its own
+HELPDESK_IMPORT_TYPES = []
+
 LLM_TYPES = {
     "temba.ai.types.anthropic.type.AnthropicType": {
         # model id -> max output tokens
