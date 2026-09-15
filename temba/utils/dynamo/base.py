@@ -1,3 +1,4 @@
+import threading
 from decimal import Rounded
 
 import boto3
@@ -5,9 +6,10 @@ from boto3.dynamodb.types import DYNAMODB_CONTEXT
 from botocore.client import Config
 
 from django.conf import settings
-from django.utils.functional import SimpleLazyObject
 
-_client = None
+# boto3 sessions and resources aren't thread-safe, so rather than sharing one module-wide each thread gets its own,
+# created lazily on first use and kept for the life of the thread
+_local = threading.local()
 
 # monkey patch until https://github.com/boto/boto3/issues/4693 resolved
 DYNAMODB_CONTEXT.traps[Rounded] = False
@@ -15,12 +17,11 @@ DYNAMODB_CONTEXT.traps[Rounded] = False
 
 def get_client():
     """
-    Returns our shared DynamoDB resource service client
+    Returns the DynamoDB resource service client for the current thread
     """
 
-    global _client
-
-    if not _client:
+    client = getattr(_local, "client", None)
+    if client is None:
         if settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY:
             session = boto3.Session(
                 aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
@@ -30,12 +31,25 @@ def get_client():
         else:  # pragma: no cover
             session = boto3.Session()
 
-        _client = session.resource(
+        client = _local.client = session.resource(
             "dynamodb", endpoint_url=settings.DYNAMO_ENDPOINT_URL, config=Config(retries={"max_attempts": 3})
         )
 
-    return _client
+    return client
 
 
-MAIN = SimpleLazyObject(lambda: get_client().Table(settings.DYNAMO_TABLE_PREFIX + "Main"))
-HISTORY = SimpleLazyObject(lambda: get_client().Table(settings.DYNAMO_TABLE_PREFIX + "History"))
+class _Table:
+    """
+    A stand-in for a table resource which can be imported once but resolves to the current thread's resource on
+    each use, since the resource itself can't be shared between threads.
+    """
+
+    def __init__(self, suffix: str):
+        self._suffix = suffix
+
+    def __getattr__(self, name):
+        return getattr(get_client().Table(settings.DYNAMO_TABLE_PREFIX + self._suffix), name)
+
+
+MAIN = _Table("Main")
+HISTORY = _Table("History")
