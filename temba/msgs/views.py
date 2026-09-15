@@ -660,6 +660,7 @@ class MsgCRUDL(SmartCRUDL):
         title = _("Outbox")
         subtitle = _("Outgoing messages queued to be sent.")
         folder = MsgFolder.OUTBOX
+        allow_search = False
         bulk_actions = ()
         allow_export = True
 
@@ -667,6 +668,7 @@ class MsgCRUDL(SmartCRUDL):
         title = _("Sent")
         subtitle = _("Outgoing messages that have been sent.")
         folder = MsgFolder.SENT
+        allow_search = False
         bulk_actions = ()
         allow_export = True
 
@@ -674,6 +676,7 @@ class MsgCRUDL(SmartCRUDL):
         title = _("Failed")
         subtitle = _("Outgoing messages that couldn't be delivered.")
         folder = MsgFolder.FAILED
+        allow_search = False
         allow_export = True
 
         def get_bulk_actions(self):
