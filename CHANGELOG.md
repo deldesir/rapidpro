@@ -1,3 +1,7 @@
+v26.3.94 (2026-09-15)
+-------------------------
+ * Fix renaming the unique constraint on the message labels table on databases created before Django hashed constraint names
+
 v26.3.93 (2026-09-15)
 -------------------------
  * Replace the auto-generated through table for Msg.labels with a model that carries the message's uuid
