@@ -333,7 +333,9 @@ class HelpdeskImportForm(forms.ModelForm):
         if not identifier or not key:
             return cleaned_data
 
-        client = CrispClient(identifier, key)
+        # checked here, in the request, so with a budget that can't hold it up for long - the import itself
+        # gets the client's full patience
+        client = CrispClient(identifier, key, attempts=2, timeout=10)
         try:
             websites = client.get_websites()
             website_id = cleaned_data.get("website_id") or (websites[0] if len(websites) == 1 else "")

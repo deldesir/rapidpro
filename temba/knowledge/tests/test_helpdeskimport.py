@@ -19,6 +19,7 @@ HIDDEN_ID = "8fd1c1f0-5d4a-4e6b-9c1e-1d9c2f3a4b5c"
 PNG = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
 
 SHOT_URL = "https://storage.crisp.chat/users/helpdesk/website/abc/shot_1evbdfc.png"
+SHOT2_URL = "https://storage.crisp.chat/users/helpdesk/website/abc/screen%20shot_ab12cd"  # a name cleaning alters
 MISSING_URL = "https://storage.crisp.chat/users/helpdesk/website/abc/gone_x1y2z3.png"
 
 STARTING_BODY = f"""# Starting a flow
@@ -28,6 +29,8 @@ See [the flows category](/en/category/flows-6ogz7g/) and [this article](https://
 A link to [a hidden one](https://help.acme.com/en/article/hidden-abc123/) can't be followed, nor [elsewhere](https://example.com/en/article/other-9gcerd/).
 
 ![]({SHOT_URL} =600x400)
+
+![]({SHOT2_URL})
 
 ![small]({MISSING_URL} =100x100)
 """
@@ -105,7 +108,7 @@ class CrispMock:
             raise requests.ConnectionError("no route")
 
         if url.startswith(CrispClient.STORAGE_URL):
-            if url == SHOT_URL:
+            if url in (SHOT_URL, SHOT2_URL):
                 return Mock(status_code=200, iter_content=lambda chunk_size: [PNG])
             return Mock(status_code=404)
 
@@ -205,9 +208,9 @@ class HelpdeskImportTest(TembaTest):
 
         # links to pages of the site are resolved to articles, others left alone; sized images carry the size as a
         # fragment, and those that could be fetched are ours now while one that couldn't stays where it was
-        image = starting.images.get()
-        self.assertEqual("shot_1evbdfc.png", image.name)
+        image = starting.images.get(name="shot_1evbdfc.png")
         self.assertEqual("image/png", image.content_type)
+        image2 = starting.images.get(name="screen20shot_ab12cd.png")  # stored under its cleaned name
         self.assertEqual(
             f"""# Starting a flow
 
@@ -216,6 +219,8 @@ See [the flows category](article:{FLOWS_ID}) and [this article](article:{STARTIN
 A link to [a hidden one](https://help.acme.com/en/article/hidden-abc123/) can't be followed, nor [elsewhere](https://example.com/en/article/other-9gcerd/).
 
 ![]({image.path}#size=large)
+
+![]({image2.path})
 
 ![small]({MISSING_URL}#size=small)
 """,
@@ -246,10 +251,12 @@ A link to [a hidden one](https://help.acme.com/en/article/hidden-abc123/) can't 
 
         self.assertEqual(5, self.helpdesk.articles.filter(is_active=True).count())
         self.assertEqual(1, len([url for url in crisp.calls if url == SHOT_URL]))
+        self.assertEqual(1, len([url for url in crisp.calls if url == SHOT2_URL]))
 
-        # importing again updates what's here rather than making it twice, and doesn't fetch images it already has.
-        # Only an article Crisp has touched since is fetched again - the other's listing is enough to republish it
-        crisp.details[STARTING_ID]["content"] = f"Changed\n\n![]({SHOT_URL})"
+        # importing again updates what's here rather than making it twice, and doesn't fetch images it already has -
+        # even one whose name was cleaned on the way in. Only an article Crisp has touched since is fetched again;
+        # the other's listing is enough to republish it
+        crisp.details[STARTING_ID]["content"] = f"Changed\n\n![]({SHOT_URL})\n\n![]({SHOT2_URL})"
         crisp.articles[0]["updated_at"] = int(time.time() * 1000) + 60_000
         crisp.articles[0]["visibility"] = "hidden"
         crisp.articles[1]["visibility"] = "visible"
@@ -262,14 +269,14 @@ A link to [a hidden one](https://help.acme.com/en/article/hidden-abc123/) can't 
         imp2.refresh_from_db()
         self.assertEqual(HelpdeskImport.STATUS_COMPLETE, imp2.status)
         self.assertEqual(5, self.helpdesk.articles.filter(is_active=True).count())
-        self.assertEqual(0, len([url for url in crisp.calls if url == SHOT_URL]))
+        self.assertEqual([], [url for url in crisp.calls if url.startswith(CrispClient.STORAGE_URL)])
         self.assertEqual([STARTING_ID], [url.rsplit("/", 1)[1] for url in crisp.calls if "/article/" in url])
 
         flows.refresh_from_db()
         self.assertEqual("Flows!", flows.title)
         starting.refresh_from_db()
-        self.assertEqual(f"Changed\n\n![]({image.path})", starting.body)
-        self.assertEqual(1, starting.images.count())
+        self.assertEqual(f"Changed\n\n![]({image.path})\n\n![]({image2.path})", starting.body)
+        self.assertEqual(2, starting.images.count())
         self.assertEqual(Article.STATUS_DRAFT, starting.status)  # hidden now, so unpublished
         hidden.refresh_from_db()
         self.assertEqual(Article.STATUS_PUBLISHED, hidden.status)
@@ -373,7 +380,7 @@ A link to [a hidden one](https://help.acme.com/en/article/hidden-abc123/) can't 
         imp.refresh_from_db()
         self.assertEqual(HelpdeskImport.STATUS_FAILED, imp.status)
         self.assertEqual("Crisp could not be reached. Please try again later.", imp.error)
-        self.assertEqual(5, mock_sleep.call_count)
+        self.assertEqual([1, 2, 4, 8], [c.args[0] for c in mock_sleep.call_args_list])
         self.assertEqual(2, imp.num_imported)  # what came before stays
 
         # its quota running out is said as such, and a run picking up after it doesn't refetch what it got
@@ -433,7 +440,15 @@ A link to [a hidden one](https://help.acme.com/en/article/hidden-abc123/) can't 
             with self.assertRaises(CrispError):
                 client.get_categories(WEBSITE_ID, "en")
 
-        self.assertEqual([1, 2, 4, 8, 16], [c.args[0] for c in mock_sleep.call_args_list])
+        self.assertEqual([1, 2, 4, 8], [c.args[0] for c in mock_sleep.call_args_list])
+
+        # a client on a short budget gives up sooner
+        with patch("temba.knowledge.crisp.time.sleep") as mock_sleep:
+            with self.assertRaises(CrispError):
+                CrispClient("ident", "secret", attempts=2, timeout=10).get_categories(WEBSITE_ID, "en")
+
+        self.assertEqual([1], [c.args[0] for c in mock_sleep.call_args_list])
+        self.assertEqual(10, mock_get.call_args.kwargs["timeout"])
 
         # an image too big isn't downloaded
         self.assertIsNone(client.download(SHOT_URL, max_size=4))
@@ -450,7 +465,7 @@ A link to [a hidden one](https://help.acme.com/en/article/hidden-abc123/) can't 
                 client.get_categories(WEBSITE_ID, "en")
 
         self.assertEqual("Crisp could not be reached. Please try again later.", str(cm.exception))
-        self.assertEqual(5, mock_sleep.call_count)
+        self.assertEqual(4, mock_sleep.call_count)
 
     def test_get_unfinished(self):
         self.assertIsNone(HelpdeskImport.get_unfinished(self.helpdesk))
@@ -502,6 +517,18 @@ class HelpdeskImportCRUDLTest(TembaTest, CRUDLTestMixin):
             form_errors={"__all__": "Crisp did not accept the API key."},
         )
         self.assertEqual(0, HelpdeskImport.objects.count())
+
+        # the dialog doesn't wait long on a crisp that's rate limiting - one retry, then it says so
+        crisp.fail = {"/websites/all": 429}
+        with patch("temba.knowledge.crisp.time.sleep") as mock_sleep:
+            self.assertCreateSubmit(
+                create_url,
+                self.admin,
+                {"identifier": "ident", "key": "secret"},
+                form_errors={"__all__": "Crisp's rate limit was reached. Please try again later."},
+            )
+        self.assertEqual(1, mock_sleep.call_count)
+        crisp.fail = {}
 
         # a helpdesk with nothing in it has no locale to import
         crisp.locales = []

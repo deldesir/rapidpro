@@ -11,6 +11,7 @@ import logging
 import re
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import urlparse
 from uuid import UUID, uuid5
 
@@ -47,9 +48,16 @@ class CrispClient:
 
     MAX_ATTEMPTS = 5
     TIMEOUT = 30
+    RETRY_STATUSES = (429, 500, 502, 503)
 
-    def __init__(self, identifier: str, key: str):
+    def __init__(self, identifier: str, key: str, *, attempts: int = MAX_ATTEMPTS, timeout: int = TIMEOUT):
+        """
+        The attempts and timeout are the budget for each read - the import in the background can afford to wait
+        out a rate limit, while a dialog checking a key can't hold its request that long.
+        """
         self.auth = (identifier, key)
+        self.attempts = attempts
+        self.timeout = timeout
 
     def get_websites(self) -> list:
         """
@@ -87,7 +95,7 @@ class CrispClient:
         can't be had or is too big.
         """
         try:
-            response = requests.get(url, timeout=self.TIMEOUT, stream=True)
+            response = requests.get(url, timeout=self.timeout, stream=True)
             if response.status_code != 200:
                 return None
 
@@ -114,22 +122,24 @@ class CrispClient:
             page += 1
 
     def _get(self, path: str):
-        for attempt in range(self.MAX_ATTEMPTS):
+        response = None
+        for attempt in range(self.attempts):
+            if attempt:
+                time.sleep(2 ** (attempt - 1))
+
             try:
                 response = requests.get(
                     f"{self.BASE_URL}{path}",
                     auth=self.auth,
                     headers={"X-Crisp-Tier": "plugin"},
-                    timeout=self.TIMEOUT,
+                    timeout=self.timeout,
                 )
             except requests.RequestException:
                 response = None
 
             # a rate limit or a wobble on their side is waited out, anything else is answered now
-            if response is not None and response.status_code not in (429, 500, 502, 503):
+            if response is not None and response.status_code not in self.RETRY_STATUSES:
                 break
-
-            time.sleep(2**attempt)
         else:
             if response is not None and response.status_code == 429:
                 raise CrispError(_("Crisp's rate limit was reached. Please try again later."))
@@ -386,7 +396,7 @@ class CrispImporter:
         Brings the body's images over from Crisp's storage into ours, rewriting each reference to the key it's kept
         under - the same thing the editor writes for an upload. One that can't be brought over stays where it was.
         """
-        existing = {image.name: image for image in article.images.all()}
+        existing = {self._image_key(image.name): image for image in article.images.all()}
         num_images = len(existing)
 
         def localize(match) -> str:
@@ -394,15 +404,27 @@ class CrispImporter:
 
             url = match[0]
             name = url.rsplit("/", 1)[-1]
-            image = existing.get(name)
+            key = self._image_key(name)
+            image = existing.get(key)
 
             if not image and num_images < ArticleImage.MAX_IMAGES:
                 downloaded = self.client.download(url, ArticleImage.MAX_UPLOAD_SIZE)
                 if downloaded and ArticleImage.is_allowed_type(downloaded[1]):
                     upload = SimpleUploadedFile(name, downloaded[0], content_type=downloaded[1])
-                    image = existing[name] = ArticleImage.from_upload(article, self.user, upload)
+                    image = existing[key] = ArticleImage.from_upload(article, self.user, upload)
                     num_images += 1
 
             return image.path if image else url
 
         return self.STORAGE_URL.sub(localize, body)
+
+    @staticmethod
+    def _image_key(name: str) -> str:
+        """
+        What an image is matched on between imports. An upload cleans the name it's stored under, so Crisp's name
+        is cleaned the same way before the two are compared - by stem, since the stored extension comes from the
+        content type rather than the name.
+        """
+        from temba.msgs.models import Media
+
+        return Path(Media.clean_name(name, "")).stem
