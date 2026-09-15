@@ -1,3 +1,10 @@
+v26.3.92 (2026-09-15)
+-------------------------
+ * Render the calls list like other component list pages
+ * Page the calls list by uuid on a new calls_by_org index
+ * Make list search opt-in and drop it from outgoing message folders
+ * Make shared Dynamo and UUIDv7 state safe to use from multiple threads
+
 v26.3.91 (2026-09-14)
 -------------------------
  * Index messages awaiting a retry by next_attempt rather than status
