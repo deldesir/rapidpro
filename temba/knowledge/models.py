@@ -1488,6 +1488,190 @@ class HelpSite(models.Model):
         ]
 
 
+class HelpdeskImportError(Exception):
+    """
+    An import that couldn't go on, with what a user can do about it.
+    """
+
+    pass
+
+
+class HelpdeskImportType:
+    """
+    Base type for the help sites a helpdesk can be brought over from. A type asks for what it needs in its form,
+    does the import in a worker, and is registered by class name in settings.HELPDESK_IMPORT_TYPES.
+    """
+
+    slug = None
+    name = None
+
+    # the form asking for what the import needs - a HelpdeskImportForm, whose cleaned data becomes the config
+    form_class = None
+
+    # config keys dropped once the import is over - what was lent for it rather than kept
+    secret_config_keys = ()
+
+    @property
+    def template_name(self) -> str:
+        """
+        The dialog's template, which extends knowledge/helpdeskimport_create.html with the type's fields.
+        """
+        return f"knowledge/imports/{self.slug}/create.html"
+
+    def is_available_to(self, org, user) -> bool:
+        """
+        Determines whether this import type is offered to the given user.
+        """
+        return True
+
+    def perform(self, imp):  # pragma: no cover
+        """
+        Brings the site over into the import's helpdesk, advancing the import as it goes. Raises HelpdeskImportError
+        for anything the user can do something about.
+        """
+        raise NotImplementedError()
+
+
+class HelpdeskImport(models.Model):
+    """
+    A help site brought over into the helpdesk from somewhere else, done in the background once the workspace has
+    handed over what its type needs to get in. The page shows its progress as it goes, and what went wrong if it
+    didn't finish.
+    """
+
+    STATUS_PENDING = "P"
+    STATUS_PROCESSING = "O"
+    STATUS_COMPLETE = "C"
+    STATUS_FAILED = "F"
+    STATUS_CHOICES = (
+        (STATUS_PENDING, _("Pending")),
+        (STATUS_PROCESSING, _("Processing")),
+        (STATUS_COMPLETE, _("Complete")),
+        (STATUS_FAILED, _("Failed")),
+    )
+
+    # an import that never finished in this long is taken to have died with its worker rather than to be running
+    UNFINISHED_WINDOW = timedelta(hours=4)
+
+    uuid = models.UUIDField(unique=True, default=uuid4)
+    org = models.ForeignKey(Org, on_delete=models.PROTECT, related_name="helpdesk_imports")
+    knowledge = models.ForeignKey(Knowledge, on_delete=models.PROTECT, related_name="imports")
+    import_type = models.CharField(max_length=16)  # the slug of a registered HelpdeskImportType
+
+    # what the type needs to get in and bring the site over - its secrets are dropped once the import is over
+    config = models.JSONField(default=dict)
+
+    status = models.CharField(max_length=1, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    num_items = models.IntegerField(default=0)  # sections and articles to bring over, known once listed
+    num_imported = models.IntegerField(default=0)
+    error = models.CharField(max_length=255, null=True)
+
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    created_on = models.DateTimeField(default=timezone.now)
+    modified_on = models.DateTimeField(auto_now=True)
+    started_on = models.DateTimeField(null=True)
+    finished_on = models.DateTimeField(null=True)
+
+    @classmethod
+    def get_types(cls):
+        from .imports import TYPES
+
+        return TYPES.values()
+
+    @classmethod
+    def get_type(cls, slug: str):
+        from .imports import TYPES
+
+        return TYPES.get(slug)
+
+    @classmethod
+    def create(cls, knowledge, user, import_type: HelpdeskImportType, config: dict):
+        assert knowledge.knowledge_type == Knowledge.TYPE_HELPDESK, "only a helpdesk can be imported into"
+
+        return cls.objects.create(
+            org=knowledge.org, knowledge=knowledge, import_type=import_type.slug, config=config, created_by=user
+        )
+
+    @classmethod
+    def get_unfinished(cls, knowledge):
+        """
+        The import that's running for the helpdesk, if one is - another can't be started while it is.
+        """
+        return cls.objects.filter(
+            knowledge=knowledge,
+            status__in=(cls.STATUS_PENDING, cls.STATUS_PROCESSING),
+            created_on__gt=timezone.now() - cls.UNFINISHED_WINDOW,
+        ).first()
+
+    @classmethod
+    def get_latest(cls, knowledge):
+        return cls.objects.filter(knowledge=knowledge).order_by("-created_on").first()
+
+    @property
+    def type(self) -> HelpdeskImportType | None:
+        return self.get_type(self.import_type)
+
+    @property
+    def is_finished(self) -> bool:
+        return self.status in (self.STATUS_COMPLETE, self.STATUS_FAILED)
+
+    def start_async(self):
+        from .tasks import import_helpdesk_task
+
+        on_transaction_commit(lambda: import_helpdesk_task.delay(self.id))
+
+    def perform(self):
+        """
+        Does the import, in a worker. Whatever the outcome, what was lent for it is dropped.
+        """
+        assert self.status == self.STATUS_PENDING, "can only perform a pending import"
+
+        imp_type = self.type
+
+        self.status = self.STATUS_PROCESSING
+        self.started_on = timezone.now()
+        self.save(update_fields=("status", "started_on", "modified_on"))
+
+        try:
+            imp_type.perform(self)
+        except HelpdeskImportError as e:
+            self.status = self.STATUS_FAILED
+            self.error = str(e)[:255]
+        except Exception:  # pragma: no cover
+            logger.exception("helpdesk import failed", extra={"import_id": self.id})
+            self.status = self.STATUS_FAILED
+            self.error = _("Something went wrong. Please try again later.")
+        else:
+            self.status = self.STATUS_COMPLETE
+            self.knowledge.mark_pending()
+
+        secrets = imp_type.secret_config_keys if imp_type else ()
+        self.config = {k: v for k, v in self.config.items() if k not in secrets}
+        self.finished_on = timezone.now()
+        self.save(update_fields=("status", "error", "config", "finished_on", "modified_on"))
+
+    def set_total(self, total: int):
+        self.num_items = total
+        self.save(update_fields=("num_items", "modified_on"))
+
+    def advance(self):
+        self.num_imported += 1
+        self.save(update_fields=("num_imported", "modified_on"))
+
+    def as_json(self) -> dict:
+        return {
+            "id": self.id,
+            "status": self.get_status_display(),
+            "created_on": self.created_on.isoformat(),
+            "modified_on": self.modified_on.isoformat(),
+            "progress": {"total": self.num_items, "current": self.num_imported},
+            "error": self.error,
+        }
+
+    class Meta:
+        indexes = [models.Index(name="helpdeskimport_by_created", fields=("knowledge", "-created_on"))]
+
+
 def get_knowledge_item_path(knowledge, item_uuid, filename: str) -> str:
     return f"orgs/{knowledge.org_id}/knowledge/{knowledge.uuid}/{item_uuid}{Path(filename).suffix.lower()}"
 

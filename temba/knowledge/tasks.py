@@ -1,10 +1,17 @@
+from celery import shared_task
+
 from django.conf import settings
 from django.utils import timezone
 
 from temba.utils.crons import cron_task
 from temba.utils.models import delete_in_batches
 
-from .models import ArticleCount, HelpSite
+from .models import ArticleCount, HelpdeskImport, HelpSite
+
+
+@shared_task
+def import_helpdesk_task(import_id):
+    HelpdeskImport.objects.get(id=import_id).perform()
 
 
 @cron_task(lock_timeout=7200)

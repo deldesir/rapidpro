@@ -404,6 +404,7 @@ PERMISSIONS = {
     ),
     "request_logs.httplog": ("webhooks",),
     "knowledge.article": ("colors", "publish", "sort", "upload"),
+    "knowledge.helpdeskimport": ("status",),
     "knowledge.helpsite": ("domain", "verify"),
     "knowledge.knowledge": ("menu", "upload"),
     "tickets.ticket": ("assign", "menu", "note", "export", "analytics", "analytics_export"),
@@ -504,6 +505,7 @@ GROUP_PERMISSIONS = {
         "request_logs.httplog_webhooks",
         "templates.template.*",
         "knowledge.article.*",
+        "knowledge.helpdeskimport.*",
         "knowledge.helpsite.*",
         "knowledge.knowledge.*",
         "knowledge.knowledgeitem.*",
@@ -599,6 +601,8 @@ GROUP_PERMISSIONS = {
         "knowledge.article_sort",
         "knowledge.article_update",
         "knowledge.article_upload",
+        "knowledge.helpdeskimport_create",
+        "knowledge.helpdeskimport_status",
         "knowledge.helpsite_domain",
         "knowledge.helpsite_update",
         "knowledge.helpsite_verify",
@@ -853,6 +857,9 @@ CHANNEL_TYPES = [
     "temba.channels.types.zenvia_whatsapp.ZenviaWhatsAppType",
     "temba.channels.types.android.AndroidType",
 ]
+
+# the help sites a helpdesk can be imported from, by class name - none in the core; a deployment adds its own
+HELPDESK_IMPORT_TYPES = []
 
 LLM_TYPES = {
     "temba.ai.types.anthropic.type.AnthropicType": {

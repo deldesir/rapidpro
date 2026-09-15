@@ -30,7 +30,7 @@ from .forms import (
     KnowledgeUpdateForm,
     SectionForm,
 )
-from .models import Article, ArticleImage, HelpSite, Knowledge, KnowledgeItem
+from .models import Article, ArticleImage, HelpdeskImport, HelpSite, Knowledge, KnowledgeItem
 
 
 class KnowledgeCRUDL(SmartCRUDL):
@@ -338,6 +338,20 @@ class ArticleCRUDL(SmartCRUDL):
                     title=_("Site Settings"),
                 )
 
+            # a help site elsewhere can be brought over wholesale, from whichever sites the deployment knows how to
+            # import, with progress shown on the page as it comes
+            if self.has_org_perm("knowledge.helpdeskimport_create"):
+                for imp_type in HelpdeskImport.get_types():
+                    if imp_type.is_available_to(self.request.org, self.request.user):
+                        title = _("Import from %(name)s") % {"name": imp_type.name}
+                        menu.add_modax(
+                            title,
+                            f"import-{imp_type.slug}",
+                            reverse("knowledge.helpdeskimport_create", args=[imp_type.slug]),
+                            title=title,
+                            on_submit="refreshHelpdesk()",
+                        )
+
         def derive_article_to_edit(self):
             """
             The article the editor should open on arrival, named by the create modal so that titling a new one drops
@@ -375,6 +389,24 @@ class ArticleCRUDL(SmartCRUDL):
                 context["domain_url"] = reverse("knowledge.helpsite_domain")
             if site and site.domain:
                 context["site"] = site
+
+            # an import underway is shown as a bar the page keeps current; one that failed, as why, with the offer
+            # to try again if its kind of import is still on
+            latest_import = HelpdeskImport.get_latest(self.helpdesk)
+            if latest_import and (
+                not latest_import.is_finished or latest_import.status == HelpdeskImport.STATUS_FAILED
+            ):
+                imp_type = latest_import.type
+                context["helpdesk_import"] = latest_import
+                context["import_type_name"] = imp_type.name if imp_type else latest_import.import_type
+                context["import_status_url"] = reverse("knowledge.helpdeskimport_status")
+                if (
+                    imp_type
+                    and self.has_org_perm("knowledge.helpdeskimport_create")
+                    and imp_type.is_available_to(self.request.org, self.request.user)
+                ):
+                    context["import_url"] = reverse("knowledge.helpdeskimport_create", args=[imp_type.slug])
+                    context["import_title"] = _("Import from %(name)s") % {"name": imp_type.name}
 
             article = self.derive_article_to_edit()
             if article:
@@ -622,6 +654,80 @@ class ArticleCRUDL(SmartCRUDL):
             # the editor writes the path - the key in storage - into the article and shows the url, so the article
             # never holds the address storage happens to be served from
             return JsonResponse({"uuid": str(image.uuid), "name": image.name, "path": image.path, "url": image.url})
+
+
+class HelpdeskImportCRUDL(SmartCRUDL):
+    model = HelpdeskImport
+    actions = ("create", "status")
+
+    class Create(HelpdeskMixin, BaseCreateModal):
+        """
+        Starts bringing a help site over, of a kind the deployment knows how to import, given what that kind needs
+        to get in. The import runs in the background from here; the helpdesk page shows how it's going.
+        """
+
+        submit_button_name = _("Import")
+        success_url = "hide"
+        success_message = ""
+
+        @classmethod
+        def derive_url_pattern(cls, path, action):
+            return r"^%s/%s/(?P<type>[\w-]+)/$" % (path, action)
+
+        @cached_property
+        def import_type(self):
+            imp_type = HelpdeskImport.get_type(self.kwargs["type"])
+            if not imp_type or not imp_type.is_available_to(self.request.org, self.request.user):
+                raise Http404()
+            return imp_type
+
+        def derive_title(self):
+            return _("Import from %(name)s") % {"name": self.import_type.name}
+
+        def get_form_class(self):
+            return self.import_type.form_class
+
+        def get_form_kwargs(self):
+            kwargs = super().get_form_kwargs()
+            kwargs["import_type"] = self.import_type
+            return kwargs
+
+        def get_template_names(self):
+            return [self.import_type.template_name, "knowledge/helpdeskimport_create.html"]
+
+        def get_blocker(self) -> str:
+            return "existing-import" if HelpdeskImport.get_unfinished(self.helpdesk) else ""
+
+        def get_context_data(self, **kwargs):
+            context = super().get_context_data(**kwargs)
+            context["import_type"] = self.import_type
+            context["blocker"] = self.get_blocker()
+            return context
+
+        def form_valid(self, form):
+            if self.get_blocker():
+                return self.form_invalid(form)
+
+            return super().form_valid(form)
+
+        def save(self, obj):
+            self.object = HelpdeskImport.create(
+                self.helpdesk, self.request.user, self.import_type, self.form.get_config()
+            )
+            self.object.start_async()
+
+    class Status(HelpdeskMixin, OrgPermsMixin, SmartTemplateView):
+        """
+        How the helpdesk's latest import is going, for the bar on the helpdesk page to keep current.
+        """
+
+        @classmethod
+        def derive_url_pattern(cls, path, action):
+            return r"^%s/%s/$" % (path, action)
+
+        def render_to_response(self, context, **response_kwargs):
+            latest = HelpdeskImport.get_latest(self.helpdesk)
+            return JsonResponse({"results": [latest.as_json()] if latest else []})
 
 
 class HelpSiteCRUDL(SmartCRUDL):

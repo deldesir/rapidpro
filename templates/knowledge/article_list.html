@@ -43,6 +43,55 @@
       preview pill opens the site as its readers will see it, in a tab of its own.
     {% endcomment %}
     <div slot="banner">
+      {% comment %}
+        An import underway rides above the site card as a bar the page keeps current until it's done, when the
+        cards are refreshed to show what came over. One that failed says why, until the next one is started.
+      {% endcomment %}
+      {% if helpdesk_import %}
+        {% if helpdesk_import.is_finished %}
+          <div class="import-card failed" id="import-card">
+            <temba-icon name="alert_warning" size="1.2" class="import-icon">
+            </temba-icon>
+            <div class="import-text">
+              <div class="import-title">
+              {% blocktrans trimmed with name=import_type_name %}
+                The import from {{ name }} did not finish.
+              {% endblocktrans %}
+            </div>
+              <div class="import-note">{{ helpdesk_import.error }}</div>
+            </div>
+            {% if import_url %}
+              {# the same dialog as the menu's - the key isn't kept, so trying again means giving it again #}
+              <temba-button lined small name="{% trans "Try Again" %}" onclick="showImportDialog()">
+              </temba-button>
+            {% endif %}
+          </div>
+        {% else %}
+          <div class="import-card" id="import-card">
+            <temba-icon name="import" size="1.2" class="import-icon">
+            </temba-icon>
+            <div class="import-text">
+              <div class="import-header">
+                <div class="import-title">
+                  {% blocktrans trimmed with name=import_type_name %}
+                    Importing from {{ name }}
+                  {% endblocktrans %}
+                </div>
+                {# what the import is at, beside the title rather than in the bar, which has room only for its meter #}
+                <div class="import-status" id="import-status">
+                  {% if not helpdesk_import.num_items %}
+                    {% trans "Fetching articles…" %}
+                  {% endif %}
+                </div>
+              </div>
+              <temba-progress id="import-progress"
+                              total="{{ helpdesk_import.num_items }}"
+                              current="{{ helpdesk_import.num_imported }}">
+              </temba-progress>
+            </div>
+          </div>
+        {% endif %}
+      {% endif %}
       {% if site and site.is_available %}
         <a class="domain-card"
            id="site-domain-card"
@@ -147,9 +196,49 @@
     }
 
     function refreshHelpdesk() {
-      // the domain card reflects what the domain dialog just did
+      // the domain card reflects what the domain dialog just did, or an import just started shows its bar
       spaGet(window.location.pathname);
     }
+
+    {% if import_url %}
+    function showImportDialog() {
+      showModax('{{ import_title|escapejs }}', '{{ import_url }}', {
+        id: 'import-{{ helpdesk_import.import_type }}',
+        onSubmit: 'refreshHelpdesk()'
+      });
+    }
+    {% endif %}
+
+    {% if helpdesk_import and not helpdesk_import.is_finished %}
+    function pollHelpdeskImport(refreshes) {
+      // the bar follows the import along, more patiently the longer it goes, and the page is reloaded to show the
+      // result once it's over
+      fetchAjax("{{ import_status_url }}").then(function(response) {
+        return response.json();
+      }).then(function(data) {
+        var imp = data.results[0];
+        var bar = document.querySelector('#import-progress');
+        if (!imp || !bar) {
+          return;
+        }
+
+        if (imp.status === "Complete" || imp.status === "Failed") {
+          refreshHelpdesk();
+          return;
+        }
+
+        if (imp.progress.total) {
+          bar.total = imp.progress.total;
+          bar.current = imp.progress.current;
+          document.querySelector('#import-status').textContent = '';
+        }
+
+        setTimeout(function() {
+          pollHelpdeskImport(refreshes + 1);
+        }, Math.min(1000 * (refreshes + 1), 10000));
+      });
+    }
+    {% endif %}
 
     {% if domain_url %}
     function showSiteDomain() {
@@ -162,6 +251,10 @@
 
     onSpload(function() {
       var list = document.querySelector('#article-list');
+
+      {% if helpdesk_import and not helpdesk_import.is_finished %}
+      pollHelpdeskImport(1);
+      {% endif %}
 
       {% if create_url %}
       // each card offers to add an article to its section - the same create dialog the menu opens for a section,
@@ -194,6 +287,76 @@
        the contact page's do. */
     .spa-content {
       padding: 0 !important;
+    }
+
+    /* the import card - the same surface as the domain card, with the bar of the import filling the line */
+    .import-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-sm);
+      box-shadow: var(--shadow-2);
+      color: var(--text-1);
+    }
+
+    .import-card.failed {
+      background: var(--warning-bg);
+      border-color: var(--warning-border);
+    }
+
+    .import-icon {
+      flex: none;
+      --icon-color: var(--accent-500);
+    }
+
+    .import-card.failed .import-icon {
+      --icon-color: var(--warning);
+    }
+
+    .import-text {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    /* the retry button - a quiet one, the card's tint carrying the warning, centered on the card's two lines */
+    .import-card temba-button {
+      flex: none;
+      display: flex;
+      align-self: center;
+    }
+
+    .import-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .import-title {
+      font-weight: var(--w-semibold);
+      font-size: 14px;
+    }
+
+    .import-status {
+      font-size: 12px;
+      color: var(--text-3);
+      white-space: nowrap;
+    }
+
+    .import-note {
+      font-size: 12px;
+      color: var(--text-3);
+      margin-top: 1px;
+    }
+
+    #import-progress {
+      display: block;
+      margin-top: 6px;
+      --progress-padding: 0;
     }
 
     /* the domain card - the same surface as the section cards below it, in a single line */

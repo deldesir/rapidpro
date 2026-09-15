@@ -8,7 +8,7 @@ from temba.orgs.views.mixins import UniqueNameMixin
 from temba.utils import languages
 from temba.utils.fields import CheckboxWidget, ColorInputWidget, InputWidget, SelectWidget
 
-from .models import Article, HelpSite, Knowledge
+from .models import Article, HelpdeskImport, HelpSite, Knowledge
 
 
 class MarkdownEditorWidget(forms.Widget):
@@ -297,3 +297,26 @@ class HelpSiteDomainForm(forms.ModelForm):
     class Meta:
         model = HelpSite
         fields = ("is_enabled",)
+
+
+class HelpdeskImportForm(forms.ModelForm):
+    """
+    Base form for what an import type needs to bring a help site over. A type's own form declares the fields, and
+    what they collect - checked with the other site here, so the dialog says now if it's wrong - becomes the
+    import's config.
+    """
+
+    def __init__(self, org, import_type, *args, **kwargs):
+        self.org = org
+        self.import_type = import_type
+        super().__init__(*args, **kwargs)
+
+    def get_config(self) -> dict:
+        """
+        What the import is given to work with - the type's own fields, not the modal's plumbing.
+        """
+        return {name: self.cleaned_data[name] for name in self.declared_fields if name in self.cleaned_data}
+
+    class Meta:
+        model = HelpdeskImport
+        fields = ()

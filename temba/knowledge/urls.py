@@ -2,10 +2,11 @@ from django.conf.urls import include
 from django.urls import re_path
 
 from .site import site_urlpatterns
-from .views import ArticleCRUDL, HelpSiteCRUDL, KnowledgeCRUDL, KnowledgeItemCRUDL
+from .views import ArticleCRUDL, HelpdeskImportCRUDL, HelpSiteCRUDL, KnowledgeCRUDL, KnowledgeItemCRUDL
 
 urlpatterns = [
     re_path(r"^", include(ArticleCRUDL().as_urlpatterns())),
+    re_path(r"^", include(HelpdeskImportCRUDL().as_urlpatterns())),
     re_path(r"^", include(HelpSiteCRUDL().as_urlpatterns())),
     re_path(r"^", include(KnowledgeCRUDL().as_urlpatterns())),
     re_path(r"^", include(KnowledgeItemCRUDL().as_urlpatterns())),
