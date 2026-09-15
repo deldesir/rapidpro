@@ -144,6 +144,13 @@ class HelpdeskImportTest(ImportTypesMixin, TembaTest):
         self.assertEqual({"fail_at": 2}, imp.config)
         self.assertEqual(5, self.helpdesk.articles.count())
 
+        # only a pending import can be performed - not one that's finished, nor one already being performed
+        with self.assertRaises(AssertionError):
+            imp.perform()
+
+        imp = self.create_import()
+        imp.status = HelpdeskImport.STATUS_PROCESSING
+        imp.save(update_fields=("status",))
         with self.assertRaises(AssertionError):
             imp.perform()
 

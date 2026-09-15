@@ -79,13 +79,13 @@
                 </div>
                 {# what the import is at, beside the title rather than in the bar, which has room only for its meter #}
                 <div class="import-status" id="import-status">
-                  {% if not helpdesk_import.num_articles %}
+                  {% if not helpdesk_import.num_items %}
                     {% trans "Fetching articles…" %}
                   {% endif %}
                 </div>
               </div>
               <temba-progress id="import-progress"
-                              total="{{ helpdesk_import.num_articles }}"
+                              total="{{ helpdesk_import.num_items }}"
                               current="{{ helpdesk_import.num_imported }}">
               </temba-progress>
             </div>
@@ -203,7 +203,7 @@
     {% if import_url %}
     function showImportDialog() {
       showModax('{{ import_title|escapejs }}', '{{ import_url }}', {
-        id: 'import-crisp',
+        id: 'import-{{ helpdesk_import.import_type }}',
         onSubmit: 'refreshHelpdesk()'
       });
     }

@@ -31,7 +31,7 @@ class Migration(migrations.Migration):
                         max_length=1,
                     ),
                 ),
-                ("num_articles", models.IntegerField(default=0)),
+                ("num_items", models.IntegerField(default=0)),
                 ("num_imported", models.IntegerField(default=0)),
                 ("error", models.CharField(max_length=255, null=True)),
                 ("created_on", models.DateTimeField(default=django.utils.timezone.now)),

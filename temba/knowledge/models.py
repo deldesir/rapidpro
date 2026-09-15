@@ -1562,7 +1562,7 @@ class HelpdeskImport(models.Model):
     config = models.JSONField(default=dict)
 
     status = models.CharField(max_length=1, choices=STATUS_CHOICES, default=STATUS_PENDING)
-    num_articles = models.IntegerField(default=0)  # sections and articles to bring over, known once listed
+    num_items = models.IntegerField(default=0)  # sections and articles to bring over, known once listed
     num_imported = models.IntegerField(default=0)
     error = models.CharField(max_length=255, null=True)
 
@@ -1624,7 +1624,7 @@ class HelpdeskImport(models.Model):
         """
         Does the import, in a worker. Whatever the outcome, what was lent for it is dropped.
         """
-        assert not self.is_finished, "can't perform a finished import"
+        assert self.status == self.STATUS_PENDING, "can only perform a pending import"
 
         imp_type = self.type
 
@@ -1651,8 +1651,8 @@ class HelpdeskImport(models.Model):
         self.save(update_fields=("status", "error", "config", "finished_on", "modified_on"))
 
     def set_total(self, total: int):
-        self.num_articles = total
-        self.save(update_fields=("num_articles", "modified_on"))
+        self.num_items = total
+        self.save(update_fields=("num_items", "modified_on"))
 
     def advance(self):
         self.num_imported += 1
@@ -1664,7 +1664,7 @@ class HelpdeskImport(models.Model):
             "status": self.get_status_display(),
             "created_on": self.created_on.isoformat(),
             "modified_on": self.modified_on.isoformat(),
-            "progress": {"total": self.num_articles, "current": self.num_imported},
+            "progress": {"total": self.num_items, "current": self.num_imported},
             "error": self.error,
         }
 
