@@ -1,3 +1,11 @@
+v26.3.93 (2026-09-15)
+-------------------------
+ * Replace the auto-generated through table for Msg.labels with a model that carries the message's uuid
+ * Label and unlabel messages via mailroom and remove label_name param from message actions endpoint
+ * Replace the helpdesk article table with section cards, dimming drafts and unpublished sections
+ * Add a public help site for the helpdesk
+ * Add a registry of helpdesk import types, with the import's status, retries and re-imports shown on its card
+
 v26.3.92 (2026-09-15)
 -------------------------
  * Render the calls list like other component list pages
