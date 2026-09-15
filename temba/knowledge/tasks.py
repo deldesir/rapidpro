@@ -9,6 +9,11 @@ from temba.utils.models import delete_in_batches
 from .models import ArticleCount, HelpdeskImport, HelpSite
 
 
+@shared_task
+def import_helpdesk_task(import_id):
+    HelpdeskImport.objects.get(id=import_id).perform()
+
+
 @cron_task(lock_timeout=7200)
 def squash_article_counts():
     ArticleCount.squash()
