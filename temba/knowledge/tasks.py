@@ -4,7 +4,7 @@ from django.utils import timezone
 from temba.utils.crons import cron_task
 from temba.utils.models import delete_in_batches
 
-from .models import ArticleCount
+from .models import ArticleCount, HelpSite
 
 
 @cron_task(lock_timeout=7200)
@@ -19,3 +19,8 @@ def trim_article_counts():
     num_deleted = delete_in_batches(ArticleCount.objects.filter(day__lt=trim_before))
 
     return {"deleted": num_deleted}
+
+
+@cron_task()
+def check_helpsite_domains():
+    return HelpSite.check_verified_domains()

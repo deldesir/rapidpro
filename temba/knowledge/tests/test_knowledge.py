@@ -421,17 +421,18 @@ class ArticleTest(TembaTest):
     def test_apply_sort(self):
         flows = self.create_article(self.helpdesk, "Flows")
         contacts = self.create_article(self.helpdesk, "Contacts")
-        nodes = self.create_article(self.helpdesk, "Nodes")
+        nodes = self.create_article(self.helpdesk, "Nodes", parent=flows)
         other = self.create_article(self.org2.knowledge.get(knowledge_type=Knowledge.TYPE_HELPDESK), "Other")
         modified_on = flows.modified_on
 
+        # sections can be reordered, and an article moved to another section
         Article.apply_sort(
             self.helpdesk,
-            [(str(contacts.uuid), None, 0), (str(flows.uuid), None, 1), (str(nodes.uuid), str(flows.uuid), 0)],
+            [(str(contacts.uuid), None, 0), (str(flows.uuid), None, 1), (str(nodes.uuid), str(contacts.uuid), 0)],
         )
 
-        self.assertEqual([contacts, flows, nodes], Article.get_tree(self.helpdesk))
-        self.assertEqual([0, 0, 1], [a.depth for a in Article.get_tree(self.helpdesk)])
+        self.assertEqual([contacts, nodes, flows], Article.get_tree(self.helpdesk))
+        self.assertEqual([0, 1, 0], [a.depth for a in Article.get_tree(self.helpdesk)])
 
         # reordering isn't something mailroom indexes, so it doesn't make articles look stale
         flows.refresh_from_db()
@@ -441,28 +442,30 @@ class ArticleTest(TembaTest):
         with self.assertRaises(ValueError):
             Article.apply_sort(self.helpdesk, [(str(other.uuid), None, 0)])
         with self.assertRaises(ValueError):
-            Article.apply_sort(self.helpdesk, [(str(flows.uuid), str(other.uuid), 0)])
+            Article.apply_sort(self.helpdesk, [(str(nodes.uuid), str(other.uuid), 0)])
+
+        # a section can't be made an article, nor an article a section - what each is, is where it sits
+        with self.assertRaises(ValueError):
+            Article.apply_sort(self.helpdesk, [(str(flows.uuid), str(contacts.uuid), 0)])
+        with self.assertRaises(ValueError):
+            Article.apply_sort(self.helpdesk, [(str(nodes.uuid), None, 0)])
 
         # nor can an article be its own ancestor
         with self.assertRaises(ValueError):
-            Article.apply_sort(self.helpdesk, [(str(flows.uuid), str(flows.uuid), 0)])
-        with self.assertRaises(ValueError):
-            Article.apply_sort(
-                self.helpdesk, [(str(flows.uuid), str(contacts.uuid), 0), (str(contacts.uuid), str(flows.uuid), 0)]
-            )
+            Article.apply_sort(self.helpdesk, [(str(nodes.uuid), str(nodes.uuid), 0)])
 
         # nesting is allowed up to the cap...
-        deep = self.create_article(self.helpdesk, "Deep")
-        deeper = self.create_article(self.helpdesk, "Deeper")
-        Article.apply_sort(self.helpdesk, [(str(deep.uuid), str(flows.uuid), 1)])
+        deep = self.create_article(self.helpdesk, "Deep", parent=flows)
+        deeper = self.create_article(self.helpdesk, "Deeper", parent=contacts)
+        Article.apply_sort(self.helpdesk, [(str(deep.uuid), str(contacts.uuid), 1)])
 
         # ...but no further - deep's parent comes from the part of the tree the client didn't mention
         with self.assertRaises(ValueError):
             Article.apply_sort(self.helpdesk, [(str(deeper.uuid), str(deep.uuid), 0)])
 
         # none of the rejected moves changed anything
-        self.assertEqual([contacts, deeper, flows, nodes, deep], Article.get_tree(self.helpdesk))
-        self.assertEqual([0, 0, 0, 1, 1], [a.depth for a in Article.get_tree(self.helpdesk)])
+        self.assertEqual([contacts, deeper, nodes, deep, flows], Article.get_tree(self.helpdesk))
+        self.assertEqual([0, 1, 1, 1, 0], [a.depth for a in Article.get_tree(self.helpdesk)])
 
     def test_as_html(self):
         article = self.create_article(self.helpdesk, "Getting Started")
@@ -734,36 +737,41 @@ class ArticleTest(TembaTest):
 
     @cleanup(s3=True)
     def test_release(self):
-        parent = self.create_article(self.helpdesk, "Flows", status=Article.STATUS_PUBLISHED)
-        child1 = self.create_article(self.helpdesk, "Nodes", parent=parent)
-        child2 = self.create_article(self.helpdesk, "Edges", parent=parent)
-        modified_on = parent.modified_on
+        section = self.create_article(self.helpdesk, "Flows", status=Article.STATUS_PUBLISHED)
+        article = self.create_article(self.helpdesk, "Nodes", parent=section, status=Article.STATUS_PUBLISHED)
+        modified_on = article.modified_on
 
         path = public_file_storage.save(
-            get_article_image_path(parent, uuid4(), "image/png"), SimpleUploadedFile("shot.png", b"png")
+            get_article_image_path(article, uuid4(), "image/png"), SimpleUploadedFile("shot.png", b"png")
         )
         ArticleImage.objects.create(
-            article=parent, name="shot.png", path=path, content_type="image/png", size=3, created_by=self.admin
+            article=article, name="shot.png", path=path, content_type="image/png", size=3, created_by=self.admin
         )
 
-        parent.release(self.admin)
+        # a section with articles in it can't go - they'd be left as sections themselves
+        with self.assertRaises(AssertionError):
+            section.release(self.admin)
+
+        section.refresh_from_db()
+        self.assertTrue(section.is_active)
+
+        article.release(self.admin)
 
         # soft deleted, back to draft, and modified_on bumped so mailroom's sweep sees the tombstone
-        parent.refresh_from_db()
-        self.assertFalse(parent.is_active)
-        self.assertEqual(Article.STATUS_DRAFT, parent.status)
-        self.assertIsNone(parent.published_on)
-        self.assertGreater(parent.modified_on, modified_on)
+        article.refresh_from_db()
+        self.assertFalse(article.is_active)
+        self.assertEqual(Article.STATUS_DRAFT, article.status)
+        self.assertIsNone(article.published_on)
+        self.assertGreater(article.modified_on, modified_on)
 
-        # children reparented to our parent (the root) so the tree stays connected
-        child1.refresh_from_db()
-        child2.refresh_from_db()
-        self.assertIsNone(child1.parent)
-        self.assertIsNone(child2.parent)
-
-        # and our images are gone for good - rows first, then the storage objects
+        # and its images are gone for good - rows first, then the storage objects
         self.assertEqual(0, ArticleImage.objects.count())
         self.assertFalse(public_file_storage.exists(path))
+
+        # emptied, the section can go too
+        section.release(self.admin)
+        section.refresh_from_db()
+        self.assertFalse(section.is_active)
 
 
 class ArticleImageTest(TembaTest):
