@@ -1,6 +1,6 @@
 from temba.api.internal.serializers import ModelAsJsonSerializer
 from temba.api.internal.views import BaseEndpoint
-from temba.api.support import CreatedOnCursorPagination
+from temba.api.support import UUIDCursorPagination
 from temba.api.views import ListAPIMixin
 from temba.msgs.models import MsgFolder
 
@@ -13,11 +13,11 @@ class CallsEndpoint(ListAPIMixin, BaseEndpoint):
     Call.as_json().
     """
 
-    class Pagination(CreatedOnCursorPagination):
+    class Pagination(UUIDCursorPagination):
         """
-        Pages by `-created_on, -id` which is what the `calls_org_created_on` index is ordered by. The response always
-        carries a `count` so the list UI can show a total - the pre-calculated count also shown in the menu rather
-        than a COUNT(*) on the calls table.
+        Pages by `-uuid`, which is what the `calls_by_org` index is ordered by and time ordered as call uuids are v7,
+        so a page is an index-ordered read rather than a sort. The response always carries a `count` so the list UI
+        can show a total - the pre-calculated count also shown in the menu rather than a COUNT(*) on the calls table.
         """
 
         # DRF's CursorPagination ignores `?page_size=` unless the subclass opts in. The list component sends
