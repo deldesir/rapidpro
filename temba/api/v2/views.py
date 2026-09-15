@@ -2442,12 +2442,10 @@ class MessageActionsEndpoint(BulkWriteAPIMixin, BaseEndpoint):
         * `restore` - restore the messages if they are archived.
         * `delete` - permanently delete the messages.
 
-    * **label** - the UUID or name of an existing label (string, optional).
-    * **label_name** - the name of a label which can be created if it doesn't exist (string, optional).
+    * **label** - the UUID or name of an existing label (string, required for `label` and `unlabel` actions).
 
-    If labelling or unlabelling messages using `label` you will get an error response (400) if the label doesn't exist.
-    If labelling with `label_name` the label will be created if it doesn't exist, and if unlabelling it is ignored if
-    it doesn't exist.
+    You will get an error response (400) if the label doesn't exist. Labels can be created using the
+    [labels](/api/v2/labels) endpoint.
 
     Example:
 
@@ -2482,7 +2480,7 @@ class MessageActionsEndpoint(BulkWriteAPIMixin, BaseEndpoint):
             "fields": [
                 {"name": "messages", "required": True, "help": "The ids of the messages to update"},
                 {"name": "action", "required": True, "help": "One of the following strings: " + ", ".join(actions)},
-                {"name": "label", "required": False, "help": "The UUID or name of a message label"},
+                {"name": "label", "required": False, "help": "The UUID or name of an existing message label"},
             ],
         }
 

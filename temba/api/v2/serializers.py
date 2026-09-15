@@ -1499,9 +1499,6 @@ class MsgBulkActionSerializer(WriteSerializer):
     messages = fields.MessageField(many=True)
     action = serializers.ChoiceField(required=True, choices=ACTIONS)
     label = fields.LabelField(required=False)
-    label_name = serializers.CharField(
-        required=False, max_length=Label.MAX_NAME_LEN, validators=[NameValidator(max_length=Label.MAX_NAME_LEN)]
-    )
 
     def validate_messages(self, value):
         for msg in value:
@@ -1513,14 +1510,10 @@ class MsgBulkActionSerializer(WriteSerializer):
     def validate(self, data):
         action = data["action"]
         label = data.get("label")
-        label_name = data.get("label_name")
 
-        if label and label_name:
-            raise serializers.ValidationError("Can't specify both label and label_name.")
-
-        if action in self.ACTIONS_WITH_LABEL and not (label or label_name):
+        if action in self.ACTIONS_WITH_LABEL and not label:
             raise serializers.ValidationError('For action "%s" you should also specify a label' % action)
-        elif action not in self.ACTIONS_WITH_LABEL and (label or label_name):
+        elif action not in self.ACTIONS_WITH_LABEL and label:
             raise serializers.ValidationError('For action "%s" you should not specify a label' % action)
 
         return data
@@ -1528,7 +1521,6 @@ class MsgBulkActionSerializer(WriteSerializer):
     def save(self):
         action = self.validated_data["action"]
         label = self.validated_data.get("label")
-        label_name = self.validated_data.get("label_name")
 
         requested_message_ids = self.initial_data["messages"]
         requested_messages = self.validated_data["messages"]
@@ -1543,16 +1535,9 @@ class MsgBulkActionSerializer(WriteSerializer):
                 missing_message_ids.append(requested_message_ids[m])
 
         if action == self.LABEL:
-            if not label:
-                label, _ = Label.import_def(self.context["org"], self.context["user"], {"name": label_name})
-            if label:
-                label.toggle_label(messages, add=True)
+            label.toggle_label(messages, add=True)
         elif action == self.UNLABEL:
-            if not label:
-                label = Label.get_active_for_org(self.context["org"]).filter(name=label_name).first()
-
-            if label:
-                label.toggle_label(messages, add=False)
+            label.toggle_label(messages, add=False)
         elif action == self.DELETE:
             Msg.bulk_soft_delete(self.context["org"], self.context["user"], messages)
         elif action == self.ARCHIVE:
