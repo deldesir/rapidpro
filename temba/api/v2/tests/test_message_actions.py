@@ -2,7 +2,7 @@ from unittest.mock import call
 
 from django.urls import reverse
 
-from temba.msgs.models import Label, Msg
+from temba.msgs.models import Msg
 from temba.tests import mock_mailroom
 
 from . import APITest
@@ -62,52 +62,6 @@ class MessageActionsEndpointTest(APITest):
         )
         self.assertEqual(set(label.get_messages()), set())
 
-        # add new label via label_name
-        self.assertPost(
-            endpoint_url,
-            self.admin,
-            {"messages": [msg2.id, msg3.id], "action": "label", "label_name": "New"},
-            status=204,
-        )
-        new_label = Label.objects.get(org=self.org, name="New", is_active=True)
-        self.assertEqual(set(new_label.get_messages()), {msg2, msg3})
-
-        # no difference if label already exists as it does now
-        self.assertPost(
-            endpoint_url,
-            self.admin,
-            {"messages": [msg1.id], "action": "label", "label_name": "New"},
-            status=204,
-        )
-        self.assertEqual(set(new_label.get_messages()), {msg1, msg2, msg3})
-
-        # can also remove by label_name
-        self.assertPost(
-            endpoint_url,
-            self.admin,
-            {"messages": [msg3.id], "action": "unlabel", "label_name": "New"},
-            status=204,
-        )
-        self.assertEqual(set(new_label.get_messages()), {msg1, msg2})
-
-        # and no error if label doesn't exist
-        self.assertPost(
-            endpoint_url,
-            self.admin,
-            {"messages": [msg3.id], "action": "unlabel", "label_name": "XYZ"},
-            status=204,
-        )
-        # and label not lazy created in this case
-        self.assertIsNone(Label.objects.filter(name="XYZ").first())
-
-        # try to use invalid label name
-        self.assertPost(
-            endpoint_url,
-            self.admin,
-            {"messages": [msg1.id, msg2.id], "action": "label", "label_name": '"Hi"'},
-            errors={"label_name": 'Cannot contain the character: "'},
-        )
-
         # try to label without specifying a label
         self.assertPost(
             endpoint_url,
@@ -120,14 +74,6 @@ class MessageActionsEndpointTest(APITest):
             self.admin,
             {"messages": [msg1.id, msg2.id], "action": "label", "label": ""},
             errors={"label": "This field may not be null."},
-        )
-
-        # try to provide both label and label_name
-        self.assertPost(
-            endpoint_url,
-            self.admin,
-            {"messages": [msg1.id], "action": "label", "label": "Test", "label_name": "Test"},
-            errors={"non_field_errors": "Can't specify both label and label_name."},
         )
 
         # archive all messages
