@@ -19,7 +19,7 @@ const call = (over: any = {}) => ({
   uuid: 'call-1',
   direction: 'in',
   status: 'completed',
-  status_display: 'Complete',
+  error_reason: null,
   contact: { uuid: 'contact-1', name: 'Bob' },
   channel: { uuid: 'chan-1', name: 'Twilio' },
   duration: 75,
@@ -84,7 +84,7 @@ describe('temba-call-list', () => {
       call({
         uuid: 'call-2',
         status: 'errored',
-        status_display: 'Errored (No Answer)',
+        error_reason: 'no_answer',
         duration: 0
       })
     ]);

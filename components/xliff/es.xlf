@@ -1542,6 +1542,54 @@
   <source>Duration</source>
   <target>Duración</target>
 </trans-unit>
+<trans-unit id="s78636b92c1a3909c">
+  <source>Pending</source>
+  <target>Pendiente</target>
+</trans-unit>
+<trans-unit id="s3ec4da71c1a62754">
+  <source>Queued</source>
+  <target>En cola</target>
+</trans-unit>
+<trans-unit id="sb1345cf5264849f4">
+  <source>Wired</source>
+  <target>Solicitada</target>
+</trans-unit>
+<trans-unit id="sce4f864763a12cc5">
+  <source>In Progress</source>
+  <target>En progreso</target>
+</trans-unit>
+<trans-unit id="sdcda09c20b09b522">
+  <source>Complete</source>
+  <target>Completada</target>
+</trans-unit>
+<trans-unit id="s5f26ef5a70519668">
+  <source>Errored</source>
+  <target>Con error</target>
+</trans-unit>
+<trans-unit id="sbf9c5c5a8e5efad4">
+  <source>Failed</source>
+  <target>Fallida</target>
+</trans-unit>
+<trans-unit id="s7f5869b3d14d7cbc">
+  <source>Provider</source>
+  <target>Proveedor</target>
+</trans-unit>
+<trans-unit id="s2a02d2a7e41d6700">
+  <source>Busy</source>
+  <target>Ocupado</target>
+</trans-unit>
+<trans-unit id="s49d4e1d3c1353b38">
+  <source>No Answer</source>
+  <target>Sin respuesta</target>
+</trans-unit>
+<trans-unit id="s713335cbdc36f828">
+  <source>Answering Machine</source>
+  <target>Contestador automático</target>
+</trans-unit>
+<trans-unit id="s092f6914654487ef">
+  <source>Workspace suspended</source>
+  <target>Espacio de trabajo suspendido</target>
+</trans-unit>
 </body>
 </file>
 </xliff>

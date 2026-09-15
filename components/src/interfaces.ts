@@ -189,9 +189,9 @@ export interface Call {
   /** Status slug — `pending`, `queued`, `wired`, `in_progress`,
    * `completed`, `errored` or `failed`. */
   status: string;
-  /** Server-localized status, including the error reason for an
-   * errored / failed call, e.g. "Errored (No Answer)". */
-  status_display: string;
+  /** Why an errored / failed call didn't connect — `provider`, `busy`,
+   * `no_answer`, `machine` or `suspended`; null otherwise. */
+  error_reason: string | null;
   contact: ObjectReference;
   /** Call length in seconds, zero if it never connected. */
   duration: number;
