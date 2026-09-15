@@ -1,6 +1,8 @@
 import time
 from unittest.mock import Mock, patch
 
+import requests
+
 from django.urls import reverse
 
 from temba.knowledge.crisp import CrispClient, CrispError
@@ -36,9 +38,22 @@ class CrispMock:
     A Crisp API of one website with a helpdesk of one category and two articles, answered as requests.get.
     """
 
-    def __init__(self, *, key="secret", websites=None, categories=None, articles=None, details=None, fail=None):
+    def __init__(
+        self,
+        *,
+        key="secret",
+        websites=None,
+        locales=None,
+        categories=None,
+        articles=None,
+        details=None,
+        fail=None,
+        unreachable=(),
+    ):
         self.key = key
         self.websites = websites if websites is not None else [WEBSITE_ID]
+        self.locales = locales if locales is not None else [{"locale": "en", "url": "https://help.acme.com/en/"}]
+        self.unreachable = unreachable  # path fragments or urls that never connect
         self.categories = (
             categories
             if categories is not None
@@ -86,6 +101,9 @@ class CrispMock:
     def __call__(self, url, **kwargs):
         self.calls.append(url)
 
+        if any(fragment in url for fragment in self.unreachable):
+            raise requests.ConnectionError("no route")
+
         if url.startswith(CrispClient.STORAGE_URL):
             if url == SHOT_URL:
                 return Mock(status_code=200, iter_content=lambda chunk_size: [PNG])
@@ -109,7 +127,7 @@ class CrispMock:
         if path == base:
             return MockJsonResponse(200, {"data": {"name": "Acme", "url": "https://help.acme.com/"}})
         if path.startswith(f"{base}/locales/"):
-            return page([{"locale": "en", "url": "https://help.acme.com/en/"}], int(path.rsplit("/", 1)[1]))
+            return page(self.locales, int(path.rsplit("/", 1)[1]))
         if path.startswith(f"{base}/locale/en/categories/"):
             return page(self.categories, int(path.rsplit("/", 1)[1]))
         if path.startswith(f"{base}/locale/en/articles/"):
@@ -233,6 +251,7 @@ A link to [a hidden one](https://help.acme.com/en/article/hidden-abc123/) can't 
         # Only an article Crisp has touched since is fetched again - the other's listing is enough to republish it
         crisp.details[STARTING_ID]["content"] = f"Changed\n\n![]({SHOT_URL})"
         crisp.articles[0]["updated_at"] = int(time.time() * 1000) + 60_000
+        crisp.articles[0]["visibility"] = "hidden"
         crisp.articles[1]["visibility"] = "visible"
         crisp.categories[0]["name"] = "Flows!"
         crisp.calls.clear()
@@ -251,6 +270,7 @@ A link to [a hidden one](https://help.acme.com/en/article/hidden-abc123/) can't 
         starting.refresh_from_db()
         self.assertEqual(f"Changed\n\n![]({image.path})", starting.body)
         self.assertEqual(1, starting.images.count())
+        self.assertEqual(Article.STATUS_DRAFT, starting.status)  # hidden now, so unpublished
         hidden.refresh_from_db()
         self.assertEqual(Article.STATUS_PUBLISHED, hidden.status)
         self.assertEqual(1, self.helpdesk.articles.filter(title="Uncategorized", is_active=True).count())
@@ -420,6 +440,18 @@ A link to [a hidden one](https://help.acme.com/en/article/hidden-abc123/) can't 
         self.assertEqual((PNG, "image/png"), client.download(SHOT_URL, max_size=1024))
         self.assertIsNone(client.download(MISSING_URL, max_size=1024))
 
+        # nor is one that can't be reached, and an API that can't be is retried before giving up
+        crisp.fail = {}
+        crisp.unreachable = (SHOT_URL, "/categories/")
+        self.assertIsNone(client.download(SHOT_URL, max_size=1024))
+
+        with patch("temba.knowledge.crisp.time.sleep") as mock_sleep:
+            with self.assertRaises(CrispError) as cm:
+                client.get_categories(WEBSITE_ID, "en")
+
+        self.assertEqual("Crisp could not be reached. Please try again later.", str(cm.exception))
+        self.assertEqual(5, mock_sleep.call_count)
+
     def test_get_unfinished(self):
         self.assertIsNone(HelpdeskImport.get_unfinished(self.helpdesk))
 
@@ -456,6 +488,12 @@ class HelpdeskImportCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertRequestDisallowed(create_url, [None, self.agent])
         self.assertCreateFetch(create_url, [self.editor, self.admin], form_fields=("identifier", "key", "website_id"))
 
+        # both halves of the token are needed before crisp is asked anything
+        self.assertCreateSubmit(
+            create_url, self.admin, {"identifier": "ident"}, form_errors={"key": "This field is required."}
+        )
+        self.assertEqual([], crisp.calls)
+
         # the key is checked with crisp before anything is queued
         self.assertCreateSubmit(
             create_url,
@@ -464,6 +502,16 @@ class HelpdeskImportCRUDLTest(TembaTest, CRUDLTestMixin):
             form_errors={"__all__": "Crisp did not accept the API key."},
         )
         self.assertEqual(0, HelpdeskImport.objects.count())
+
+        # a helpdesk with nothing in it has no locale to import
+        crisp.locales = []
+        self.assertCreateSubmit(
+            create_url,
+            self.admin,
+            {"identifier": "ident", "key": "secret"},
+            form_errors={"__all__": "That website's helpdesk has no articles."},
+        )
+        crisp.locales = [{"locale": "en", "url": "https://help.acme.com/en/"}]
 
         # a token that reaches several websites is asked which
         crisp.websites = [WEBSITE_ID, "other"]
