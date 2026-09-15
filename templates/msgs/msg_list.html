@@ -32,6 +32,8 @@
                   settings-endpoint="{% url 'users.user_settings' %}"
                   list-title="{{ title }}"
                   {% if list_subtitle %}subtitle="{{ list_subtitle }}"{% endif %}
+                  {% if list_searchable %}searchable{% endif %}
+                  {% if list_logs_after %}show-logs-after="{{ list_logs_after }}"{% endif %}
                   endpoint="{{ list_url }}"
                   action-endpoint="{{ request.path }}"
                   content-menu-endpoint="{{ request.path }}?{{ request.GET.urlencode }}"

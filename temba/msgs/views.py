@@ -57,6 +57,7 @@ class MsgListView(BaseListComponentView):
     template_name = "msgs/msg_list.html"
     folder = None
     list_endpoint = "api.internal.messages"
+    show_channel_logs = True
 
     BULK_ACTION_CONFIG = {
         "label": {"label": _("Label"), "icon": "tag-01", "labelsEndpoint": "/api/v2/labels.json"},
@@ -660,6 +661,7 @@ class MsgCRUDL(SmartCRUDL):
         title = _("Outbox")
         subtitle = _("Outgoing messages queued to be sent.")
         folder = MsgFolder.OUTBOX
+        allow_search = False
         bulk_actions = ()
         allow_export = True
 
@@ -667,6 +669,7 @@ class MsgCRUDL(SmartCRUDL):
         title = _("Sent")
         subtitle = _("Outgoing messages that have been sent.")
         folder = MsgFolder.SENT
+        allow_search = False
         bulk_actions = ()
         allow_export = True
 
@@ -674,6 +677,7 @@ class MsgCRUDL(SmartCRUDL):
         title = _("Failed")
         subtitle = _("Outgoing messages that couldn't be delivered.")
         folder = MsgFolder.FAILED
+        allow_search = False
         allow_export = True
 
         def get_bulk_actions(self):
