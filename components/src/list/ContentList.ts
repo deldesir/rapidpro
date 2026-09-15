@@ -3,7 +3,7 @@ import { LOCALE_STATUS_EVENT, msg, str } from '@lit/localize';
 import { property, state } from 'lit/decorators.js';
 import { RapidElement } from '../RapidElement';
 import { Icon } from '../Icons';
-import { CustomEventType } from '../interfaces';
+import { CustomEventType, ObjectReference } from '../interfaces';
 import { formatCount, getUrl, postJSON, postUrl } from '../utils';
 import { designTokens } from '../styles/designTokens';
 
@@ -1259,6 +1259,25 @@ export class ContentList<T = any> extends RapidElement {
         background: var(--danger-bg);
         color: var(--danger);
       }
+
+      /* Channel log icon link, rendered by renderChannelLogLink beside
+         a row's date cell. */
+      .log-link {
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        padding: 2px;
+        border-radius: var(--r-sm);
+        color: var(--text-3);
+        text-decoration: none;
+      }
+      .log-link:hover {
+        background: var(--sunken);
+        color: var(--text-1);
+      }
+      .log-link temba-icon {
+        --icon-color: currentColor;
+      }
     `;
   }
 
@@ -1328,6 +1347,14 @@ export class ContentList<T = any> extends RapidElement {
    * its endpoint knows what to do with a `search` param. */
   @property({ type: Boolean })
   searchable = false;
+
+  /** ISO timestamp before which channel logs have been deleted by
+   * retention. The host page sets it only when the viewer may read
+   * channel logs, so it doubles as the permission gate: rows created
+   * after it link to their channel logs (see
+   * {@link getChannelLogsUrl}), and without it no row does. */
+  @property({ type: String, attribute: 'show-logs-after' })
+  showLogsAfter: string = null;
 
   /** Enables the multi-select checkbox column. The column only
    * actually renders when this is true AND {@link bulkActions} has
@@ -2395,6 +2422,45 @@ export class ContentList<T = any> extends RapidElement {
       // routes it through its in-app loader.
       this.fireCustomEvent(CustomEventType.Redirected, { url: href });
     }
+  }
+
+  /** The URL of a row's channel logs, or null when the host hasn't
+   * enabled log links, the row has no channel, or it was created
+   * before the retention cutoff. `type` is the log owner's kind as
+   * the logs page addresses it (`msg` or `call`). */
+  protected getChannelLogsUrl(
+    item: { uuid?: string; created_on?: string; channel?: ObjectReference },
+    type: 'msg' | 'call'
+  ): string | null {
+    if (!this.showLogsAfter || !item?.uuid || !item.channel?.uuid) {
+      return null;
+    }
+    const createdOn = item.created_on ? new Date(item.created_on) : null;
+    if (!createdOn || createdOn < new Date(this.showLogsAfter)) {
+      return null;
+    }
+    return `/channels/channel/logs/${item.channel.uuid}/${type}/${item.uuid}/`;
+  }
+
+  /** A row's channel log icon link, or '' when {@link getChannelLogsUrl}
+   * yields nothing. stopPropagation keeps the row's own navigation
+   * from also firing when the icon is clicked. */
+  protected renderChannelLogLink(
+    item: { uuid?: string; created_on?: string; channel?: ObjectReference },
+    type: 'msg' | 'call'
+  ): TemplateResult | string {
+    const href = this.getChannelLogsUrl(item, type);
+    if (!href) return '';
+    return html`
+      <a
+        class="log-link"
+        href=${href}
+        @click=${(e: MouseEvent) => e.stopPropagation()}
+        aria-label="Channel log"
+      >
+        <temba-icon name=${Icon.log} size="0.95"></temba-icon>
+      </a>
+    `;
   }
 
   /** Guard against open-redirect: row hrefs come from JSON-driven

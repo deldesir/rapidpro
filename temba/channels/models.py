@@ -18,7 +18,7 @@ from django.contrib.postgres.indexes import OpClass
 from django.db import models
 from django.db.models import Q
 from django.template import Engine
-from django.urls import re_path, reverse
+from django.urls import re_path
 from django.utils import timezone
 from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
@@ -829,19 +829,12 @@ class ChannelLog:
     created_on: datetime
 
     @classmethod
-    def get_read_url(cls, obj, user, org) -> str | None:
+    def get_retention_cutoff(cls) -> datetime:
         """
-        Gets the URL to read the logs for the given message or call, or None if the user can't view channel logs, the
-        channel is inactive or has no logs, or the object is older than the channel log retention period.
+        Gets the time before which logs will have been deleted by retention. Pages pass this to components so they
+        only link to logs which can still be viewed.
         """
-        if not (user.has_org_perm(org, "channels.channel_logs") or user.is_staff):
-            return None
-        if not (obj.channel and obj.channel.is_active and obj.channel.type.has_logs and obj.created_on):
-            return None
-        if timezone.now() - obj.created_on >= settings.RETENTION_PERIODS["channellog"]:
-            return None
-
-        return reverse("channels.channel_logs_read", args=[obj.channel.uuid, obj._meta.model_name, obj.uuid])
+        return timezone.now() - settings.RETENTION_PERIODS["channellog"]
 
     @classmethod
     def get_by_uuid(cls, channel, uuids: list) -> list:

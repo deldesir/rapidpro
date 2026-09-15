@@ -75,23 +75,6 @@ export class MsgList extends ContentList<Msg> {
         justify-content: flex-end;
         gap: 6px;
       }
-      /* Channel-log icon link inside the sent cell. */
-      .msg-log {
-        flex: 0 0 auto;
-        display: inline-flex;
-        align-items: center;
-        padding: 2px;
-        border-radius: var(--r-sm);
-        color: var(--text-3);
-        text-decoration: none;
-      }
-      .msg-log:hover {
-        background: var(--sunken);
-        color: var(--text-1);
-      }
-      .msg-log temba-icon {
-        --icon-color: currentColor;
-      }
     `;
   }
 
@@ -194,28 +177,14 @@ export class MsgList extends ContentList<Msg> {
     `;
   }
 
-  /** The sent cell — timedate timestamp with an optional channel-log
-   * icon to its right. The icon is rendered when the server includes
-   * a logs_url on the row (permission- and retention-gated
-   * server-side). stopPropagation keeps the row's contact navigation
-   * from also firing when the icon is clicked. */
+  /** The sent cell — timedate timestamp with the channel-log icon to
+   * its right when the host page has enabled log links. */
   private renderSentCell(item: Msg): TemplateResult | string {
     if (!item.created_on) return '';
     return html`
       <div class="sent-cell">
         <temba-date value=${item.created_on} display="timedate"></temba-date>
-        ${item.logs_url && this.isSafeHref(item.logs_url)
-          ? html`
-              <a
-                class="msg-log"
-                href=${item.logs_url}
-                @click=${(e: MouseEvent) => e.stopPropagation()}
-                aria-label="Channel log"
-              >
-                <temba-icon name=${Icon.log} size="0.95"></temba-icon>
-              </a>
-            `
-          : ''}
+        ${this.renderChannelLogLink(item, 'msg')}
       </div>
     `;
   }

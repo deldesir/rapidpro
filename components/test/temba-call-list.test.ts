@@ -21,9 +21,9 @@ const call = (over: any = {}) => ({
   status: 'completed',
   status_display: 'Complete',
   contact: { uuid: 'contact-1', name: 'Bob' },
+  channel: { uuid: 'chan-1', name: 'Twilio' },
   duration: 75,
   created_on: '2026-05-11T09:12:00.000000Z',
-  logs_url: null,
   ...over
 });
 
@@ -85,8 +85,7 @@ describe('temba-call-list', () => {
         uuid: 'call-2',
         status: 'errored',
         status_display: 'Errored (No Answer)',
-        duration: 0,
-        logs_url: '/channels/channel/logs/chan-1/call/call-2/'
+        duration: 0
       })
     ]);
 
@@ -99,8 +98,6 @@ describe('temba-call-list', () => {
     expect(rows[0].querySelector('.duration').textContent.trim()).to.equal(
       '1:15'
     );
-    // no log link without a logs_url
-    expect(rows[0].querySelector('.call-log')).to.not.exist;
 
     const pill2 = rows[1].querySelector('.status-pill') as HTMLElement;
     expect(pill2.textContent.trim()).to.equal('Errored (No Answer)');
@@ -108,25 +105,45 @@ describe('temba-call-list', () => {
     expect(rows[1].querySelector('.duration').textContent.trim()).to.equal(
       '0:00'
     );
-    const log = rows[1].querySelector('.call-log') as HTMLAnchorElement;
+
+    // no log links until the host enables them
+    expect(list.shadowRoot.querySelectorAll('.log-link')).to.have.length(0);
+  });
+
+  it('links to channel logs when the host enables them', async () => {
+    const list: CallList = await getCallList({
+      'show-logs-after': '2026-05-01T00:00:00Z'
+    });
+    await renderRows(list, [
+      call(),
+      // created before the retention cutoff, so its logs are gone
+      call({ uuid: 'call-2', created_on: '2026-04-30T09:12:00.000000Z' }),
+      // no channel to link to
+      call({ uuid: 'call-3', channel: null })
+    ]);
+
+    const rows = list.shadowRoot.querySelectorAll('tr.row');
+    const log = rows[0].querySelector('.log-link') as HTMLAnchorElement;
     expect(log).to.exist;
     expect(log.getAttribute('href')).to.equal(
-      '/channels/channel/logs/chan-1/call/call-2/'
+      '/channels/channel/logs/chan-1/call/call-1/'
     );
+    expect(rows[1].querySelector('.log-link')).to.not.exist;
+    expect(rows[2].querySelector('.log-link')).to.not.exist;
   });
 
   it('navigates to the contact on row click but not on the log link', async () => {
-    const list: CallList = await getCallList();
-    await renderRows(list, [
-      call({ logs_url: '/channels/channel/logs/chan-1/call/call-1/' })
-    ]);
+    const list: CallList = await getCallList({
+      'show-logs-after': '2026-05-01T00:00:00Z'
+    });
+    await renderRows(list, [call()]);
 
     const redirects: any[] = [];
     list.addEventListener(CustomEventType.Redirected, (e: any) =>
       redirects.push(e.detail)
     );
 
-    const log = list.shadowRoot.querySelector('.call-log') as HTMLElement;
+    const log = list.shadowRoot.querySelector('.log-link') as HTMLElement;
     // keep the test page from actually following the link
     log.addEventListener('click', (e: Event) => e.preventDefault());
     log.dispatchEvent(
@@ -150,7 +167,11 @@ describe('temba-call-list', () => {
     await loadStore();
     const list = (await getComponent(
       TAG,
-      { endpoint: '/test-assets/content-list/calls.json' },
+      {
+        endpoint: '/test-assets/content-list/calls.json',
+        // the host enables log links for viewers who may read them
+        'show-logs-after': '2026-05-11T00:00:00Z'
+      },
       '',
       1100
     )) as CallList;

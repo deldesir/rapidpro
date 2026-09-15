@@ -21,8 +21,8 @@ const STATUS_KINDS: { [status: string]: string } = {
  * Call CRUDL list — drop-in replacement for the rapidpro
  * `ivr/call_list.html` table. Reverse-chronological; each row leads
  * with an icon for the call's direction, then the contact, the
- * call's status, how long it lasted, and when it was made with an
- * optional channel-log link. Rows navigate to the contact. The
+ * call's status, how long it lasted, and when it was made with a
+ * channel-log link when the host enables them. Rows navigate to the contact. The
  * endpoint has no search, so the search box is hidden.
  */
 export class CallList extends ContentList<Call> {
@@ -44,22 +44,6 @@ export class CallList extends ContentList<Call> {
         align-items: center;
         justify-content: flex-end;
         gap: 6px;
-      }
-      .call-log {
-        flex: 0 0 auto;
-        display: inline-flex;
-        align-items: center;
-        padding: 2px;
-        border-radius: var(--r-sm);
-        color: var(--text-3);
-        text-decoration: none;
-      }
-      .call-log:hover {
-        background: var(--sunken);
-        color: var(--text-1);
-      }
-      .call-log temba-icon {
-        --icon-color: currentColor;
       }
     `;
   }
@@ -135,28 +119,14 @@ export class CallList extends ContentList<Call> {
     }
   }
 
-  /** The created cell — timedate timestamp with an optional
-   * channel-log icon to its right, rendered when the server includes
-   * a logs_url on the row (permission- and retention-gated
-   * server-side). stopPropagation keeps the row's contact navigation
-   * from also firing when the icon is clicked. */
+  /** The created cell — timedate timestamp with the channel-log icon
+   * to its right when the host page has enabled log links. */
   private renderCreatedCell(item: Call): TemplateResult | string {
     if (!item.created_on) return '';
     return html`
       <div class="created-cell">
         <temba-date value=${item.created_on} display="timedate"></temba-date>
-        ${item.logs_url && this.isSafeHref(item.logs_url)
-          ? html`
-              <a
-                class="call-log"
-                href=${item.logs_url}
-                @click=${(e: MouseEvent) => e.stopPropagation()}
-                aria-label="Channel log"
-              >
-                <temba-icon name=${Icon.log} size="0.95"></temba-icon>
-              </a>
-            `
-          : ''}
+        ${this.renderChannelLogLink(item, 'call')}
       </div>
     `;
   }

@@ -66,6 +66,14 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertTrue(response.context["list_searchable"])
         self.assertContains(response, "searchable")
 
+        # admins can view channel logs so the component is told to link to them
+        self.assertIn("list_logs_after", response.context)
+        self.assertContains(response, "show-logs-after")
+
+        response = self.requestView(inbox_url, self.editor)
+        self.assertNotIn("list_logs_after", response.context)
+        self.assertNotContains(response, "show-logs-after")
+
         # the label bulk action carries the create affordance for viewers who can create labels
         new_actions = {a["key"]: a for a in response.context["list_bulk_actions"]}
         self.assertTrue(new_actions["label"]["allowCreate"])

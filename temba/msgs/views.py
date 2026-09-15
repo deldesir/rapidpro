@@ -57,6 +57,7 @@ class MsgListView(BaseListComponentView):
     template_name = "msgs/msg_list.html"
     folder = None
     list_endpoint = "api.internal.messages"
+    show_channel_logs = True
 
     BULK_ACTION_CONFIG = {
         "label": {"label": _("Label"), "icon": "tag-01", "labelsEndpoint": "/api/v2/labels.json"},

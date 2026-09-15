@@ -40,7 +40,8 @@ class CallsEndpoint(ListAPIMixin, BaseEndpoint):
     pagination_class = Pagination
 
     def derive_queryset(self):
-        # `org` is select_related because as_json reads self.org for anonymized contact display
+        # `org` is select_related because as_json reads self.org for anonymized contact display, and `channel` for
+        # the channel reference
         return Call.objects.filter(org=self.request.org).select_related("org", "contact", "contact_urn", "channel")
 
     def filter_queryset(self, queryset):

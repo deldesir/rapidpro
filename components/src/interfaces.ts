@@ -195,10 +195,9 @@ export interface Call {
   contact: ObjectReference;
   /** Call length in seconds, zero if it never connected. */
   duration: number;
+  /** The channel the call was made on, used to link to its logs. */
+  channel: ObjectReference;
   created_on: string;
-  /** Channel log link, present only when the viewer may read logs
-   * and the call is still within the log retention window. */
-  logs_url?: string | null;
 }
 
 /** A single row in the trigger CRUDL list
@@ -323,10 +322,6 @@ export interface Msg {
   flow?: ObjectReference;
   /** When the message was created. */
   created_on?: string;
-  /** Permission- and retention-gated URL to this message's channel
-   * log. Present on the CRUDL list when the viewer can read logs and
-   * the message is within the retention window; absent otherwise. */
-  logs_url?: string;
   unsendable_reason?:
     | 'no_route'
     | 'contact_blocked'

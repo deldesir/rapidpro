@@ -661,10 +661,8 @@ class Msg(models.Model):
 
     def as_json(self, context=None) -> dict:
         """
-        Internal API shape, consumed by the temba-msg-list component.
-        `context` is the DRF serializer context (with `user` / `org`) and
-        is used to resolve the channel-log link, which is permission- and
-        retention-gated.
+        Internal API shape, consumed by the temba-msg-list component. The channel is included so the component can
+        link to the message's channel logs, which the page enables when the user can view them.
         """
         return {
             "uuid": str(self.uuid),
@@ -674,8 +672,8 @@ class Msg(models.Model):
             "attachments": [a.as_json() for a in self.get_attachments()],
             "labels": [{"uuid": str(lb.uuid), "name": lb.name} for lb in self.labels.all()],
             "flow": {"uuid": str(self.flow.uuid), "name": self.flow.name} if self.flow else None,
+            "channel": {"uuid": str(self.channel.uuid), "name": self.channel.name} if self.channel else None,
             "created_on": self.created_on.isoformat() if self.created_on else None,
-            "logs_url": ChannelLog.get_read_url(self, context["user"], context["org"]) if context else None,
         }
 
     def as_archive_json(self):
