@@ -18,9 +18,6 @@ class TestImportForm(HelpdeskImportForm):
             raise forms.ValidationError("That key is wrong.")
         return key
 
-    def get_config(self) -> dict:
-        return {"key": self.cleaned_data["key"], "site": "help.example.com"}
-
 
 class TestImportType(HelpdeskImportType):
     """
@@ -203,7 +200,7 @@ class HelpdeskImportCRUDLTest(ImportTypesMixin, TembaTest, CRUDLTestMixin):
 
         imp = HelpdeskImport.objects.get()
         self.assertEqual(HelpdeskImport.STATUS_COMPLETE, imp.status)
-        self.assertEqual({"site": "help.example.com"}, imp.config)
+        self.assertEqual({}, imp.config)  # the form's own fields became the config, and the key was a secret
         self.assertEqual(3, self.helpdesk.articles.count())
 
         # while one is running, the dialog offers nothing but to wait
