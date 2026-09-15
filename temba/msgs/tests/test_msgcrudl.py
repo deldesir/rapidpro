@@ -62,6 +62,10 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertContains(response, "temba-msg-list")
         self.assertEqual("/api/internal/messages.json?folder=inbox", response.context["list_url"])
 
+        # incoming folders opt into search
+        self.assertTrue(response.context["list_searchable"])
+        self.assertContains(response, "searchable")
+
         # the label bulk action carries the create affordance for viewers who can create labels
         new_actions = {a["key"]: a for a in response.context["list_bulk_actions"]}
         self.assertTrue(new_actions["label"]["allowCreate"])
@@ -225,6 +229,10 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
         response = self.assertListFetch(outbox_url, [self.editor, self.admin])
         self.assertBulkActions(response, [])
 
+        # outgoing folders don't
+        self.assertFalse(response.context["list_searchable"])
+        self.assertNotContains(response, "searchable")
+
         # create another broadcast this time with 3 messages
         contact4 = self.create_contact("Kevin", phone="+250788000003")
         group = self.create_group("Testers", contacts=[contact2, contact3])
@@ -254,7 +262,10 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
             self.client.get(sent_url)
 
         self.assertRequestDisallowed(sent_url, [None, self.agent])
-        self.assertListFetch(sent_url, [self.editor, self.admin])
+        response = self.assertListFetch(sent_url, [self.editor, self.admin])
+
+        self.assertFalse(response.context["list_searchable"])
+        self.assertNotContains(response, "searchable")
 
     @mock_mailroom
     def test_failed(self, mr_mocks):
@@ -280,6 +291,8 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
         response = self.assertListFetch(failed_url, [self.editor, self.admin])
 
         self.assertBulkActions(response, ["resend"])
+        self.assertFalse(response.context["list_searchable"])
+        self.assertNotContains(response, "searchable")
 
         # resend some messages
         self.client.post(failed_url, {"action": "resend", "objects": [str(msg2.uuid)]})

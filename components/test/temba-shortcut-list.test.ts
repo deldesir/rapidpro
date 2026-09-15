@@ -116,7 +116,12 @@ describe('temba-shortcut-list', () => {
   });
 
   it('renders the shortcut list (screenshot)', async () => {
-    const list = (await getComponent(TAG, {}, '', 800)) as ShortcutContentList;
+    const list = (await getComponent(
+      TAG,
+      { searchable: true },
+      '',
+      800
+    )) as ShortcutContentList;
     (list as any).items = [
       SHORTCUT,
       {

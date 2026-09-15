@@ -32,6 +32,7 @@
                         mode="{{ list_mode }}"
                         history-state-key="broadcasts-{{ list_mode }}"
                         list-title="{{ title }}"
+                        {% if list_searchable %}searchable{% endif %}
                         endpoint="{{ list_url }}"
                         content-menu-endpoint="{{ request.path }}?{{ request.GET.urlencode }}"
                         {% if list_mode == "scheduled" and org_perms.msgs.broadcast_update %}can-edit{% endif %}

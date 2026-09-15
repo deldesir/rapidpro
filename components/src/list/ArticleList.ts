@@ -433,8 +433,8 @@ export class ArticleList extends ContentList<ArticleRow> {
   constructor() {
     super();
     this.valueKey = 'uuid';
-    // the tree is the order, so there's nothing to sort or search by
-    this.searchable = false;
+    // the tree is the order, so there's nothing to sort by (and search is
+    // opt-in, so it stays off)
     this.selectable = false;
   }
 

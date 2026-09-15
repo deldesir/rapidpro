@@ -1322,8 +1322,12 @@ export class ContentList<T = any> extends RapidElement {
   @property({ type: Number })
   pageSize = 50;
 
+  /** Whether the search action and bar render at all, and whether search
+   * state is picked up from the URL / history. Opt-in: a list only gets a
+   * search box once its host says the contents are usefully searchable and
+   * its endpoint knows what to do with a `search` param. */
   @property({ type: Boolean })
-  searchable = true;
+  searchable = false;
 
   /** Enables the multi-select checkbox column. The column only
    * actually renders when this is true AND {@link bulkActions} has
@@ -1919,7 +1923,10 @@ export class ContentList<T = any> extends RapidElement {
     const k = (name: string) =>
       this.urlParamPrefix ? `${this.urlParamPrefix}_${name}` : name;
     const previousSearch = this.search;
-    this.search = params.get(k('search')) || '';
+    // a non-searchable list ignores any search the URL carries, so a stale
+    // bookmark can't leave it silently filtered with no search bar to show
+    // or clear the term
+    this.search = (this.searchable && params.get(k('search'))) || '';
     this.sort = params.get(k('sort')) || '';
     const pageParam = parseInt(params.get(k('page')) || '1', 10);
     this.page = isNaN(pageParam) || pageParam < 1 ? 1 : pageParam;
@@ -2012,7 +2019,8 @@ export class ContentList<T = any> extends RapidElement {
     }
     const stash = state[key] || {};
     const previousSearch = this.search;
-    this.search = typeof stash.search === 'string' ? stash.search : '';
+    this.search =
+      this.searchable && typeof stash.search === 'string' ? stash.search : '';
     this.sort = typeof stash.sort === 'string' ? stash.sort : '';
     const p = parseInt(stash.page, 10);
     this.page = isNaN(p) || p < 1 ? 1 : p;

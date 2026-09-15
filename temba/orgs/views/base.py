@@ -189,6 +189,10 @@ class BaseListComponentView(ContextMenuMixin, BulkActionMixin, SpaMixin, BaseLis
     # optional subtitle rendered under the title
     subtitle = ""
 
+    # whether the component offers a search box - the component itself is opt-in (see ContentList.searchable) and
+    # the template forwards this, so set False on lists whose contents aren't usefully searchable
+    allow_search = True
+
     # the component pages the objects itself
     paginate_by = None
 
@@ -223,6 +227,7 @@ class BaseListComponentView(ContextMenuMixin, BulkActionMixin, SpaMixin, BaseLis
         context["list_url"] = f"{reverse(self.list_endpoint)}.json?{self.derive_list_query()}"
         subtitle = self.derive_subtitle()
         context["list_subtitle"] = str(subtitle) if subtitle else ""
+        context["list_searchable"] = self.allow_search
 
         actions = []
         for key in self.get_bulk_actions():

@@ -957,7 +957,7 @@ describe('temba-content-list', () => {
     await loadStore();
     const list = (await getComponent(
       'temba-msg-list',
-      { endpoint: '/test-assets/content-list/messages.json' },
+      { searchable: true, endpoint: '/test-assets/content-list/messages.json' },
       '',
       1100
     )) as MsgList;
@@ -970,6 +970,25 @@ describe('temba-content-list', () => {
     await assertScreenshot('content-list/messages', getClip(list));
   });
 
+  it('renders a message list with no search affordance (screenshot)', async () => {
+    // What the outgoing folders (Outbox / Sent / Failed) look like: same
+    // header, minus the Search action, since search is opt-in.
+    await loadStore();
+    const list = (await getComponent(
+      'temba-msg-list',
+      { endpoint: '/test-assets/content-list/messages.json' },
+      '',
+      1100
+    )) as MsgList;
+    await new Promise<void>((resolve) => {
+      list.addEventListener(CustomEventType.FetchComplete, () => resolve(), {
+        once: true
+      });
+    });
+    await list.updateComplete;
+    await assertScreenshot('content-list/messages-no-search', getClip(list));
+  });
+
   it('renders the messages list pager in cursor mode (screenshot)', async () => {
     // The message list is cursor-paginated, so its pager reports how many
     // messages the folder holds rather than a "N-M of Total" position - a
@@ -978,7 +997,10 @@ describe('temba-content-list', () => {
     await loadStore();
     const list = (await getComponent(
       'temba-msg-list',
-      { endpoint: '/test-assets/content-list/messages-cursor.json' },
+      {
+        searchable: true,
+        endpoint: '/test-assets/content-list/messages-cursor.json'
+      },
       '',
       1100
     )) as MsgList;
@@ -1096,7 +1118,7 @@ describe('temba-content-list', () => {
     await loadStore();
     const list = (await getComponent(
       'temba-contact-list',
-      { endpoint: '/test-assets/content-list/contacts.json' },
+      { searchable: true, endpoint: '/test-assets/content-list/contacts.json' },
       '',
       1100
     )) as ContactList;
@@ -1223,7 +1245,7 @@ describe('temba-content-list', () => {
     await loadStore();
     const list = (await getComponent(
       'temba-contact-list',
-      { endpoint: '/test-assets/content-list/contacts.json' },
+      { searchable: true, endpoint: '/test-assets/content-list/contacts.json' },
       '',
       1100
     )) as ContactList;
@@ -1344,7 +1366,7 @@ describe('temba-content-list', () => {
     await loadStore();
     const list = (await getComponent(
       'temba-contact-list',
-      { endpoint: '/test-assets/content-list/contacts.json' },
+      { searchable: true, endpoint: '/test-assets/content-list/contacts.json' },
       '',
       1100
     )) as ContactList;
@@ -1447,7 +1469,7 @@ describe('temba-content-list', () => {
     await loadStore();
     const list = (await getComponent(
       'temba-contact-list',
-      { endpoint: '/test-assets/content-list/contacts.json' },
+      { searchable: true, endpoint: '/test-assets/content-list/contacts.json' },
       '',
       360
     )) as ContactList;
@@ -1538,7 +1560,7 @@ describe('temba-content-list', () => {
     await loadStore();
     const list = (await getComponent(
       'temba-flow-list',
-      { endpoint: '/test-assets/content-list/flows.json' },
+      { searchable: true, endpoint: '/test-assets/content-list/flows.json' },
       '',
       1100
     )) as FlowList;
@@ -1556,7 +1578,7 @@ describe('temba-content-list', () => {
     await loadStore();
     const list = (await getComponent(
       'temba-trigger-list',
-      { endpoint: '/test-assets/content-list/triggers.json' },
+      { searchable: true, endpoint: '/test-assets/content-list/triggers.json' },
       '',
       1100
     )) as TriggerList;
@@ -1757,6 +1779,7 @@ describe('temba-content-list', () => {
 
   it('shows the run-search icon and its hint only while a pending draft is uncommitted', async () => {
     const list = (await getList({
+      searchable: true,
       endpoint: '/test-assets/content-list/items.json'
     })) as ContentList;
     list.columns = [{ key: 'name', label: 'Name' }];
@@ -1809,8 +1832,39 @@ describe('temba-content-list', () => {
     );
   });
 
+  it('renders no search affordance and ignores a URL search unless searchable', async () => {
+    const restore = window.location.href;
+    window.history.replaceState({}, '', '/msg/sent/?search=hello');
+
+    try {
+      // search is opt-in, so a list that doesn't ask for it gets none
+      const list = (await getList({
+        endpoint: '/test-assets/content-list/items.json'
+      })) as ContentList;
+      list.columns = [{ key: 'name', label: 'Name' }];
+      await list.updateComplete;
+
+      expect(list.searchable).to.equal(false);
+
+      // no way in from the header, and no bar even if something opens it
+      expect(
+        list.shadowRoot!.querySelector('.header-actions .action')
+      ).to.equal(null);
+      (list as any).searchOpen = true;
+      await list.updateComplete;
+      expect(list.shadowRoot!.querySelector('.searchbar')).to.equal(null);
+
+      // a deep-linked search is dropped rather than silently filtering
+      (list as any).readUrlState();
+      expect((list as any).search).to.equal('');
+    } finally {
+      window.history.replaceState({}, '', restore);
+    }
+  });
+
   it('toggles the header Search button against the open search bar and cancels out', async () => {
     const list = (await getList({
+      searchable: true,
       endpoint: '/test-assets/content-list/items.json'
     })) as ContentList;
     list.columns = [{ key: 'name', label: 'Name' }];
@@ -1846,6 +1900,7 @@ describe('temba-content-list', () => {
 
   it('shows the run-search icon whenever the draft varies from the results query, including when emptied', async () => {
     const list = (await getList({
+      searchable: true,
       endpoint: '/test-assets/content-list/items.json'
     })) as ContentList;
     list.columns = [{ key: 'name', label: 'Name' }];
@@ -1874,6 +1929,7 @@ describe('temba-content-list', () => {
 
   it('disables the search input while a search is in flight', async () => {
     const list = (await getList({
+      searchable: true,
       endpoint: '/test-assets/content-list/items.json'
     })) as ContentList;
     list.columns = [{ key: 'name', label: 'Name' }];
@@ -1908,6 +1964,7 @@ describe('temba-content-list', () => {
     });
     try {
       const list = (await getList({
+        searchable: true,
         endpoint: '/test-assets/content-list/items.json'
       })) as ContentList;
       list.columns = [{ key: 'name', label: 'Name' }];
@@ -1957,6 +2014,7 @@ describe('temba-content-list', () => {
     });
     try {
       const list = (await getList({
+        searchable: true,
         endpoint: '/test-assets/content-list/items.json'
       })) as ContentList;
       list.columns = [{ key: 'name', label: 'Name' }];
@@ -2240,6 +2298,7 @@ describe('temba-content-list', () => {
     history.replaceState(seeded, '');
 
     const list = (await getList({
+      searchable: true,
       endpoint: '/test-assets/content-list/items.json',
       'history-state-key': 'msgs'
     })) as ContentList;
@@ -2275,6 +2334,7 @@ describe('temba-content-list', () => {
     history.replaceState({}, '', '?search=age+%3E+10&sort=-name');
     try {
       const list = (await getList({
+        searchable: true,
         endpoint: '/test-assets/content-list/items.json',
         'history-state-key': 'contacts'
       })) as ContentList;
@@ -2422,7 +2482,11 @@ describe('temba-content-list', () => {
     const getContactList = async (attrs: any = {}) => {
       const list = (await getComponent(
         'temba-contact-list',
-        { endpoint: '/test-assets/content-list/contacts.json', ...attrs },
+        {
+          endpoint: '/test-assets/content-list/contacts.json',
+          searchable: true,
+          ...attrs
+        },
         '',
         1100
       )) as ContactList;
