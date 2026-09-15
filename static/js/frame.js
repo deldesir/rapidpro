@@ -709,8 +709,13 @@ document.addEventListener('DOMContentLoaded', function () {
         event.preventDefault();
         event.stopPropagation();
 
-        // if we are working within the app, use spaGet
-        if (url.host === window.location.host && !event.metaKey) {
+        // if we are working within the app, use spaGet - unless the link asks for a tab of its own, the way the
+        // help site preview does
+        if (
+          url.host === window.location.host &&
+          !event.metaKey &&
+          ele.target !== '_blank'
+        ) {
           spaGet(ele.href);
         } else {
           // otherwise open a new tab

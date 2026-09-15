@@ -1,8 +1,7 @@
-import re
-
 import magic
 from smartmin.views import SmartCRUDL, SmartReadView, SmartTemplateView
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db.models.functions import Lower
 from django.http import Http404, HttpResponseRedirect, JsonResponse
@@ -22,8 +21,16 @@ from temba.orgs.views.mixins import OrgObjPermsMixin, OrgPermsMixin, RequireFeat
 from temba.utils import json
 from temba.utils.views.mixins import ContextMenuMixin, PostOnlyMixin, SpaMixin
 
-from .forms import ArticleCreateForm, ArticleForm, KnowledgeForm, KnowledgeUpdateForm
-from .models import Article, ArticleImage, Knowledge, KnowledgeItem
+from .forms import (
+    ArticleCreateForm,
+    ArticleForm,
+    HelpSiteDomainForm,
+    HelpSiteForm,
+    KnowledgeForm,
+    KnowledgeUpdateForm,
+    SectionForm,
+)
+from .models import Article, ArticleImage, HelpSite, Knowledge, KnowledgeItem
 
 
 class KnowledgeCRUDL(SmartCRUDL):
@@ -311,13 +318,24 @@ class ArticleCRUDL(SmartCRUDL):
         menu_path = "/knowledge/helpdesk"
 
         def build_context_menu(self, menu):
+            # the menu makes sections; articles are added from the card of the section they go in
             if self.has_org_perm("knowledge.article_create"):
                 menu.add_modax(
-                    _("New"),
-                    "new-article",
+                    _("New Section"),
+                    "new-section",
                     reverse("knowledge.article_create"),
-                    title=_("New Article"),
+                    title=_("New Section"),
                     as_button=True,
+                )
+
+            # the public site is the helpdesk's, so it's set up from here - its domain from the card at the top of
+            # the page, the rest from the menu
+            if self.has_org_perm("knowledge.helpsite_update"):
+                menu.add_modax(
+                    _("Site Settings"),
+                    "site-settings",
+                    reverse("knowledge.helpsite_update"),
+                    title=_("Site Settings"),
                 )
 
         def derive_article_to_edit(self):
@@ -338,7 +356,6 @@ class ArticleCRUDL(SmartCRUDL):
             context = super().get_context_data(**kwargs)
             context["object"] = self.helpdesk
             context["articles_endpoint"] = f"{reverse('api.internal.articles')}.json"
-            context["max_depth"] = Article.MAX_DEPTH
 
             # without the permission the component is given nowhere to post to, so it offers no drag at all - and
             # likewise no publish switch, leaving the status as something a row states rather than something it does
@@ -346,6 +363,18 @@ class ArticleCRUDL(SmartCRUDL):
                 context["sort_url"] = reverse("knowledge.article_sort")
             if self.has_org_perm("knowledge.article_publish"):
                 context["publish_url"] = reverse("knowledge.article_publish")
+            if self.has_org_perm("knowledge.article_create"):
+                context["create_url"] = reverse("knowledge.article_create")
+
+            context["preview_url"] = reverse("knowledge.site_home")
+
+            # the site card heads the page - the domain, so it's plain whether the site is out there and where
+            # setting one up or verifying it is picked up, and beside it the site's preview
+            site = HelpSite.objects.filter(knowledge=self.helpdesk).first()
+            if self.has_org_perm("knowledge.helpsite_domain"):
+                context["domain_url"] = reverse("knowledge.helpsite_domain")
+            if site and site.domain:
+                context["site"] = site
 
             article = self.derive_article_to_edit()
             if article:
@@ -354,8 +383,30 @@ class ArticleCRUDL(SmartCRUDL):
             return context
 
     class Create(HelpdeskMixin, BaseCreateModal):
-        form_class = ArticleCreateForm
-        title = _("New Article")
+        """
+        Makes a section, or - named a section by ?section= - an article filed under it. A section is described here
+        and done; an article is only titled, and its author is dropped into the editor to write it.
+        """
+
+        @cached_property
+        def section(self):
+            uuid = self.request.GET.get("section")
+            if not uuid:
+                return None
+
+            try:
+                section = self.helpdesk.articles.filter(uuid=uuid, parent=None, is_active=True).first()
+            except ValidationError:  # not a uuid at all
+                section = None
+            if not section:
+                raise Http404("no such section")
+            return section
+
+        def get_form_class(self):
+            return ArticleCreateForm if self.section else SectionForm
+
+        def derive_title(self):
+            return _("New Article") if self.section else _("New Section")
 
         def get_blocker(self) -> str:
             if self.helpdesk.articles.filter(is_active=True).count() >= Article.MAX_ARTICLES:
@@ -379,12 +430,20 @@ class ArticleCRUDL(SmartCRUDL):
         def save(self, obj):
             # must set self.object as smartmin ignores the return value
             self.object = Article.create(
-                self.helpdesk, self.request.user, obj.title, language=self.form.cleaned_data.get("language")
+                self.helpdesk,
+                self.request.user,
+                obj.title,
+                description=self.form.cleaned_data.get("description", ""),
+                parent=self.section,
+                language=self.form.cleaned_data.get("language"),
             )
 
         def get_success_url(self):
-            # back to the helpdesk, which opens the editor on what we just made
-            return f"{reverse('knowledge.article_list')}?edit={self.object.uuid}"
+            # back to the helpdesk - which, for an article, opens the editor on what we just made. A section is
+            # complete as described, so there's nothing to open.
+            if self.section:
+                return f"{reverse('knowledge.article_list')}?edit={self.object.uuid}"
+            return reverse("knowledge.article_list")
 
     class Update(BaseObject, BaseUpdateModal):
         """
@@ -393,12 +452,17 @@ class ArticleCRUDL(SmartCRUDL):
         status is a pill riding the title, stating rather than doing.
         """
 
-        form_class = ArticleForm
         success_url = "hide"  # the helpdesk refreshes its tree rather than navigating anywhere
         success_message = ""
 
+        def get_form_class(self):
+            # a section is described rather than written, so it gets the plain form instead of the editor
+            return SectionForm if self.get_object().is_section else ArticleForm
+
         def get_form(self):
             form = super().get_form()
+            if "body" not in form.fields:
+                return form
 
             # the dialog carries no title bar of its own, so the article's title stands as one (the template renders
             # it by hand, with the status pill riding inside it) and the article below it needs no label either
@@ -413,6 +477,10 @@ class ArticleCRUDL(SmartCRUDL):
                     "accept": ",".join(ArticleImage.ALLOWED_CONTENT_TYPES),
                     # and resolves column colors against the org's shared palette
                     "colors-endpoint": reverse("knowledge.article_colors"),
+                    # and offers the helpdesk's other articles to link to
+                    "articles-endpoint": f"{reverse('api.internal.articles')}.json",
+                    # and shows uploaded images, which the article references by their key, from where they're served
+                    "storage-url": settings.STORAGE_URL,
                 }
             )
             return form
@@ -459,35 +527,41 @@ class ArticleCRUDL(SmartCRUDL):
 
     class Colors(HelpdeskMixin, OrgPermsMixin, SmartTemplateView):
         """
-        The org's article palette - the colors every author shares, so color use stays consistent across articles.
-        Articles embed an index into it, so a POST that recolors an entry restyles that color's every use, and one
-        that drops an entry blanks them until something new takes the index.
+        The org's article palette - the bubble colors chosen in the help site's settings, which every author's editor
+        offers for column backgrounds. Articles embed an index into it, so recoloring a bubble restyles its every use.
         """
 
         def get(self, request, *args, **kwargs):
             return JsonResponse({"colors": self.helpdesk.colors})
 
-        def post(self, request, *args, **kwargs):
-            try:
-                colors = json.loads(request.body)["colors"]
-                if not isinstance(colors, dict) or len(colors) > Knowledge.MAX_COLORS:
-                    raise ValueError("not a palette")
-                for index, color in colors.items():
-                    if not re.fullmatch(r"\d+", index) or not re.fullmatch(r"#[0-9a-f]{3,8}", str(color).lower()):
-                        raise ValueError("not a palette entry")
-            except ValueError, TypeError, KeyError:
-                return JsonResponse({"error": _("Invalid request.")}, status=400)
-
-            self.helpdesk.set_colors({index: str(color).lower() for index, color in colors.items()})
-            return JsonResponse({"status": "ok"})
-
     class Delete(BaseObject, BaseDeleteModal):
+        """
+        A section can't go while it holds articles - they'd be left as sections themselves - so the dialog says to
+        move or delete them first, and a post that tries anyway is refused.
+        """
+
         cancel_url = "@knowledge.article_list"
         redirect_url = "@knowledge.article_list"
         submit_button_name = _("Delete")
 
         def get_queryset(self, **kwargs):
             return super().get_queryset(**kwargs).filter(knowledge=self.helpdesk)
+
+        def get_blocker(self) -> str:
+            obj = self.get_object()
+            if obj.is_section and obj.children.filter(is_active=True).exists():
+                return "has_articles"
+            return ""
+
+        def get_context_data(self, **kwargs):
+            context = super().get_context_data(**kwargs)
+            context["blocker"] = self.get_blocker()
+            return context
+
+        def post(self, request, *args, **kwargs):
+            if self.get_blocker():
+                return self.get(request, *args, **kwargs)
+            return super().post(request, *args, **kwargs)
 
     class Sort(HelpdeskMixin, PostOnlyMixin, OrgPermsMixin, SmartTemplateView):
         """
@@ -545,4 +619,99 @@ class ArticleCRUDL(SmartCRUDL):
             file.content_type = detected_type  # trust the sniffed type, not the browser's
             image = ArticleImage.from_upload(obj, request.user, file)
 
-            return JsonResponse({"uuid": str(image.uuid), "name": image.name, "url": image.url})
+            # the editor writes the path - the key in storage - into the article and shows the url, so the article
+            # never holds the address storage happens to be served from
+            return JsonResponse({"uuid": str(image.uuid), "name": image.name, "path": image.path, "url": image.url})
+
+
+class HelpSiteCRUDL(SmartCRUDL):
+    model = HelpSite
+    actions = ("update", "domain", "verify")
+
+    class InferSite(HelpdeskMixin):
+        """
+        Views of the org's help site, in dialogs on the helpdesk page. The site is the org's one, inferred rather than
+        named in the URL, and made the first time anyone comes here.
+        """
+
+        @classmethod
+        def derive_url_pattern(cls, path, action):
+            return r"^%s/%s/$" % (path, action)
+
+        def get_object(self, *args, **kwargs):
+            return HelpSite.get_or_create(self.helpdesk, self.request.user)
+
+    class Update(InferSite, BaseUpdateModal):
+        """
+        The site's settings - what it says about itself, whether it's up, and its colors.
+        """
+
+        form_class = HelpSiteForm
+        title = _("Site Settings")
+        success_url = "hide"
+        success_message = ""
+
+        def derive_initial(self):
+            initial = super().derive_initial()
+            site = self.get_object()
+            initial["primary_color"] = site.primary_color
+            initial["header_color"] = site.header_color
+            for key, color in site.bubbles.items():
+                initial[f"bubble_{key}"] = color
+            return initial
+
+        def pre_save(self, obj):
+            obj = super().pre_save(obj)
+            obj.config = {
+                **obj.config,
+                HelpSite.CONFIG_PRIMARY_COLOR: self.form.cleaned_data["primary_color"],
+                HelpSite.CONFIG_HEADER_COLOR: self.form.cleaned_data["header_color"],
+            }
+            return obj
+
+        def post_save(self, obj):
+            obj = super().post_save(obj)
+            obj.set_bubbles({key: self.form.cleaned_data[f"bubble_{key}"] for key in HelpSite.BUBBLE_KEYS})
+            return obj
+
+    class Domain(InferSite, BaseUpdateModal):
+        """
+        The site's own domain, and the DNS records that put it into service: one pointing it at us, one proving it's
+        the org's, which is checked on demand from here.
+        """
+
+        form_class = HelpSiteDomainForm
+        title = _("Site Domain")
+        success_url = "hide"
+        success_message = ""
+
+        def derive_initial(self):
+            initial = super().derive_initial()
+            initial["domain"] = self.get_object().domain
+            return initial
+
+        def get_context_data(self, **kwargs):
+            context = super().get_context_data(**kwargs)
+            context["cname_target"] = self.request.branding["domain"]
+            context["verification_record_prefix"] = HelpSite.VERIFICATION_RECORD
+            context["verify_url"] = reverse("knowledge.helpsite_verify")
+            return context
+
+        def post_save(self, obj):
+            obj = super().post_save(obj)
+            # a change of domain starts verification over
+            obj.set_domain(self.request.user, self.form.cleaned_data["domain"])
+            return obj
+
+    class Verify(InferSite, PostOnlyMixin, OrgPermsMixin, SmartTemplateView):
+        """
+        Checks for the TXT record that proves the site's domain is the org's, asked for by the button in the domain
+        dialog once the record has been added. Verified is what gets the domain served.
+        """
+
+        def post(self, request, *args, **kwargs):
+            site = self.get_object()
+            if not site.domain:
+                return JsonResponse({"error": _("No domain has been set.")}, status=400)
+
+            return JsonResponse({"domain": site.domain, "verified": site.verify_domain()})

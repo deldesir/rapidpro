@@ -1,0 +1,18 @@
+{% extends "includes/modax.html" %}
+{% load smartmin i18n %}
+
+{% block fields %}
+  {% render_field 'title' %}
+  {% render_field 'tagline' %}
+  {% render_field 'footer' %}
+  <div class="flex gap-4">
+    <div class="flex-1">{% render_field 'primary_color' %}</div>
+    <div class="flex-1">{% render_field 'header_color' %}</div>
+  </div>
+  <div class="flex gap-4">
+    <div class="flex-1">{% render_field 'bubble_1' %}</div>
+    <div class="flex-1">{% render_field 'bubble_2' %}</div>
+    <div class="flex-1">{% render_field 'bubble_3' %}</div>
+  </div>
+  <div class="help-text -mt-3 mb-4" style="font-size: 12px; color: var(--color-text-help)">{% trans "The background colors articles can give their columns." %}</div>
+{% endblock fields %}

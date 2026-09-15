@@ -12,6 +12,7 @@ import {
   clearMockPosts,
   getClip,
   getComponent,
+  mockGET,
   mockPOST,
   mouseClickElement,
   waitForImages
@@ -830,6 +831,157 @@ describe(TAG, () => {
       assert.isNotOk(linkbar(editor));
     });
 
+    /** an editor that knows the helpdesk's other articles, so links to them can be picked by title */
+    const ARTICLES = '/api/internal/articles.json';
+    const FLOWS = '0d5f3a5a-2f3d-4c4e-9f6b-3a1e5b7c9d10';
+    const NODES = '1e6a4b6b-3a4e-4d5f-8a7c-4b2f6c8d0e21';
+    const ACTIONS = '2f7b5c7c-4b5f-4e60-9b8d-5c3a7d9e1f32';
+    const getLinkingEditor = async (value: string): Promise<MarkdownEditor> => {
+      mockGET(new RegExp(ARTICLES), {
+        results: [
+          {
+            uuid: FLOWS,
+            title: 'Flows',
+            status: 'published',
+            parent: null,
+            depth: 0
+          },
+          {
+            uuid: NODES,
+            title: 'Nodes',
+            status: 'published',
+            parent: FLOWS,
+            depth: 1
+          },
+          {
+            uuid: ACTIONS,
+            title: 'Node Actions',
+            status: 'draft',
+            parent: FLOWS,
+            depth: 1
+          }
+        ]
+      });
+      const editor = (await fixture(
+        `<${TAG} widget_only endpoint="${UPLOAD}" articles-endpoint="${ARTICLES}"></${TAG}>`
+      )) as MarkdownEditor;
+      editor.value = value;
+      await editor.updateComplete;
+      // the articles arrive on their own time
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      await editor.updateComplete;
+      return editor;
+    };
+
+    it('shows a link to an article by the article it points at', async () => {
+      const editor = await getLinkingEditor(
+        `see [nodes](article:${NODES}) now`
+      );
+
+      await caretIn(editor, 0, 6);
+      await editor.updateComplete;
+
+      const bar = linkbar(editor).querySelector('input') as HTMLInputElement;
+      assert.equal(bar.value, 'Nodes');
+      assert.isOk(linkbar(editor).querySelector('.link-kind'));
+
+      // the markdown keeps the uuid
+      assert.equal(editor.value, `see [nodes](article:${NODES}) now`);
+    });
+
+    it('offers articles by title and links to the one picked', async () => {
+      const editor = await getLinkingEditor(
+        'see the [docs](https://example.com) now'
+      );
+
+      await caretIn(editor, 0, 10);
+      await editor.updateComplete;
+
+      const bar = linkbar(editor).querySelector('input') as HTMLInputElement;
+      bar.value = 'node';
+      bar.dispatchEvent(new Event('input'));
+      await editor.updateComplete;
+
+      // a search leaves the link where it was until something is picked
+      assert.equal(editor.value, 'see the [docs](https://example.com) now');
+
+      const matches = [...linkbar(editor).querySelectorAll('.link-match')];
+      assert.deepEqual(
+        matches.map((m) =>
+          m.querySelector('.link-match-title').textContent.trim()
+        ),
+        ['Nodes', 'Node Actions']
+      );
+      assert.deepEqual(
+        matches.map((m) =>
+          m.querySelector('.link-match-section').textContent.trim()
+        ),
+        ['Flows', 'Flows']
+      );
+      assert.isTrue(matches[1].classList.contains('draft'));
+
+      (matches[0] as HTMLElement).click();
+      await editor.updateComplete;
+
+      assert.equal(editor.value, `see the [docs](article:${NODES}) now`);
+      assert.equal(
+        (linkbar(editor).querySelector('input') as HTMLInputElement).value,
+        'Nodes'
+      );
+      assert.isNotOk(linkbar(editor).querySelector('.link-match'));
+    });
+
+    it('takes the best match on enter and says when there is none', async () => {
+      const editor = await getLinkingEditor(
+        'see the [docs](https://example.com) now'
+      );
+
+      await caretIn(editor, 0, 10);
+      await editor.updateComplete;
+
+      const bar = linkbar(editor).querySelector('input') as HTMLInputElement;
+      bar.value = 'xyzzy';
+      bar.dispatchEvent(new Event('input'));
+      await editor.updateComplete;
+      assert.equal(
+        linkbar(editor).querySelector('.link-match.none').textContent.trim(),
+        'No matching articles'
+      );
+
+      bar.value = 'flows';
+      bar.dispatchEvent(new Event('input'));
+      await editor.updateComplete;
+      bar.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+      );
+      await editor.updateComplete;
+
+      assert.equal(editor.value, `see the [docs](article:${FLOWS}) now`);
+    });
+
+    it('still takes an address as typed', async () => {
+      const editor = await getLinkingEditor(
+        'see the [docs](https://example.com) now'
+      );
+
+      await caretIn(editor, 0, 10);
+      await editor.updateComplete;
+
+      const bar = linkbar(editor).querySelector('input') as HTMLInputElement;
+      for (const address of [
+        'https://nyaruka.com',
+        '/flows/nodes/',
+        'nyaruka.com/docs',
+        'mailto:x@y.com'
+      ]) {
+        bar.value = address;
+        bar.dispatchEvent(new Event('input'));
+        await editor.updateComplete;
+        assert.equal(editor.value, `see the [docs](${address}) now`);
+        assert.isNotOk(linkbar(editor).querySelector('.link-match'));
+      }
+    });
+
     it('shows no link bar when the caret is not in a link', async () => {
       const editor = await getEditor('nothing linked here');
       await caretIn(editor, 0, 4);
@@ -929,6 +1081,52 @@ describe(TAG, () => {
 
       const img = doc(editor).querySelector('img');
       assert.equal(img.getAttribute('class'), null);
+    });
+
+    it('shows a relative reference from storage but writes it back as it was', async () => {
+      const STORAGE = 'https://storage.example.com/bucket';
+      const editor = (await fixture(
+        `<${TAG} widget_only endpoint="${UPLOAD}" storage-url="${STORAGE}/"></${TAG}>`
+      )) as MarkdownEditor;
+      editor.value =
+        '![shot](orgs/1/knowledge/shot.png#size=small) and ![far](https://example.com/far.png)';
+      await editor.updateComplete;
+
+      const [near, far] = [...blocks(editor)[0].querySelectorAll('img')];
+      assert.equal(
+        near.getAttribute('src'),
+        `${STORAGE}/orgs/1/knowledge/shot.png#size=small`
+      );
+      assert.equal(
+        near.getAttribute('data-src'),
+        'orgs/1/knowledge/shot.png#size=small'
+      );
+      assert.isTrue(near.classList.contains('size-small'));
+      assert.equal(far.getAttribute('src'), 'https://example.com/far.png');
+      assert.isNull(far.getAttribute('data-src'));
+
+      // reading the document back gives the reference, not the address it was shown from
+      assert.equal(
+        editor.value,
+        '![shot](orgs/1/knowledge/shot.png#size=small) and ![far](https://example.com/far.png)'
+      );
+
+      // and a size change is written into the reference
+      await clickImage(editor);
+      await editor.updateComplete;
+      await pickSize(editor, 'Large');
+      assert.equal(
+        near.getAttribute('data-src'),
+        'orgs/1/knowledge/shot.png#size=large'
+      );
+      assert.equal(
+        near.getAttribute('src'),
+        `${STORAGE}/orgs/1/knowledge/shot.png#size=large`
+      );
+      assert.include(
+        editor.value,
+        '![shot](orgs/1/knowledge/shot.png#size=large)'
+      );
     });
 
     it('offers sizes when an image is clicked', async () => {
@@ -1046,6 +1244,34 @@ describe(TAG, () => {
       );
       await editor.updateComplete;
     };
+
+    it('shows a pasted image from storage and keeps its reference', async () => {
+      const editor = (await fixture(
+        `<${TAG} widget_only endpoint="${UPLOAD}" storage-url="https://storage.example.com/bucket"></${TAG}>`
+      )) as MarkdownEditor;
+      editor.value = '';
+      await editor.updateComplete;
+      await caretIn(editor, 0, 0);
+
+      await paste(editor, {
+        html: '<p><img src="orgs/1/knowledge/shot.png#size=small" data-src="orgs/1/knowledge/shot.png#size=small" alt="shot"></p>',
+        text: 'shot'
+      });
+
+      const img = doc(editor).querySelector('img');
+      assert.equal(
+        img.getAttribute('src'),
+        'https://storage.example.com/bucket/orgs/1/knowledge/shot.png#size=small'
+      );
+      assert.equal(
+        img.getAttribute('data-src'),
+        'orgs/1/knowledge/shot.png#size=small'
+      );
+      assert.equal(
+        editor.value,
+        '![shot](orgs/1/knowledge/shot.png#size=small)'
+      );
+    });
 
     it('keeps the formatting of markup it can express', async () => {
       const editor = await getEditor('');

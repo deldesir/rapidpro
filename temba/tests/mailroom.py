@@ -233,6 +233,7 @@ class Mocks:
         self._flow_inspect = []
         self._flow_migrate = []
         self._flow_start_preview = []
+        self._knowledge_search = []
         self._llm_translate = []
         self._msg_broadcast_preview = []
         self._msg_search = []
@@ -299,6 +300,9 @@ class Mocks:
             return mailroom.RecipientsPreview(query=query, total=total)
 
         self._flow_start_preview.append(mock)
+
+    def knowledge_search(self, results: list):
+        self._knowledge_search.append(results)
 
     def llm_translate(self, items: dict):
         self._llm_translate.append(items)
@@ -591,6 +595,12 @@ class TestClient(MailroomClient):
         restore_msgs(msgs)
 
         return {}
+
+    @_client_method
+    def knowledge_search(self, org, query: str, limit: int = 10) -> list[dict]:
+        assert self.mocks._knowledge_search, "missing knowledge_search mock"
+
+        return self.mocks._knowledge_search.pop(0)
 
     @_client_method
     def msg_search(self, org, text: str, contact=None, in_ticket=False) -> list[tuple[Contact, dict]]:

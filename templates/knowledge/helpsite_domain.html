@@ -1,0 +1,168 @@
+{% extends "includes/modax.html" %}
+{% load smartmin i18n %}
+
+{% block fields %}
+  {% render_field 'domain' %}
+  {% comment %}
+    The records to add for the domain being typed, kept current by updateHelpSiteRecords as it's typed - only the
+    check on them waits for the domain to be saved, so it applies to the saved domain and no other.
+  {% endcomment %}
+  <div class="records"
+       id="domain-records"
+       data-saved="{{ object.domain|default:'' }}"
+       {% if not object.domain %}hidden{% endif %}>
+    <div class="records-title">
+      {% trans "Add these records to the DNS for" %} <b class="domain-name">{{ object.domain }}</b>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>{% trans "Type" %}</th>
+          <th>{% trans "Name" %}</th>
+          <th>{% trans "Value" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>CNAME</td>
+          <td><code class="domain-name">{{ object.domain }}</code></td>
+          <td><code>{{ cname_target }}</code></td>
+        </tr>
+        <tr>
+          <td>TXT</td>
+          <td><code class="record-name">{{ object.verification_record }}</code></td>
+          <td><code>{{ object.domain_token }}</code></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="records-status" id="domain-status-row">
+      {% if object.is_domain_verified %}
+        <temba-icon name="check" class="verified">
+        </temba-icon>
+        <span>{% trans "Verified. Your help site is served on this domain." %}</span>
+      {% else %}
+        <span id="domain-status">{% trans "Not verified yet. Once the records are in place, check to have your domain verified and served." %}</span>
+        <temba-button small name="{% trans "Check" %}" onclick="checkHelpSiteDomain(this)">
+        </temba-button>
+      {% endif %}
+    </div>
+    <div class="records-status" id="domain-unsaved" hidden>
+      <span>{% trans "Save, and once the records are in place come back to check them." %}</span>
+    </div>
+  </div>
+  {% render_field 'is_enabled' %}
+{% endblock fields %}
+{% block modal-script %}
+  <script>
+    function updateHelpSiteRecords(field) {
+      // the dialog renders inside the modal's shadow root, so everything is found from the field rather than the
+      // document. The domain is read the way the server will: trimmed, lowercased, without a leading www.
+      var root = field.getRootNode();
+      var records = root.querySelector("#domain-records");
+      var domain = (field.value || "").trim().toLowerCase().replace(/^www\./, "");
+
+      records.hidden = !domain;
+      records.querySelectorAll(".domain-name").forEach(function(ele) {
+        ele.innerText = domain;
+      });
+      records.querySelector(".record-name").innerText = "{{ verification_record_prefix }}." + domain;
+
+      // the check applies to the saved domain, so it steps aside while a different one is being typed
+      var saved = records.dataset.saved === domain;
+      records.querySelector("#domain-status-row").hidden = !saved;
+      records.querySelector("#domain-unsaved").hidden = saved;
+    }
+
+    function checkHelpSiteDomain(button) {
+      var status = button.getRootNode().querySelector("#domain-status");
+      status.innerText = "{{ _("Checking...") |escapejs }}";
+      fetchAjax("{{ verify_url }}", {
+        method: "POST"
+      }).then(function(response) {
+        return response.json();
+      }).then(function(data) {
+        if (data.verified) {
+          status.innerText = "{{ _("Verified. Your help site is served on this domain.") |escapejs }}";
+          button.remove();
+        } else {
+          status.innerText = "{{ _("The TXT record wasn't found yet. DNS changes can take a while to spread, so try again later.") |escapejs }}";
+        }
+      }).catch(function() {
+        status.innerText = "{{ _("The check failed. Please try again.") |escapejs }}";
+      });
+    }
+  </script>
+{% endblock modal-script %}
+{% block modal-extra-style %}
+  {{ block.super }}
+  <style type="text/css">
+    .records {
+      margin: 4px 0 16px;
+      padding: 14px 16px;
+      border: 1px solid var(--color-borders);
+      border-radius: var(--curvature);
+      background: var(--color-background, #f9fafb);
+    }
+
+    .records-title {
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+
+    .records table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+    }
+
+    .records th {
+      text-align: left;
+      font-weight: 600;
+      color: var(--color-text-help);
+      padding: 0 8px 6px 0;
+    }
+
+    .records td {
+      padding: 6px 8px 6px 0;
+      border-top: 1px solid var(--color-borders);
+      vertical-align: top;
+    }
+
+    .records td:first-child {
+      white-space: nowrap;
+      width: 1%;
+      padding-right: 16px;
+    }
+
+    /* the page styles inline code with padding, which would indent the first line of a wrapped value and not the
+       rest - here a value is a block of its own, wrapped only where it has to be */
+    .records code {
+      display: block;
+      padding: 0;
+      border-radius: 0;
+      user-select: all;
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    .records-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--color-borders);
+      font-size: 13px;
+    }
+
+    .records-status .verified {
+      color: var(--color-success, #2e8b57);
+    }
+
+    /* a display of their own would otherwise outrank the hidden attribute the script toggles */
+    .records[hidden],
+    .records-status[hidden] {
+      display: none;
+    }
+  </style>
+{% endblock modal-extra-style %}

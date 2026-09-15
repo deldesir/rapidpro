@@ -1,0 +1,22 @@
+{% load i18n %}
+
+{% get_current_language as LANGUAGE_CODE %}
+<!DOCTYPE html>
+<html lang="{{ LANGUAGE_CODE }}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="{% trans "Not available" %}">
+    <meta name="robots" content="noindex">
+    <title>{% trans "Not available" %}</title>
+    <link rel="stylesheet" href="{{ STATIC_URL }}css/helpsite.css">
+  </head>
+  <body>
+    <main class="container">
+      <header class="page-header not-found">
+        <h1>{% trans "This help site isn't available" %}</h1>
+        <p class="lead">{% trans "There's nothing published at this address right now." %}</p>
+      </header>
+    </main>
+  </body>
+</html>

@@ -219,6 +219,15 @@ class MailroomClient:
 
         return RecipientsPreview(query=resp["query"], total=resp["total"])
 
+    def knowledge_search(self, org, query: str, limit: int = 10) -> list[dict]:
+        """
+        Searches the org's indexed knowledge semantically, returning the matching chunks best first - each naming its
+        source (knowledge_uuid) and item (item_key) along with the chunk's text and score.
+        """
+        resp = self._request("knowledge/search", {"org_id": org.id, "query": query, "limit": limit})
+
+        return resp["results"]
+
     def llm_translate(self, llm, source: str, target: str, items: dict[str, list[str]]) -> dict[str, list[str]]:
         resp = self._request(
             "llm/translate",

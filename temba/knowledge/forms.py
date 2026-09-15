@@ -1,11 +1,14 @@
+import re
+
 from django import forms
+from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 
 from temba.orgs.views.mixins import UniqueNameMixin
 from temba.utils import languages
-from temba.utils.fields import InputWidget, SelectWidget
+from temba.utils.fields import CheckboxWidget, ColorInputWidget, InputWidget, SelectWidget
 
-from .models import Article, Knowledge
+from .models import Article, HelpSite, Knowledge
 
 
 class MarkdownEditorWidget(forms.Widget):
@@ -139,3 +142,158 @@ class ArticleCreateForm(ArticleForm):
 
     class Meta(ArticleForm.Meta):
         fields = ("title", "language")
+
+
+class SectionForm(forms.ModelForm):
+    """
+    A section - a root of the helpdesk tree - is a heading over the articles filed under it, so it's titled and
+    described in plain text rather than written. Nothing of it is indexed, so it isn't asked its language either.
+    """
+
+    description = forms.CharField(
+        label=_("Description"),
+        required=False,
+        max_length=Article.MAX_DESCRIPTION_LEN,
+        widget=InputWidget(attrs={"widget_only": False, "textarea": True}),
+    )
+
+    def __init__(self, org, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    class Meta:
+        model = Article
+        fields = ("title", "description")
+        widgets = {"title": InputWidget(attrs={"widget_only": False})}
+        labels = {"title": _("Title")}
+
+
+class HelpSiteForm(forms.ModelForm):
+    """
+    The help site's settings - what it says about itself, whether it's up, where it lives, and its few colors.
+    """
+
+    COLOR_PATTERN = re.compile(r"^#[0-9a-f]{6}$")
+
+    title = forms.CharField(
+        max_length=HelpSite.MAX_TITLE_LEN,
+        label=_("Title"),
+        help_text=_("The name of your help site, shown in its header."),
+        widget=InputWidget(),
+    )
+    tagline = forms.CharField(
+        required=False,
+        max_length=HelpSite.MAX_TAGLINE_LEN,
+        label=_("Tagline"),
+        help_text=_("A welcome shown above the search on the home page."),
+        widget=InputWidget(),
+    )
+    footer = forms.CharField(
+        required=False,
+        max_length=HelpSite.MAX_FOOTER_LEN,
+        label=_("Footer"),
+        help_text=_("Shown at the bottom of every page."),
+        widget=InputWidget(),
+    )
+    primary_color = forms.CharField(
+        label=_("Primary Color"),
+        help_text=_("Used for links, buttons and highlights."),
+        widget=ColorInputWidget(),
+    )
+    header_color = forms.CharField(
+        label=_("Header Color"),
+        help_text=_("The background of the header on every page."),
+        widget=ColorInputWidget(),
+    )
+    # the bubbles share a help text, which the dialog shows beneath all three of them
+    bubble_1 = forms.CharField(
+        required=False, label=_("Bubble 1"), widget=ColorInputWidget(attrs={"placeholder": _("None")})
+    )
+    bubble_2 = forms.CharField(
+        required=False, label=_("Bubble 2"), widget=ColorInputWidget(attrs={"placeholder": _("None")})
+    )
+    bubble_3 = forms.CharField(
+        required=False, label=_("Bubble 3"), widget=ColorInputWidget(attrs={"placeholder": _("None")})
+    )
+
+    def __init__(self, org, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _clean_color(self, field: str, required: bool) -> str:
+        value = (self.cleaned_data[field] or "").strip().lower()
+        if not value and not required:
+            return ""
+        if not self.COLOR_PATTERN.match(value):
+            raise forms.ValidationError(_("Not a valid color."))
+        return value
+
+    def clean_primary_color(self):
+        return self._clean_color("primary_color", required=True)
+
+    def clean_header_color(self):
+        return self._clean_color("header_color", required=True)
+
+    def clean_bubble_1(self):
+        return self._clean_color("bubble_1", required=False)
+
+    def clean_bubble_2(self):
+        return self._clean_color("bubble_2", required=False)
+
+    def clean_bubble_3(self):
+        return self._clean_color("bubble_3", required=False)
+
+    class Meta:
+        model = HelpSite
+        fields = ("title", "tagline", "footer")
+
+
+class HelpSiteDomainForm(forms.ModelForm):
+    """
+    The domain the site is served on - which the org then proves is theirs before it's served, see the domain
+    dialog - and whether it's served at all. The domain is set through the model rather than as a field of the
+    form, so a change starts verification over.
+    """
+
+    DOMAIN_PATTERN = re.compile(r"^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
+
+    domain = forms.CharField(
+        required=False,
+        max_length=HelpSite.MAX_DOMAIN_LEN,
+        label=_("Domain"),
+        help_text=_("A domain of your own to serve your help site on, such as help.example.com."),
+        # the dialog shows the records to add for whatever domain is being typed - see helpsite_domain.html
+        widget=InputWidget(attrs={"placeholder": "help.example.com", "oninput": "updateHelpSiteRecords(this)"}),
+    )
+
+    is_enabled = forms.BooleanField(
+        required=False,
+        label=_("Enabled"),
+        help_text=_("Whether the site is available to the public on its domain."),
+        widget=CheckboxWidget(),
+    )
+
+    def __init__(self, org, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _get_validation_exclusions(self):
+        # the domain is validated here and written by set_domain, never through the instance - which still holds the
+        # old value, or none, when the model would otherwise be asked to validate it
+        return super()._get_validation_exclusions() | {"domain"}
+
+    def clean_domain(self):
+        value = HelpSite.clean_domain(self.cleaned_data["domain"])
+        if value:
+            if not self.DOMAIN_PATTERN.match(value):
+                raise forms.ValidationError(_("Not a valid domain name."))
+            # a subdomain of our own is fine - it's how we'll serve our own helpdesk - but the app's domain itself
+            # can't be a help site
+            if value == settings.BRAND["domain"]:
+                raise forms.ValidationError(_("Can't use the default domain."))
+            # a domain another site has proven is theirs can't be claimed here - an unverified claim on it can
+            taken = HelpSite.objects.filter(domain=value).exclude(domain_verified_on=None).exclude(id=self.instance.id)
+            if taken.exists():
+                raise forms.ValidationError(_("This domain is already in use by another help site."))
+        return value
+
+    class Meta:
+        model = HelpSite
+        fields = ("is_enabled",)

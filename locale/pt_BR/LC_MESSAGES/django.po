@@ -17,7 +17,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-14 15:33+0000\n"
+"POT-Creation-Date: 2026-09-14 16:17-0700\n"
 "PO-Revision-Date: 2019-05-13 20:14+0000\n"
 "Language: pt_BR\n"
 "MIME-Version: 1.0\n"
@@ -2815,6 +2815,69 @@ msgstr "Título"
 msgid "Body"
 msgstr "Corpo"
 
+msgid "Description"
+msgstr "Descrição"
+
+msgid "The name of your help site, shown in its header."
+msgstr "O nome do seu site de ajuda, exibido no cabeçalho."
+
+msgid "Tagline"
+msgstr "Slogan"
+
+msgid "A welcome shown above the search on the home page."
+msgstr "Uma saudação exibida acima da busca na página inicial."
+
+msgid "Footer"
+msgstr "Rodapé"
+
+msgid "Shown at the bottom of every page."
+msgstr "Exibido no final de cada página."
+
+msgid "Primary Color"
+msgstr "Cor principal"
+
+msgid "Used for links, buttons and highlights."
+msgstr "Usada para links, botões e destaques."
+
+msgid "Header Color"
+msgstr "Cor do cabeçalho"
+
+msgid "The background of the header on every page."
+msgstr "O fundo do cabeçalho em todas as páginas."
+
+msgid "Bubble 1"
+msgstr "Bolha 1"
+
+msgid "None"
+msgstr "Nenhum"
+
+msgid "Bubble 2"
+msgstr "Bolha 2"
+
+msgid "Bubble 3"
+msgstr "Bolha 3"
+
+msgid "Not a valid color."
+msgstr "Não é uma cor válida."
+
+msgid "Domain"
+msgstr "Domínio"
+
+msgid "A domain of your own to serve your help site on, such as help.example.com."
+msgstr "Um domínio próprio para servir seu site de ajuda, como help.example.com."
+
+msgid "Whether the site is available to the public on its domain."
+msgstr "Se o site está disponível ao público em seu domínio."
+
+msgid "Not a valid domain name."
+msgstr "Não é um nome de domínio válido."
+
+msgid "Can't use the default domain."
+msgstr "Não é possível usar o domínio padrão."
+
+msgid "This domain is already in use by another help site."
+msgstr "Este domínio já está em uso por outro site de ajuda."
+
 msgid "Shortcuts"
 msgstr "Atalhos"
 
@@ -2838,6 +2901,9 @@ msgstr "Rascunho"
 
 msgid "Published"
 msgstr "Publicado"
+
+msgid "Not available"
+msgstr "Não disponível"
 
 #, fuzzy
 #| msgid "New Shortcut"
@@ -2879,6 +2945,12 @@ msgstr "Tipo de arquivo não suportado"
 msgid "Limit for file uploads is %s MB"
 msgstr "O limite para envio de arquivos é de %s MB"
 
+msgid "New Section"
+msgstr "Nova seção"
+
+msgid "Site Settings"
+msgstr "Configurações do site"
+
 msgid "New Article"
 msgstr "Novo artigo"
 
@@ -2891,6 +2963,12 @@ msgstr "Ordenação inválida."
 #, python-format
 msgid "Limit of %d images reached."
 msgstr "O limite de %d imagens foi atingido."
+
+msgid "Site Domain"
+msgstr "Domínio do site"
+
+msgid "No domain has been set."
+msgstr "Nenhum domínio foi definido."
 
 msgid "The name for our alias"
 msgstr "O nome do nosso alias"
@@ -5524,8 +5602,16 @@ msgid "You have reached the limit of %(limit)s articles. You must delete existin
 msgstr "Você atingiu o limite de %(limit)s artigos. Você precisa deletar os existentes antes de poder criar novos."
 
 #, python-format
-msgid "You are about to delete the article <b>%(object)s</b> and its screenshots. Any articles beneath it will move up to take its place. There is no way to undo this. Are you sure?"
-msgstr "Você está prestes a deletar o artigo <b>%(object)s</b> e suas capturas de tela. Os artigos abaixo dele subirão para ocupar seu lugar. Não é possível reverter isso. Você tem certeza?"
+msgid "The section <b>%(object)s</b> still holds articles. Move or delete them before deleting the section."
+msgstr "A seção <b>%(object)s</b> ainda contém artigos. Mova-os ou exclua-os antes de deletar a seção."
+
+#, python-format
+msgid "You are about to delete the section <b>%(object)s</b>. There is no way to undo this. Are you sure?"
+msgstr "Você está prestes a deletar a seção <b>%(object)s</b>. Não é possível reverter isso. Você tem certeza?"
+
+#, python-format
+msgid "You are about to delete the article <b>%(object)s</b> and its screenshots. There is no way to undo this. Are you sure?"
+msgstr "Você está prestes a deletar o artigo <b>%(object)s</b> e suas capturas de tela. Não é possível reverter isso. Você tem certeza?"
 
 msgid "Delete Article"
 msgstr "Deletar artigo"
@@ -5535,6 +5621,54 @@ msgstr "Nenhum artigo"
 
 msgid "Help articles written by your workspace. Published articles are searchable by AI agents."
 msgstr "Artigos de ajuda escritos pela sua área de trabalho. Os agentes de IA podem pesquisar os artigos publicados."
+
+msgid "Your help site is live on this domain."
+msgstr "Seu site de ajuda está no ar neste domínio."
+
+msgid "Verified, but not yet enabled for the public."
+msgstr "Verificado, mas ainda não habilitado para o público."
+
+msgid "Add the DNS records to verify this domain."
+msgstr "Adicione os registros DNS para verificar este domínio."
+
+msgid "No domain yet"
+msgstr "Ainda sem domínio"
+
+msgid "Set up a domain of your own to serve your help site to the public."
+msgstr "Configure um domínio próprio para servir seu site de ajuda ao público."
+
+msgid "Set up"
+msgstr "Configurar"
+
+msgid "Not verified"
+msgstr "Não verificado"
+
+msgid "Add these records to the DNS for"
+msgstr "Adicione estes registros ao DNS de"
+
+msgid "Verified. Your help site is served on this domain."
+msgstr "Verificado. Seu site de ajuda é servido neste domínio."
+
+msgid "Not verified yet. Once the records are in place, check to have your domain verified and served."
+msgstr "Ainda não verificado. Quando os registros estiverem no lugar, verifique para que seu domínio seja verificado e servido."
+
+msgid "Check"
+msgstr "Verificar"
+
+msgid "Save, and once the records are in place come back to check them."
+msgstr "Salve e, quando os registros estiverem no lugar, volte para verificá-los."
+
+msgid "Checking..."
+msgstr "Verificando..."
+
+msgid "The TXT record wasn't found yet. DNS changes can take a while to spread, so try again later."
+msgstr "O registro TXT ainda não foi encontrado. Mudanças de DNS podem demorar para se propagar, então tente novamente mais tarde."
+
+msgid "The check failed. Please try again."
+msgstr "A verificação falhou. Tente novamente."
+
+msgid "The background colors articles can give their columns."
+msgstr "As cores de fundo que os artigos podem dar às suas colunas."
 
 #, fuzzy, python-format
 #| msgid "You are about to delete the <b>%(object)s</b> team. There is no way to undo this. Are you sure?"
@@ -5592,6 +5726,75 @@ msgstr "Usos"
 #| msgid "No models yet"
 msgid "No pages yet"
 msgstr "Ainda sem modelos"
+
+msgid "Page not found"
+msgstr "Página não encontrada"
+
+msgid "The page you're looking for isn't here. It may have moved, or been unpublished."
+msgstr "A página que você procura não está aqui. Ela pode ter sido movida ou despublicada."
+
+msgid "Back to the home page"
+msgstr "Voltar à página inicial"
+
+msgid "Breadcrumb"
+msgstr "Trilha de navegação"
+
+msgid "Home"
+msgstr "Início"
+
+#, python-format
+msgid "Last updated %(date)s"
+msgstr "Última atualização em %(date)s"
+
+msgid "In this section"
+msgstr "Nesta seção"
+
+msgid "This is a preview of your help site as its readers will see it."
+msgstr "Esta é uma prévia do seu site de ajuda como seus leitores o verão."
+
+msgid "Site settings"
+msgstr "Configurações do site"
+
+msgid "Search articles"
+msgstr "Pesquisar artigos"
+
+msgid "How can we help?"
+msgstr "Como podemos ajudar?"
+
+msgid "Search for answers"
+msgstr "Buscar respostas"
+
+msgid "Sections"
+msgstr "Seções"
+
+#, python-format
+msgid "%(counter)s article"
+msgid_plural "%(counter)s articles"
+msgstr[0] "%(counter)s artigo"
+msgstr[1] "%(counter)s artigos"
+msgstr[2] "%(counter)s artigos"
+
+msgid "Nothing has been published here yet."
+msgstr "Nada foi publicado aqui ainda."
+
+msgid "Popular articles"
+msgstr "Artigos populares"
+
+#, python-format
+msgid "%(counter)s result for “%(query)s”"
+msgid_plural "%(counter)s results for “%(query)s”"
+msgstr[0] "%(counter)s resultado para “%(query)s”"
+msgstr[1] "%(counter)s resultados para “%(query)s”"
+msgstr[2] "%(counter)s resultados para “%(query)s”"
+
+msgid "No articles matched your search. Try different words, or browse the sections on the home page."
+msgstr "Nenhum artigo corresponde à sua busca. Tente outras palavras ou navegue pelas seções da página inicial."
+
+msgid "This help site isn't available"
+msgstr "Este site de ajuda não está disponível"
+
+msgid "There's nothing published at this address right now."
+msgstr "Não há nada publicado neste endereço no momento."
 
 #, python-format
 msgid "Aliases for %(name)s"
@@ -5748,9 +5951,6 @@ msgstr ""
 #, python-format
 msgid "User %(email)s accepted an invitation to join your workspace."
 msgstr "O usuário %(email)s aceitou um convite para entrar na sua área de trabalho."
-
-msgid "None"
-msgstr "Nenhum"
 
 msgid "Previous"
 msgstr "Anterior"

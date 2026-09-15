@@ -164,7 +164,7 @@
       {% if COMPONENTS_DEV %}
         {# may 404 before a first components build has produced anything — preferable to the #}
         {# compress block below hard-failing the whole page on a missing packaged bundle #}
-        <script type="module" src="{% static 'components-dev/temba-modules.js' %}"></script>
+        <script type="module" src="{% static 'components-dev/temba-modules.js' %}?v={{ COMPONENTS_DEV_BUILD }}"></script>
       {% else %}
         {% compress js %}
           <script src="{% static 'components/temba-components.js' %}"></script>

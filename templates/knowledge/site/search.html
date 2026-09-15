@@ -1,0 +1,37 @@
+{% extends "knowledge/site/base.html" %}
+{% load i18n %}
+
+{% block title %}
+  {% trans "Search" %} | {{ site.title }}
+{% endblock title %}
+{% block content %}
+  <nav class="breadcrumbs" aria-label="{% trans "Breadcrumb" %}">
+    <a href="{{ prefix }}/">{% trans "Home" %}</a>
+    <span>{% trans "Search" %}</span>
+  </nav>
+  <header class="page-header">
+    {% if query %}
+      <h1>
+        {% blocktrans trimmed count counter=results|length %}
+          {{ counter }} result for “{{ query }}”
+        {% plural %}
+          {{ counter }} results for “{{ query }}”
+        {% endblocktrans %}
+      </h1>
+    {% else %}
+      <h1>{% trans "Search" %}</h1>
+    {% endif %}
+  </header>
+  {% if query and not results %}
+    <p class="empty">{% trans "No articles matched your search. Try different words, or browse the sections on the home page." %}</p>
+  {% endif %}
+  <div class="article-list">
+    {% for article, snippet in results %}
+      <a class="article-item" href="{{ prefix }}/{{ article.parent.slug }}/{{ article.slug }}/">
+        <span class="section">{{ article.parent.title }}</span>
+        <h2>{{ article.title }}</h2>
+        {% if snippet %}<p>{{ snippet }}</p>{% endif %}
+      </a>
+    {% endfor %}
+  </div>
+{% endblock content %}

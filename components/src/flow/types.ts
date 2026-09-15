@@ -1,5 +1,5 @@
 import { TemplateResult } from 'lit-html';
-import { Action, Node, NodeUI } from '../store/flow-definition';
+import type { Action, Node, NodeUI } from '../store/flow-definition';
 
 export interface ValidationResult {
   valid: boolean;

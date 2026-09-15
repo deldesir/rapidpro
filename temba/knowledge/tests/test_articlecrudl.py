@@ -2,8 +2,9 @@ from unittest.mock import patch
 
 from django.conf import settings
 from django.urls import reverse
+from django.utils import timezone
 
-from temba.knowledge.models import Article, Knowledge
+from temba.knowledge.models import Article, HelpSite, Knowledge
 from temba.orgs.models import Org
 from temba.tests import CRUDLTestMixin, TembaTest, cleanup
 from temba.utils import json
@@ -40,10 +41,9 @@ class ArticleCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual(200, response.status_code)
         self.assertEqual(self.helpdesk, response.context["object"])
         self.assertEqual(f"{reverse('api.internal.articles')}.json", response.context["articles_endpoint"])
-        self.assertEqual(Article.MAX_DEPTH, response.context["max_depth"])
         self.assertEqual(reverse("knowledge.article_sort"), response.context["sort_url"])
         self.assertEqual(reverse("knowledge.article_publish"), response.context["publish_url"])
-        self.assertContains(response, "temba-article-list")
+        self.assertContains(response, "temba-helpdesk-cards")
 
         # rows open the editor dialog rather than a page of their own, so the list offers no row actions of its own
         self.assertContains(response, 'id="update-article"')
@@ -52,10 +52,61 @@ class ArticleCRUDLTest(TembaTest, CRUDLTestMixin):
         # deleting rides the editor dialog's gutter, pointed at whichever article is opened
         self.assertContains(response, 'slot="gutter"')
 
-        self.assertContentMenu(list_url, self.admin, ["New"])
+        # the menu makes sections; articles are added from their section's card, which the page points at the create
+        # view for
+        self.assertContentMenu(list_url, self.admin, ["New Section", "Site Settings"])
+        self.assertEqual(reverse("knowledge.article_create"), response.context["create_url"])
+        self.assertContains(response, "temba-article-add-requested")
+
+        # the public site is the helpdesk's, so it's previewed from the card at the top of the page
+        self.assertEqual(reverse("knowledge.site_home"), response.context["preview_url"])
+        self.assertContains(response, "function previewHelpSite(event)")
+        self.assertContains(response, 'class="domain-pill"')
 
         # nothing is opened for editing unless we've been sent here by the create modal
         self.assertNotIn("edit_article", response.context)
+
+        # without a domain the card is the invitation to set one up - for those who can; the domain dialog is the
+        # card's rather than the menu's
+        self.assertNotIn("site", response.context)
+        self.assertEqual(reverse("knowledge.helpsite_domain"), response.context["domain_url"])
+        self.assertContains(response, 'id="site-domain-card"')
+        self.assertContains(response, "No domain yet")
+        self.assertContains(response, 'onclick="showSiteDomain()"')
+
+        # an unverified domain heads the page as something to finish, opening the domain dialog for whoever can
+        site = HelpSite.get_or_create(self.helpdesk, self.admin)
+        site.set_domain(self.admin, "help.example.com")
+
+        response = self.requestView(list_url, self.admin)
+        self.assertEqual(site, response.context["site"])
+        self.assertEqual(reverse("knowledge.helpsite_domain"), response.context["domain_url"])
+        self.assertContains(response, 'id="site-domain-card"')
+        self.assertContains(response, "help.example.com")
+        self.assertContains(response, "Not verified")
+        self.assertContains(response, 'onclick="showSiteDomain()"')
+        self.assertContains(response, "function showSiteDomain()")
+        self.assertNotContains(response, 'href="https://help.example.com/"')
+
+        # verified and enabled, it's a link out to the live site
+        site.domain_verified_on = timezone.now()
+        site.is_enabled = True
+        site.save(update_fields=("domain_verified_on", "is_enabled"))
+
+        response = self.requestView(list_url, self.admin)
+        self.assertContains(response, 'href="https://help.example.com/"')
+        self.assertContains(response, "Verified")
+        self.assertNotContains(response, "Not verified")
+        self.assertNotContains(response, 'onclick="showSiteDomain()"')
+
+        # verified but switched off, it's back to opening the dialog - but says which it is
+        site.is_enabled = False
+        site.save(update_fields=("is_enabled",))
+
+        response = self.requestView(list_url, self.admin)
+        self.assertContains(response, "not yet enabled")
+        self.assertContains(response, 'onclick="showSiteDomain()"')
+        self.assertNotContains(response, 'href="https://help.example.com/"')
 
         response = self.requestView(f"{list_url}?edit={flows.uuid}", self.admin)
         self.assertEqual(flows, response.context["edit_article"])
@@ -93,47 +144,100 @@ class ArticleCRUDLTest(TembaTest, CRUDLTestMixin):
 
         self.assertRequestDisallowed(create_url, [None, self.agent])
 
-        # a multi-language workspace is asked which language an article is in
+        # without a section named, we're making one: titled and described in plain text, and never asked its
+        # language, since nothing of it is indexed
         self.org.set_flow_languages(self.admin, ["eng", "spa"])
-        response = self.assertCreateFetch(create_url, [self.editor, self.admin], form_fields=("title", "language"))
-        self.assertContains(response, 'name="Spanish"')
-
-        # one with a single language isn't
-        self.org.set_flow_languages(self.admin, ["eng"])
-        self.assertCreateFetch(create_url, [self.admin], form_fields=("title",))
-
-        self.org.set_flow_languages(self.admin, ["eng", "spa"])
+        response = self.assertCreateFetch(create_url, [self.editor, self.admin], form_fields=("title", "description"))
+        self.assertEqual("New Section", response.context["title"])
+        self.assertNotContains(response, 'name="Spanish"')
 
         self.assertCreateSubmit(
             create_url,
             self.admin,
-            {"title": "Getting Started", "language": "spa"},
+            {"title": "Getting Started", "description": "Setting up and finding your way around."},
             new_obj_query=Article.objects.filter(title="Getting Started", knowledge=self.helpdesk),
         )
 
-        article = Article.objects.get(title="Getting Started")
-        self.assertEqual("getting-started", article.slug)
+        section = Article.objects.get(title="Getting Started")
+        self.assertEqual("getting-started", section.slug)
+        self.assertEqual("Setting up and finding your way around.", section.description)
+        self.assertIsNone(section.parent)
+        self.assertEqual("eng", section.language)
+        self.assertEqual(Article.STATUS_DRAFT, section.status)  # new sections are drafts
+
+        # a section is complete as described, so we're just sent back to the helpdesk
+        response = self.requestView(create_url, self.admin, post_data={"title": "Flows", "description": ""})
+        self.assertEqual(302, response.status_code)
+        self.assertEqual(reverse("knowledge.article_list"), response.url)
+
+        # but not one described at length
+        response = self.requestView(
+            create_url, self.admin, post_data={"title": "Nope", "description": "x" * (Article.MAX_DESCRIPTION_LEN + 1)}
+        )
+        self.assertFormError(
+            response.context["form"],
+            "description",
+            f"Ensure this value has at most {Article.MAX_DESCRIPTION_LEN} characters (it has "
+            f"{Article.MAX_DESCRIPTION_LEN + 1}).",
+        )
+
+        # named a section, we're making an article in it - titled here and written in the editor, and a
+        # multi-language workspace is asked which language it's in
+        article_url = f"{create_url}?section={section.uuid}"
+        response = self.assertCreateFetch(article_url, [self.editor, self.admin], form_fields=("title", "language"))
+        self.assertEqual("New Article", response.context["title"])
+        self.assertContains(response, 'name="Spanish"')
+
+        # one with a single language isn't
+        self.org.set_flow_languages(self.admin, ["eng"])
+        self.assertCreateFetch(article_url, [self.admin], form_fields=("title",))
+
+        self.org.set_flow_languages(self.admin, ["eng", "spa"])
+
+        self.assertCreateSubmit(
+            article_url,
+            self.admin,
+            {"title": "Installing", "language": "spa"},
+            new_obj_query=Article.objects.filter(title="Installing", knowledge=self.helpdesk),
+        )
+
+        article = Article.objects.get(title="Installing")
+        self.assertEqual("installing", article.slug)
+        self.assertEqual(section, article.parent)
         self.assertEqual("spa", article.language)
         self.assertEqual(Article.STATUS_DRAFT, article.status)  # new articles are drafts
 
         # and we're sent back to the helpdesk, which opens the editor on what we just made
-        response = self.requestView(create_url, self.admin, post_data={"title": "Flows", "language": "eng"})
+        response = self.requestView(article_url, self.admin, post_data={"title": "Configuring", "language": "eng"})
         self.assertEqual(302, response.status_code)
         self.assertEqual(
-            f"{reverse('knowledge.article_list')}?edit={Article.objects.get(title='Flows').uuid}", response.url
+            f"{reverse('knowledge.article_list')}?edit={Article.objects.get(title='Configuring').uuid}", response.url
         )
 
+        # a section that isn't one of ours, isn't a section, or isn't a uuid at all is nowhere to file an article
+        other_org = Article.create(
+            self.org2.knowledge.get(knowledge_type=Knowledge.TYPE_HELPDESK), self.admin2, "Other"
+        )
+        for bad in (other_org.uuid, article.uuid, "not-a-uuid"):
+            response = self.requestView(f"{create_url}?section={bad}", self.admin)
+            self.assertEqual(404, response.status_code)
+
         # can't create beyond the limit
-        with patch("temba.knowledge.models.Article.MAX_ARTICLES", 2):
+        with patch("temba.knowledge.models.Article.MAX_ARTICLES", 4):
             response = self.requestView(create_url, self.admin)
             self.assertContains(response, "You have reached the limit")
 
-            response = self.requestView(create_url, self.admin, post_data={"title": "Nope", "language": "eng"})
+            response = self.requestView(create_url, self.admin, post_data={"title": "Nope", "description": ""})
+            self.assertEqual(200, response.status_code)
+            self.assertFalse(Article.objects.filter(title="Nope").exists())
+
+            response = self.requestView(article_url, self.admin, post_data={"title": "Nope", "language": "eng"})
             self.assertEqual(200, response.status_code)
             self.assertFalse(Article.objects.filter(title="Nope").exists())
 
     def test_update(self):
-        article = Article.create(self.helpdesk, self.admin, "Flows")
+        section = Article.create(self.helpdesk, self.admin, "Flows", description="All about flows.")
+        article = Article.create(self.helpdesk, self.admin, "Nodes", parent=section)
 
         update_url = reverse("knowledge.article_update", args=[article.uuid])
 
@@ -152,6 +256,12 @@ class ArticleCRUDLTest(TembaTest, CRUDLTestMixin):
         # the editor is pointed at this article for uploads, and fills the dialog rather than growing it
         self.assertContains(response, reverse("knowledge.article_upload", args=[article.uuid]))
         self.assertContains(response, "fill")
+
+        # the editor is pointed at the other articles so links to them can be picked by title
+        self.assertContains(response, f'articles-endpoint="{reverse("api.internal.articles")}.json"')
+
+        # and at storage, so images referenced by their key can be shown
+        self.assertContains(response, f'storage-url="{settings.STORAGE_URL}"')
 
         # the dialog has no title bar, so the article's title leads and stands as one, with its status riding inside
         # it as a pill that states rather than does - publishing is done from the row, and deleting from the gutter
@@ -204,6 +314,22 @@ class ArticleCRUDLTest(TembaTest, CRUDLTestMixin):
 
         response = self.assertUpdateFetch(update_url, [self.admin], form_fields=("title", "language", "body"))
         self.assertEqual([("eng", "English"), ("spa", "Spanish")], response.context["form"].fields["language"].choices)
+
+        # a section is described rather than written: no editor, no language, and the dialog isn't held open to
+        # the window's height for an editor it doesn't have
+        section_url = reverse("knowledge.article_update", args=[section.uuid])
+        response = self.assertUpdateFetch(section_url, [self.editor, self.admin], form_fields=("title", "description"))
+        self.assertContains(response, "All about flows.")
+        self.assertContains(response, "status-pill")
+        self.assertNotContains(response, reverse("knowledge.article_upload", args=[section.uuid]))
+        self.assertNotContains(response, "88vh")
+
+        self.assertUpdateSubmit(section_url, self.admin, {"title": "Flow Basics", "description": "The basics."})
+
+        section.refresh_from_db()
+        self.assertEqual("Flow Basics", section.title)
+        self.assertEqual("The basics.", section.description)
+        self.assertEqual("flow-basics", section.slug)
 
     def test_publish(self):
         article = Article.create(self.helpdesk, self.admin, "Flows")
@@ -262,7 +388,8 @@ class ArticleCRUDLTest(TembaTest, CRUDLTestMixin):
 
     def test_sort(self):
         flows = Article.create(self.helpdesk, self.admin, "Flows")
-        nodes = Article.create(self.helpdesk, self.admin, "Nodes")
+        contacts = Article.create(self.helpdesk, self.admin, "Contacts")
+        nodes = Article.create(self.helpdesk, self.admin, "Nodes", parent=flows)
 
         sort_url = reverse("knowledge.article_sort")
 
@@ -283,16 +410,28 @@ class ArticleCRUDLTest(TembaTest, CRUDLTestMixin):
             sort_url,
             json.dumps(
                 [
-                    {"uuid": str(nodes.uuid), "parent": None, "sort_order": 0},
-                    {"uuid": str(flows.uuid), "parent": str(nodes.uuid), "sort_order": 0},
+                    {"uuid": str(contacts.uuid), "parent": None, "sort_order": 0},
+                    {"uuid": str(flows.uuid), "parent": None, "sort_order": 1},
+                    {"uuid": str(nodes.uuid), "parent": str(contacts.uuid), "sort_order": 0},
                 ]
             ),
             content_type="application/json",
         )
         self.assertEqual({"status": "ok"}, response.json())
 
+        nodes.refresh_from_db()
+        self.assertEqual(contacts, nodes.parent)
+
+        # the tree the client sends is checked, not trusted - a section can't be dropped into another section
+        response = self.client.post(
+            sort_url,
+            json.dumps([{"uuid": str(flows.uuid), "parent": str(contacts.uuid), "sort_order": 1}]),
+            content_type="application/json",
+        )
+        self.assertEqual({"error": "a section can't become an article, nor an article a section"}, response.json())
+
         flows.refresh_from_db()
-        self.assertEqual(nodes, flows.parent)
+        self.assertIsNone(flows.parent)
 
         # a malformed payload is rejected without touching anything, as is one whose sort orders aren't finite or
         # which names more articles than a helpdesk can hold
@@ -319,24 +458,24 @@ class ArticleCRUDLTest(TembaTest, CRUDLTestMixin):
         # as is a tree the model won't accept - the client is never trusted
         response = self.client.post(
             sort_url,
-            json.dumps([{"uuid": str(nodes.uuid), "parent": str(flows.uuid), "sort_order": 0}]),
+            json.dumps([{"uuid": str(nodes.uuid), "parent": str(nodes.uuid), "sort_order": 0}]),
             content_type="application/json",
         )
         self.assertEqual(400, response.status_code)
         self.assertEqual({"error": "articles can't be their own ancestor"}, response.json())
 
-        # or one that would nest an article below the two level cap - flows already sits under nodes
-        child = Article.create(self.helpdesk, self.admin, "Child")
+        # or one that would nest an article below the two level cap - nodes already sits under contacts
+        child = Article.create(self.helpdesk, self.admin, "Child", parent=contacts)
         response = self.client.post(
             sort_url,
-            json.dumps([{"uuid": str(child.uuid), "parent": str(flows.uuid), "sort_order": 0}]),
+            json.dumps([{"uuid": str(child.uuid), "parent": str(nodes.uuid), "sort_order": 0}]),
             content_type="application/json",
         )
         self.assertEqual(400, response.status_code)
         self.assertEqual({"error": "articles can't be nested more than 2 deep"}, response.json())
 
         child.refresh_from_db()
-        self.assertIsNone(child.parent)
+        self.assertEqual(contacts, child.parent)
 
         # a sort order too big for the column is clamped rather than handed to the database
         response = self.client.post(
@@ -365,59 +504,13 @@ class ArticleCRUDLTest(TembaTest, CRUDLTestMixin):
         # a helpdesk starts with no palette at all
         self.assertEqual({"colors": {}}, self.client.get(colors_url).json())
 
-        def set_colors(payload):
-            return self.client.post(colors_url, json.dumps(payload), content_type="application/json")
+        # the palette is the bubble colors chosen in the site's settings, and is what every author's editor reads
+        self.helpdesk.set_colors({"1": "#ffe8a3", "3": "#123456"})
+        self.assertEqual({"colors": {"1": "#ffe8a3", "3": "#123456"}}, self.client.get(colors_url).json())
 
-        response = set_colors({"colors": {"0": "#FFE8A3", "1": "#123456"}})
-        self.assertEqual({"status": "ok"}, response.json())
+        # it's read here, never written
+        self.assertEqual(405, self.client.post(colors_url, {"colors": {}}).status_code)
 
-        # the palette is the org's, so it lives on the helpdesk rather than on any one article
-        self.helpdesk.refresh_from_db()
-        self.assertEqual({"0": "#ffe8a3", "1": "#123456"}, self.helpdesk.colors)  # normalized as it's written
-
-        # and is what every author's editor reads back
-        self.assertEqual({"colors": {"0": "#ffe8a3", "1": "#123456"}}, self.client.get(colors_url).json())
-
-        # dropping an entry is how a color stops being offered - articles that embed its index blank until something
-        # new takes it
-        self.assertEqual({"status": "ok"}, set_colors({"colors": {"0": "#ffe8a3"}}).json())
-
-        self.helpdesk.refresh_from_db()
-        self.assertEqual({"0": "#ffe8a3"}, self.helpdesk.colors)
-
-        # a payload that isn't a palette of indexes and hexes is refused rather than half stored
-        for payload in (
-            {"colors": []},
-            {"colors": "#ffe8a3"},
-            {"colors": {"first": "#ffe8a3"}},
-            {"colors": {"0": "red"}},
-            {"colors": {"0": "#ffe8a3; x"}},
-            {"colors": {"0": 16}},
-            {"palette": {}},
-            [],
-        ):
-            response = set_colors(payload)
-            self.assertEqual(400, response.status_code, f"for {payload}")
-            self.assertEqual({"error": "Invalid request."}, response.json())
-
-        response = self.client.post(colors_url, "not json", content_type="application/json")
-        self.assertEqual(400, response.status_code)
-
-        # as is a palette bigger than we offer to author with
-        response = set_colors({"colors": {str(i): "#ffe8a3" for i in range(Knowledge.MAX_COLORS + 1)}})
-        self.assertEqual(400, response.status_code)
-
-        # none of which touched the palette we had
-        self.helpdesk.refresh_from_db()
-        self.assertEqual({"0": "#ffe8a3"}, self.helpdesk.colors)
-
-        # the palette is resolved from the requesting org, so another org's authors get their own
-        self.enable_agents(self.org2)
-        self.login(self.admin2)
-
-        self.assertEqual({"colors": {}}, self.client.get(colors_url).json())
-
-    @cleanup(s3=True)
     def test_upload(self):
         article = Article.create(self.helpdesk, self.admin, "Flows")
 
@@ -461,16 +554,19 @@ class ArticleCRUDLTest(TembaTest, CRUDLTestMixin):
         )
 
         image = article.images.get()
-        self.assertEqual({"uuid": str(image.uuid), "name": "klab.png", "url": image.url}, response.json())
+        self.assertEqual(
+            {"uuid": str(image.uuid), "name": "klab.png", "path": image.path, "url": image.url}, response.json()
+        )
+        self.assertTrue(image.path.startswith(f"orgs/{self.org.id}/knowledge/"))  # the key, not an address
         self.assertEqual("image/png", image.content_type)
         self.assertTrue(public_file_storage.exists(image.path))
 
     @cleanup(s3=True)
     def test_delete(self):
-        parent = Article.create(self.helpdesk, self.admin, "Flows")
-        child = Article.create(self.helpdesk, self.admin, "Nodes", parent=parent)
+        section = Article.create(self.helpdesk, self.admin, "Flows")
+        article = Article.create(self.helpdesk, self.admin, "Nodes", parent=section)
 
-        delete_url = reverse("knowledge.article_delete", args=[parent.uuid])
+        delete_url = reverse("knowledge.article_delete", args=[article.uuid])
 
         # nobody can access if agents feature not enabled
         response = self.requestView(delete_url, self.admin)
@@ -481,12 +577,26 @@ class ArticleCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertRequestDisallowed(delete_url, [None, self.agent, self.admin2])
 
         response = self.assertDeleteFetch(delete_url, [self.editor, self.admin])
-        self.assertContains(response, "You are about to delete")
+        self.assertContains(response, "You are about to delete the article")
 
-        response = self.assertDeleteSubmit(delete_url, self.admin, object_deactivated=parent, success_status=302)
+        # a section holding articles can't go - they'd be left as sections themselves
+        section_url = reverse("knowledge.article_delete", args=[section.uuid])
+        response = self.assertDeleteFetch(section_url, [self.admin])
+        self.assertContains(response, "still holds articles")
+        self.assertNotContains(response, 'type="submit"')
+
+        response = self.requestView(section_url, self.admin, post_data={})
+        self.assertEqual(200, response.status_code)
+        self.assertContains(response, "still holds articles")
+        section.refresh_from_db()
+        self.assertTrue(section.is_active)
+
+        response = self.assertDeleteSubmit(delete_url, self.admin, object_deactivated=article, success_status=302)
         self.assertEqual(reverse("knowledge.article_list"), response.url)
 
-        # the child is reparented rather than orphaned
-        child.refresh_from_db()
-        self.assertIsNone(child.parent)
-        self.assertTrue(child.is_active)
+        # emptied, the section can
+        response = self.assertDeleteFetch(section_url, [self.admin])
+        self.assertContains(response, "You are about to delete the section")
+        self.assertContains(response, 'type="submit"')
+
+        self.assertDeleteSubmit(section_url, self.admin, object_deactivated=section, success_status=302)
