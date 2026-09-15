@@ -299,6 +299,12 @@ class MailroomClient:
     def msg_handle(self, org, msgs):
         return self._request("msg/handle", {"org_id": org.id, "msg_uuids": [str(m.uuid) for m in msgs]})
 
+    def msg_label(self, org, label, msgs, *, add: bool):
+        return self._request(
+            "msg/label",
+            {"org_id": org.id, "label_uuid": str(label.uuid), "msg_uuids": [str(m.uuid) for m in msgs], "add": add},
+        )
+
     def msg_resend(self, org, user, msgs):
         return self._request(
             "msg/resend",

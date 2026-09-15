@@ -1013,32 +1013,17 @@ class Label(TembaModel, DependencyMixin):
 
         return LabelCount.get_totals([self])[self]
 
-    def toggle_label(self, msgs, add):
+    def toggle_label(self, msgs, add: bool):
         """
-        Adds or removes this label from the given messages
+        Adds or removes this label from the given incoming messages, via mailroom which ignores messages that aren't
+        visible or whose labelling wouldn't change.
         """
-
-        changed = set()
 
         for msg in msgs:
-            assert msg.direction == Msg.DIRECTION_IN
+            assert msg.direction == Msg.DIRECTION_IN, "only incoming messages can be labelled"
 
-            # if we are adding the label and this message doesn't have it, add it
-            if add:
-                if not msg.labels.filter(pk=self.pk):
-                    msg.labels.add(self)
-                    changed.add(msg.pk)
-
-            # otherwise, remove it if not already present
-            else:
-                if msg.labels.filter(pk=self.pk):
-                    msg.labels.remove(self)
-                    changed.add(msg.pk)
-
-        # update modified on all our changed msgs
-        Msg.objects.filter(id__in=changed).update(modified_on=timezone.now())
-
-        return changed
+        if msgs:
+            mailroom.get_client().msg_label(self.org, self, msgs, add=add)
 
     def release(self, user):
         super().release(user)  # releases flow dependencies
