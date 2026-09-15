@@ -15,6 +15,7 @@ class CallCRUDL(SmartCRUDL):
         title = _("Calls")
         menu_path = "/msg/calls"
         list_endpoint = "api.internal.calls"
+        show_channel_logs = True
 
         def derive_list_query(self) -> str:
             return ""  # the endpoint has no folders

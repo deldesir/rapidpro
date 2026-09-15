@@ -953,6 +953,39 @@ describe('temba-content-list', () => {
     ).to.equal('360px');
   });
 
+  it('links messages to their channel logs when the host enables them', async () => {
+    const list = (await getComponent(
+      'temba-msg-list',
+      { 'show-logs-after': '2026-05-01T00:00:00Z' },
+      '',
+      700
+    )) as MsgList;
+    (list as any).items = [
+      {
+        uuid: 'msg-1',
+        text: 'hello',
+        contact: { uuid: 'contact-1', name: 'Bob' },
+        channel: { uuid: 'chan-1', name: 'Twilio' },
+        created_on: '2026-05-11T09:12:00.000000Z'
+      },
+      {
+        uuid: 'msg-2',
+        text: 'no channel',
+        contact: { uuid: 'contact-1', name: 'Bob' },
+        channel: null,
+        created_on: '2026-05-11T09:12:00.000000Z'
+      }
+    ];
+    list.requestUpdate();
+    await list.updateComplete;
+
+    const rows = list.shadowRoot.querySelectorAll('tr.row');
+    expect(rows[0].querySelector('.log-link').getAttribute('href')).to.equal(
+      '/channels/channel/logs/chan-1/msg/msg-1/'
+    );
+    expect(rows[1].querySelector('.log-link')).to.not.exist;
+  });
+
   it('renders the messages list (screenshot)', async () => {
     await loadStore();
     const list = (await getComponent(

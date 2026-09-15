@@ -4,7 +4,6 @@ from datetime import timedelta
 from smartmin.views import SmartCRUDL, SmartListView, SmartTemplateView, SmartUpdateView
 
 from django import forms
-from django.conf import settings
 from django.db import models
 from django.db.models import F, Sum, Value
 from django.db.models.aggregates import Max
@@ -17,6 +16,7 @@ from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 
 from temba import mailroom
+from temba.channels.models import ChannelLog
 from temba.contacts.models import URN
 from temba.msgs.models import Msg
 from temba.orgs.models import Org, OrgRole
@@ -409,7 +409,7 @@ class TicketCRUDL(SmartCRUDL):
             context["title"] = folder.name
             context["folder"] = str(folder.slug)
             context["has_tickets"] = self.request.org.tickets.exists()
-            context["msg_logs_after"] = (timezone.now() - settings.RETENTION_PERIODS["channellog"]).isoformat()
+            context["msg_logs_after"] = ChannelLog.get_retention_cutoff().isoformat()
             # serialized for temba-card-layout's settings attribute
             context["card_settings"] = json.dumps(self.request.user.settings.get("contact_cards", {}))
             context["contact_urn_schemes"] = [

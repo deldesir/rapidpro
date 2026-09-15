@@ -1,8 +1,6 @@
 from datetime import datetime, timedelta, timezone as tzone
 from unittest.mock import patch
 
-from django.urls import reverse
-
 from temba.ivr.models import Call
 from temba.tests import TembaTest
 from temba.utils.uuid import uuid7
@@ -44,7 +42,6 @@ class CallTest(TembaTest):
         flow = self.create_flow("IVR")
         contact = self.create_contact("Bob", phone="+250788123123")
         call = self.create_incoming_call(flow, contact)
-        logs_url = reverse("channels.channel_logs_read", args=[self.channel.uuid, "call", call.uuid])
 
         self.assertEqual(
             {
@@ -53,18 +50,12 @@ class CallTest(TembaTest):
                 "status": "completed",
                 "status_display": "Complete",
                 "contact": {"uuid": str(contact.uuid), "name": "Bob"},
+                "channel": {"uuid": str(self.channel.uuid), "name": "Test Channel"},
                 "duration": 15,
                 "created_on": call.created_on.isoformat(),
-                "logs_url": logs_url,
             },
-            call.as_json({"user": self.admin, "org": self.org}),
+            call.as_json(),
         )
-
-        # without a context there's no way to know if the user can see the logs
-        self.assertIsNone(call.as_json()["logs_url"])
-
-        # editors can't see channel logs
-        self.assertIsNone(call.as_json({"user": self.editor, "org": self.org})["logs_url"])
 
         # an errored call includes the reason in its status display
         call.direction = Call.DIRECTION_OUT

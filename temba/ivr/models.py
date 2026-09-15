@@ -113,8 +113,8 @@ class Call(models.Model):
 
     def as_json(self, context=None) -> dict:
         """
-        Internal API shape, consumed by the temba-call-list component. `context` is the DRF serializer context (with
-        `user` / `org`) and is used to resolve the channel-log link, which is permission and retention gated.
+        Internal API shape, consumed by the temba-call-list component. The channel is included so the component can
+        link to the call's channel logs, which the page enables when the user can view them.
         """
         if self.contact.name:
             contact_name = self.contact.name
@@ -129,9 +129,9 @@ class Call(models.Model):
             "status": self.STATUS_SLUGS[self.status],
             "status_display": str(self.status_display),
             "contact": {"uuid": str(self.contact.uuid), "name": contact_name},
+            "channel": {"uuid": str(self.channel.uuid), "name": self.channel.name},
             "duration": int(self.get_duration().total_seconds()),
             "created_on": self.created_on.isoformat(),
-            "logs_url": ChannelLog.get_read_url(self, context["user"], context["org"]) if context else None,
         }
 
     class Meta:

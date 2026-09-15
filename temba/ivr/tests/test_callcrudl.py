@@ -14,3 +14,11 @@ class CallCRUDLTest(CRUDLTestMixin, TembaTest):
         self.assertContains(response, "temba-call-list")
         self.assertEqual(f"{reverse('api.internal.calls')}.json", response.context["list_url"])
         self.assertEqual([], list(response.context["object_list"]))
+
+        # admins can view channel logs so the component is told to link to them
+        self.assertIn("list_logs_after", response.context)
+        self.assertContains(response, "show-logs-after")
+
+        response = self.requestView(list_url, self.editor)
+        self.assertNotIn("list_logs_after", response.context)
+        self.assertNotContains(response, "show-logs-after")
