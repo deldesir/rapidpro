@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-14 16:17-0700\n"
+"POT-Creation-Date: 2026-09-15 01:14+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Language: \n"
 "MIME-Version: 1.0\n"
@@ -2772,6 +2772,22 @@ msgstr ""
 msgid "Calls"
 msgstr ""
 
+msgid "Crisp could not be reached. Please try again later."
+msgstr ""
+
+msgid "Crisp did not accept the API key."
+msgstr ""
+
+msgid "Crisp has no helpdesk for that website."
+msgstr ""
+
+msgid "Crisp returned an unexpected response."
+msgstr ""
+
+#, python-format
+msgid "The helpdesk would exceed its limit of %d articles."
+msgstr ""
+
 msgid "Website"
 msgstr ""
 
@@ -2856,6 +2872,33 @@ msgstr ""
 msgid "This domain is already in use by another help site."
 msgstr ""
 
+msgid "Identifier"
+msgstr ""
+
+msgid "The identifier of a plugin token made in the Crisp marketplace."
+msgstr ""
+
+msgid "The token's key. It's used for this import and not kept."
+msgstr ""
+
+msgid "Website ID"
+msgstr ""
+
+msgid "Only needed if the token has access to more than one website."
+msgstr ""
+
+msgid "That token has no access to any website."
+msgstr ""
+
+msgid "That token has access to several websites, so a website ID is needed."
+msgstr ""
+
+msgid "That token has no access to that website."
+msgstr ""
+
+msgid "That website's helpdesk has no articles."
+msgstr ""
+
 msgid "Shortcuts"
 msgstr ""
 
@@ -2878,6 +2921,12 @@ msgid "Draft"
 msgstr ""
 
 msgid "Published"
+msgstr ""
+
+msgid "Processing"
+msgstr ""
+
+msgid "Something went wrong. Please try again later."
 msgstr ""
 
 msgid "Not available"
@@ -2919,6 +2968,9 @@ msgid "New Section"
 msgstr ""
 
 msgid "Site Settings"
+msgstr ""
+
+msgid "Import from Crisp"
 msgstr ""
 
 msgid "New Article"
@@ -3260,9 +3312,6 @@ msgid "[%(name)s] Invitation to join workspace"
 msgstr ""
 
 msgid "Definitions"
-msgstr ""
-
-msgid "Processing"
 msgstr ""
 
 msgid "Start Date"
@@ -5558,6 +5607,15 @@ msgstr ""
 msgid "Help articles written by your workspace. Published articles are searchable by AI agents."
 msgstr ""
 
+msgid "The import from Crisp did not finish."
+msgstr ""
+
+msgid "Importing from Crisp"
+msgstr ""
+
+msgid "Fetching articles…"
+msgstr ""
+
 msgid "Your help site is live on this domain."
 msgstr ""
 
@@ -5577,6 +5635,15 @@ msgid "Set up"
 msgstr ""
 
 msgid "Not verified"
+msgstr ""
+
+msgid "An import is already in progress. Wait for it to finish before starting another."
+msgstr ""
+
+msgid "Brings every category and article of your Crisp help site into the helpdesk, along with their images. Articles published in Crisp are published here; hidden and draft ones come over as drafts. Links between articles are kept, and your site's old addresses will lead to the right pages once your domain points here."
+msgstr ""
+
+msgid "Make a plugin token for your website in the Crisp marketplace and enter it below."
 msgstr ""
 
 msgid "Add these records to the DNS for"

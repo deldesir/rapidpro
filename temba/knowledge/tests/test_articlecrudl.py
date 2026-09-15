@@ -54,7 +54,7 @@ class ArticleCRUDLTest(TembaTest, CRUDLTestMixin):
 
         # the menu makes sections; articles are added from their section's card, which the page points at the create
         # view for
-        self.assertContentMenu(list_url, self.admin, ["New Section", "Site Settings"])
+        self.assertContentMenu(list_url, self.admin, ["New Section", "Site Settings", "Import from Crisp"])
         self.assertEqual(reverse("knowledge.article_create"), response.context["create_url"])
         self.assertContains(response, "temba-article-add-requested")
 

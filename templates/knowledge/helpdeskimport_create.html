@@ -1,0 +1,30 @@
+{% extends "includes/modax.html" %}
+{% load i18n smartmin %}
+
+{% block modal %}
+  {# an import already underway replaces the form - there's nothing to fill in until it's done #}
+  {% if blocker == "existing-import" %}
+    {% trans "An import is already in progress. Wait for it to finish before starting another." %}
+  {% else %}
+    {{ block.super }}
+  {% endif %}
+{% endblock modal %}
+{% block pre-form %}
+  <div class="mb-4">
+    {% blocktrans trimmed %}
+      Brings every category and article of your Crisp help site into the helpdesk, along with their images. Articles
+      published in Crisp are published here; hidden and draft ones come over as drafts. Links between articles are
+      kept, and your site's old addresses will lead to the right pages once your domain points here.
+    {% endblocktrans %}
+  </div>
+  <div class="mb-4">
+    {% blocktrans trimmed %}
+      Make a plugin token for your website in the Crisp marketplace and enter it below.
+    {% endblocktrans %}
+  </div>
+{% endblock pre-form %}
+{% block fields %}
+  {% render_field 'identifier' %}
+  {% render_field 'key' %}
+  {% render_field 'website_id' %}
+{% endblock fields %}

@@ -17,7 +17,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-14 16:17-0700\n"
+"POT-Creation-Date: 2026-09-15 01:14+0000\n"
 "PO-Revision-Date: 2019-05-13 20:14+0000\n"
 "Language: pt_BR\n"
 "MIME-Version: 1.0\n"
@@ -2790,6 +2790,22 @@ msgstr "Nunca"
 msgid "Calls"
 msgstr "Ligações"
 
+msgid "Crisp could not be reached. Please try again later."
+msgstr "Não foi possível conectar ao Crisp. Tente novamente mais tarde."
+
+msgid "Crisp did not accept the API key."
+msgstr "O Crisp não aceitou a chave de API."
+
+msgid "Crisp has no helpdesk for that website."
+msgstr "O Crisp não tem uma central de ajuda para esse site."
+
+msgid "Crisp returned an unexpected response."
+msgstr "O Crisp retornou uma resposta inesperada."
+
+#, python-format
+msgid "The helpdesk would exceed its limit of %d articles."
+msgstr "A central de ajuda excederia seu limite de %d artigos."
+
 #, fuzzy
 #| msgid "Website Language"
 msgid "Website"
@@ -2878,6 +2894,33 @@ msgstr "Não é possível usar o domínio padrão."
 msgid "This domain is already in use by another help site."
 msgstr "Este domínio já está em uso por outro site de ajuda."
 
+msgid "Identifier"
+msgstr "Identificador"
+
+msgid "The identifier of a plugin token made in the Crisp marketplace."
+msgstr "O identificador de um token de plugin criado no marketplace do Crisp."
+
+msgid "The token's key. It's used for this import and not kept."
+msgstr "A chave do token. É usada para esta importação e não é guardada."
+
+msgid "Website ID"
+msgstr "ID do site"
+
+msgid "Only needed if the token has access to more than one website."
+msgstr "Necessário apenas se o token tiver acesso a mais de um site."
+
+msgid "That token has no access to any website."
+msgstr "Esse token não tem acesso a nenhum site."
+
+msgid "That token has access to several websites, so a website ID is needed."
+msgstr "Esse token tem acesso a vários sites, então é preciso um ID de site."
+
+msgid "That token has no access to that website."
+msgstr "Esse token não tem acesso a esse site."
+
+msgid "That website's helpdesk has no articles."
+msgstr "A central de ajuda desse site não tem artigos."
+
 msgid "Shortcuts"
 msgstr "Atalhos"
 
@@ -2901,6 +2944,12 @@ msgstr "Rascunho"
 
 msgid "Published"
 msgstr "Publicado"
+
+msgid "Processing"
+msgstr "Processando"
+
+msgid "Something went wrong. Please try again later."
+msgstr "Algo deu errado. Tente novamente mais tarde."
 
 msgid "Not available"
 msgstr "Não disponível"
@@ -2950,6 +2999,9 @@ msgstr "Nova seção"
 
 msgid "Site Settings"
 msgstr "Configurações do site"
+
+msgid "Import from Crisp"
+msgstr "Importar do Crisp"
 
 msgid "New Article"
 msgstr "Novo artigo"
@@ -3291,9 +3343,6 @@ msgstr "[%(name)s] Convite para entrar na área de trabalho"
 
 msgid "Definitions"
 msgstr "Definições"
-
-msgid "Processing"
-msgstr "Processando"
 
 msgid "Start Date"
 msgstr "Data de Início"
@@ -5622,6 +5671,15 @@ msgstr "Nenhum artigo"
 msgid "Help articles written by your workspace. Published articles are searchable by AI agents."
 msgstr "Artigos de ajuda escritos pela sua área de trabalho. Os agentes de IA podem pesquisar os artigos publicados."
 
+msgid "The import from Crisp did not finish."
+msgstr "A importação do Crisp não foi concluída."
+
+msgid "Importing from Crisp"
+msgstr "Importando do Crisp"
+
+msgid "Fetching articles…"
+msgstr "Buscando artigos…"
+
 msgid "Your help site is live on this domain."
 msgstr "Seu site de ajuda está no ar neste domínio."
 
@@ -5642,6 +5700,15 @@ msgstr "Configurar"
 
 msgid "Not verified"
 msgstr "Não verificado"
+
+msgid "An import is already in progress. Wait for it to finish before starting another."
+msgstr "Já existe uma importação em andamento. Aguarde a conclusão antes de iniciar outra."
+
+msgid "Brings every category and article of your Crisp help site into the helpdesk, along with their images. Articles published in Crisp are published here; hidden and draft ones come over as drafts. Links between articles are kept, and your site's old addresses will lead to the right pages once your domain points here."
+msgstr "Traz todas as categorias e artigos do seu site de ajuda do Crisp para a central de ajuda, junto com suas imagens. Os artigos publicados no Crisp são publicados aqui; os ocultos e rascunhos chegam como rascunhos. Os links entre artigos são mantidos, e os endereços antigos do seu site levarão às páginas certas assim que seu domínio apontar para cá."
+
+msgid "Make a plugin token for your website in the Crisp marketplace and enter it below."
+msgstr "Crie um token de plugin para o seu site no marketplace do Crisp e informe-o abaixo."
 
 msgid "Add these records to the DNS for"
 msgstr "Adicione estes registros ao DNS de"

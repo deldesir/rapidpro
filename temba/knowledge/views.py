@@ -24,13 +24,14 @@ from temba.utils.views.mixins import ContextMenuMixin, PostOnlyMixin, SpaMixin
 from .forms import (
     ArticleCreateForm,
     ArticleForm,
+    HelpdeskImportForm,
     HelpSiteDomainForm,
     HelpSiteForm,
     KnowledgeForm,
     KnowledgeUpdateForm,
     SectionForm,
 )
-from .models import Article, ArticleImage, HelpSite, Knowledge, KnowledgeItem
+from .models import Article, ArticleImage, HelpdeskImport, HelpSite, Knowledge, KnowledgeItem
 
 
 class KnowledgeCRUDL(SmartCRUDL):
@@ -338,6 +339,16 @@ class ArticleCRUDL(SmartCRUDL):
                     title=_("Site Settings"),
                 )
 
+            # a help site elsewhere can be brought over wholesale, with progress shown on the page as it comes
+            if self.has_org_perm("knowledge.helpdeskimport_create"):
+                menu.add_modax(
+                    _("Import from Crisp"),
+                    "import-crisp",
+                    reverse("knowledge.helpdeskimport_create"),
+                    title=_("Import from Crisp"),
+                    on_submit="refreshHelpdesk()",
+                )
+
         def derive_article_to_edit(self):
             """
             The article the editor should open on arrival, named by the create modal so that titling a new one drops
@@ -375,6 +386,14 @@ class ArticleCRUDL(SmartCRUDL):
                 context["domain_url"] = reverse("knowledge.helpsite_domain")
             if site and site.domain:
                 context["site"] = site
+
+            # an import underway is shown as a bar the page keeps current; one that failed, as why
+            latest_import = HelpdeskImport.get_latest(self.helpdesk)
+            if latest_import and (
+                not latest_import.is_finished or latest_import.status == HelpdeskImport.STATUS_FAILED
+            ):
+                context["helpdesk_import"] = latest_import
+                context["import_status_url"] = reverse("knowledge.helpdeskimport_status")
 
             article = self.derive_article_to_edit()
             if article:
@@ -622,6 +641,68 @@ class ArticleCRUDL(SmartCRUDL):
             # the editor writes the path - the key in storage - into the article and shows the url, so the article
             # never holds the address storage happens to be served from
             return JsonResponse({"uuid": str(image.uuid), "name": image.name, "path": image.path, "url": image.url})
+
+
+class HelpdeskImportCRUDL(SmartCRUDL):
+    model = HelpdeskImport
+    actions = ("create", "status")
+
+    class Create(HelpdeskMixin, BaseCreateModal):
+        """
+        Starts bringing a help site over from Crisp, given a key to it. The import runs in the background from here;
+        the helpdesk page shows how it's going.
+        """
+
+        form_class = HelpdeskImportForm
+        title = _("Import from Crisp")
+        submit_button_name = _("Import")
+        success_url = "hide"
+        success_message = ""
+
+        @classmethod
+        def derive_url_pattern(cls, path, action):
+            return r"^%s/%s/$" % (path, action)
+
+        def get_blocker(self) -> str:
+            return "existing-import" if HelpdeskImport.get_unfinished(self.helpdesk) else ""
+
+        def get_context_data(self, **kwargs):
+            context = super().get_context_data(**kwargs)
+            context["blocker"] = self.get_blocker()
+            return context
+
+        def form_valid(self, form):
+            if self.get_blocker():
+                return self.form_invalid(form)
+
+            return super().form_valid(form)
+
+        def save(self, obj):
+            self.object = HelpdeskImport.create(
+                self.helpdesk,
+                self.request.user,
+                HelpdeskImport.TYPE_CRISP,
+                {
+                    HelpdeskImport.CONFIG_IDENTIFIER: self.form.cleaned_data["identifier"],
+                    HelpdeskImport.CONFIG_KEY: self.form.cleaned_data["key"],
+                    HelpdeskImport.CONFIG_WEBSITE_ID: self.form.cleaned_data["website_id"],
+                    HelpdeskImport.CONFIG_LOCALE: self.form.cleaned_data["locale"],
+                },
+            )
+            self.object.start_async()
+
+    class Status(HelpdeskMixin, OrgPermsMixin, SmartTemplateView):
+        """
+        How the helpdesk's latest import is going, for the bar on the helpdesk page to keep current.
+        """
+
+        @classmethod
+        def derive_url_pattern(cls, path, action):
+            return r"^%s/%s/$" % (path, action)
+
+        def render_to_response(self, context, **response_kwargs):
+            latest = HelpdeskImport.get_latest(self.helpdesk)
+            return JsonResponse({"results": [latest.as_json()] if latest else []})
 
 
 class HelpSiteCRUDL(SmartCRUDL):
