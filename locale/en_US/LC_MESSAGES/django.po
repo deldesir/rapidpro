@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-15 01:14+0000\n"
+"POT-Creation-Date: 2026-09-15 03:55+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Language: \n"
 "MIME-Version: 1.0\n"
@@ -2770,6 +2770,9 @@ msgid "Never"
 msgstr ""
 
 msgid "Calls"
+msgstr ""
+
+msgid "Crisp's rate limit was reached. Please try again later."
 msgstr ""
 
 msgid "Crisp could not be reached. Please try again later."
@@ -5608,6 +5611,9 @@ msgid "Help articles written by your workspace. Published articles are searchabl
 msgstr ""
 
 msgid "The import from Crisp did not finish."
+msgstr ""
+
+msgid "Try Again"
 msgstr ""
 
 msgid "Importing from Crisp"

@@ -56,6 +56,11 @@
               <div class="import-title">{% trans "The import from Crisp did not finish." %}</div>
               <div class="import-note">{{ helpdesk_import.error }}</div>
             </div>
+            {% if import_url %}
+              {# the same dialog as the menu's - the key isn't kept, so trying again means giving it again #}
+              <temba-button small name="{% trans "Try Again" %}" onclick="showImportDialog()">
+              </temba-button>
+            {% endif %}
           </div>
         {% else %}
           <div class="import-card" id="import-card">
@@ -186,6 +191,15 @@
       // the domain card reflects what the domain dialog just did, or an import just started shows its bar
       spaGet(window.location.pathname);
     }
+
+    {% if import_url %}
+    function showImportDialog() {
+      showModax('{{ _("Import from Crisp") |escapejs }}', '{{ import_url }}', {
+        id: 'import-crisp',
+        onSubmit: 'refreshHelpdesk()'
+      });
+    }
+    {% endif %}
 
     {% if helpdesk_import and not helpdesk_import.is_finished %}
     function pollHelpdeskImport(refreshes) {

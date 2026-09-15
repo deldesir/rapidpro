@@ -394,6 +394,8 @@ class ArticleCRUDL(SmartCRUDL):
             ):
                 context["helpdesk_import"] = latest_import
                 context["import_status_url"] = reverse("knowledge.helpdeskimport_status")
+                if self.has_org_perm("knowledge.helpdeskimport_create"):
+                    context["import_url"] = reverse("knowledge.helpdeskimport_create")
 
             article = self.derive_article_to_edit()
             if article:

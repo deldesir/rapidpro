@@ -10,6 +10,7 @@ addresses can be pointed at their new pages.
 import logging
 import re
 import time
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 from uuid import UUID, uuid5
 
@@ -130,6 +131,8 @@ class CrispClient:
 
             time.sleep(2**attempt)
         else:
+            if response is not None and response.status_code == 429:
+                raise CrispError(_("Crisp's rate limit was reached. Please try again later."))
             raise CrispError(_("Crisp could not be reached. Please try again later."))
 
         if response.status_code in (401, 403):
@@ -251,24 +254,36 @@ class CrispImporter:
         return section
 
     def _import_article(self, listing: dict, section: Article) -> Article:
-        detail = self.client.get_article(self.website_id, self.locale, listing["article_id"])
-        title = self._title(detail.get("title") or listing.get("title") or "")
-        body = self._convert(detail.get("content") or "")
-
         article = self._existing(listing["article_id"])
-        if article:
+
+        # an article here already that Crisp hasn't touched since isn't fetched again - a run picking up after an
+        # interrupted one, or a routine re-import, costs a call only for what's new or changed. Only what the
+        # listing itself tells is applied to it.
+        if article and article.is_active and not self._changed_since(listing, article):
+            title = self._title(listing.get("title") or article.title)
             article.parent = section
             article.title = title
             article.slug = Article.get_unique_slug(self.helpdesk, title, ignore=article)
-            article.language = self.language
-            article.is_active = True
             article.modified_by = self.user
+            article.save()
         else:
-            article = Article.create(self.helpdesk, self.user, title, parent=section, language=self.language)
-            article.uuid = self.uuids[listing["article_id"]]
+            detail = self.client.get_article(self.website_id, self.locale, listing["article_id"])
+            title = self._title(detail.get("title") or listing.get("title") or "")
+            body = self._convert(detail.get("content") or "")
 
-        article.body = self._localize_images(article, body)
-        article.save()
+            if article:
+                article.parent = section
+                article.title = title
+                article.slug = Article.get_unique_slug(self.helpdesk, title, ignore=article)
+                article.language = self.language
+                article.is_active = True
+                article.modified_by = self.user
+            else:
+                article = Article.create(self.helpdesk, self.user, title, parent=section, language=self.language)
+                article.uuid = self.uuids[listing["article_id"]]
+
+            article.body = self._localize_images(article, body)
+            article.save()
 
         # Crisp keeps a published article hidden as its own state - here that's a draft
         published = listing.get("status") == "published" and listing.get("visibility", "visible") == "visible"
@@ -278,6 +293,18 @@ class CrispImporter:
             article.unpublish(self.user)
 
         return article
+
+    @staticmethod
+    def _changed_since(listing: dict, article: Article) -> bool:
+        """
+        Whether Crisp has changed the article since it was last written here. Crisp lists when it last touched each
+        article, in milliseconds; without that there's no telling, so it counts as changed.
+        """
+        updated_at = listing.get("updated_at")
+        if not updated_at:
+            return True
+
+        return datetime.fromtimestamp(updated_at / 1000, tz=timezone.utc) > article.modified_on
 
     def _existing(self, crisp_id: str) -> Article | None:
         """

@@ -13,7 +13,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-15 01:14+0000\n"
+"POT-Creation-Date: 2026-09-15 03:55+0000\n"
 "PO-Revision-Date: 2019-05-13 20:14+0000\n"
 "Language: es\n"
 "MIME-Version: 1.0\n"
@@ -2785,6 +2785,9 @@ msgstr "Nunca"
 
 msgid "Calls"
 msgstr "Llamadas"
+
+msgid "Crisp's rate limit was reached. Please try again later."
+msgstr "Se alcanzó el límite de solicitudes de Crisp. Vuelva a intentarlo más tarde."
 
 msgid "Crisp could not be reached. Please try again later."
 msgstr "No se pudo conectar con Crisp. Vuelva a intentarlo más tarde."
@@ -5669,6 +5672,9 @@ msgstr "Artículos de ayuda escritos por su workspace. Los agentes de IA pueden 
 
 msgid "The import from Crisp did not finish."
 msgstr "La importación desde Crisp no terminó."
+
+msgid "Try Again"
+msgstr "Intentar de nuevo"
 
 msgid "Importing from Crisp"
 msgstr "Importando desde Crisp"

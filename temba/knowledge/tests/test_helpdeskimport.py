@@ -1,3 +1,4 @@
+import time
 from unittest.mock import Mock, patch
 
 from django.urls import reverse
@@ -61,6 +62,7 @@ class CrispMock:
                     "status": "published",
                     "visibility": "visible",
                     "url": "https://help.acme.com/en/article/starting-a-flow-9gcerd/",
+                    "updated_at": 1700000000000,
                     "category": {"category_id": FLOWS_ID, "name": "Flows"},
                 },
                 {
@@ -69,6 +71,7 @@ class CrispMock:
                     "status": "published",
                     "visibility": "hidden",
                     "url": None,
+                    "updated_at": 1700000000000,
                     "category": None,
                 },
             ]
@@ -226,10 +229,13 @@ A link to [a hidden one](https://help.acme.com/en/article/hidden-abc123/) can't 
         self.assertEqual(5, self.helpdesk.articles.filter(is_active=True).count())
         self.assertEqual(1, len([url for url in crisp.calls if url == SHOT_URL]))
 
-        # importing again updates what's here rather than making it twice, and doesn't fetch images it already has
+        # importing again updates what's here rather than making it twice, and doesn't fetch images it already has.
+        # Only an article Crisp has touched since is fetched again - the other's listing is enough to republish it
         crisp.details[STARTING_ID]["content"] = f"Changed\n\n![]({SHOT_URL})"
+        crisp.articles[0]["updated_at"] = int(time.time() * 1000) + 60_000
         crisp.articles[1]["visibility"] = "visible"
         crisp.categories[0]["name"] = "Flows!"
+        crisp.calls.clear()
 
         imp2 = self.create_import()
         imp2.perform()
@@ -237,7 +243,8 @@ A link to [a hidden one](https://help.acme.com/en/article/hidden-abc123/) can't 
         imp2.refresh_from_db()
         self.assertEqual(HelpdeskImport.STATUS_COMPLETE, imp2.status)
         self.assertEqual(5, self.helpdesk.articles.filter(is_active=True).count())
-        self.assertEqual(1, len([url for url in crisp.calls if url == SHOT_URL]))
+        self.assertEqual(0, len([url for url in crisp.calls if url == SHOT_URL]))
+        self.assertEqual([STARTING_ID], [url.rsplit("/", 1)[1] for url in crisp.calls if "/article/" in url])
 
         flows.refresh_from_db()
         self.assertEqual("Flows!", flows.title)
@@ -247,6 +254,18 @@ A link to [a hidden one](https://help.acme.com/en/article/hidden-abc123/) can't 
         hidden.refresh_from_db()
         self.assertEqual(Article.STATUS_PUBLISHED, hidden.status)
         self.assertEqual(1, self.helpdesk.articles.filter(title="Uncategorized", is_active=True).count())
+
+        # a listing that doesn't say when it was touched is always fetched
+        del crisp.articles[1]["updated_at"]
+        crisp.details[HIDDEN_ID]["content"] = "Something to see"
+        crisp.calls.clear()
+
+        imp3 = self.create_import()
+        imp3.perform()
+
+        self.assertIn(HIDDEN_ID, [url.rsplit("/", 1)[1] for url in crisp.calls if "/article/" in url])
+        hidden.refresh_from_db()
+        self.assertEqual("Something to see", hidden.body)
 
     @patch("temba.knowledge.crisp.requests.get")
     def test_perform_uuids(self, mock_get):
@@ -336,6 +355,27 @@ A link to [a hidden one](https://help.acme.com/en/article/hidden-abc123/) can't 
         self.assertEqual("Crisp could not be reached. Please try again later.", imp.error)
         self.assertEqual(5, mock_sleep.call_count)
         self.assertEqual(2, imp.num_imported)  # what came before stays
+
+        # its quota running out is said as such, and a run picking up after it doesn't refetch what it got
+        crisp = mock_get.side_effect = CrispMock(fail={f"/article/{HIDDEN_ID}": 429})
+
+        with patch("temba.knowledge.crisp.time.sleep"):
+            imp = self.create_import()
+            imp.perform()
+
+        imp.refresh_from_db()
+        self.assertEqual(HelpdeskImport.STATUS_FAILED, imp.status)
+        self.assertEqual("Crisp's rate limit was reached. Please try again later.", imp.error)
+
+        crisp.fail = {}
+        crisp.calls.clear()
+        imp = self.create_import()
+        imp.perform()
+
+        imp.refresh_from_db()
+        self.assertEqual(HelpdeskImport.STATUS_COMPLETE, imp.status)
+        self.assertEqual([HIDDEN_ID], [url.rsplit("/", 1)[1] for url in crisp.calls if "/article/" in url])
+        self.assertEqual(4, self.helpdesk.articles.filter(is_active=True).count())
 
         # a website the token can't see
         mock_get.side_effect = CrispMock(fail={"/helpdesk": 404})
@@ -528,8 +568,10 @@ class HelpdeskImportCRUDLTest(TembaTest, CRUDLTestMixin):
 
         response = self.requestView(list_url, self.admin)
         self.assertEqual(imp, response.context["helpdesk_import"])
+        self.assertEqual(reverse("knowledge.helpdeskimport_create"), response.context["import_url"])
         self.assertContains(response, "The import from Crisp did not finish.")
         self.assertContains(response, "Crisp did not accept the API key.")
+        self.assertContains(response, "Try Again")
         self.assertNotContains(response, "pollHelpdeskImport(1)")
 
         # and one that finished is nothing to mention
