@@ -35,7 +35,7 @@ if TESTING:
 _db_host = "postgres"
 _valkey_host = "valkey"
 _dynamodb_host = "dynamodb"
-_localstack_host = "localstack"
+_s3_host = "s3"
 
 # -----------------------------------------------------------------------------------
 # AWS
@@ -82,9 +82,9 @@ STORAGES = {
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
 }
 
-# settings used by django-storages (defaults to localstack)
+# settings used by django-storages (defaults to the dev stack's S3)
 AWS_S3_REGION_NAME = AWS_REGION
-AWS_S3_ENDPOINT_URL = f"http://{_localstack_host}:4566"
+AWS_S3_ENDPOINT_URL = f"http://{_s3_host}:8333"
 AWS_S3_ADDRESSING_STYLE = "path"
 AWS_S3_FILE_OVERWRITE = False
 
