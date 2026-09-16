@@ -3,6 +3,7 @@ import traceback
 
 from django.conf import settings
 from django.contrib import messages
+from django.core.exceptions import MiddlewareNotUsed
 from django.http import HttpResponseForbidden
 from django.utils import timezone, translation
 
@@ -21,6 +22,24 @@ class ExceptionMiddleware:
             traceback.print_exc()
 
         return None
+
+
+class AssumeHTTPSMiddleware:
+    """
+    Tells Django every request arrived over https, for when TLS is always terminated in front of the app. Everything
+    that keys off the scheme - CSRF origin checks, HSTS, absolute URLs, the API's SSL requirement - then works without
+    the app having to trust a forwarded header from whatever is in front of it.
+    """
+
+    def __init__(self, get_response=None):
+        if not settings.SECURE_ASSUME_HTTPS:
+            raise MiddlewareNotUsed()
+
+        self.get_response = get_response
+
+    def __call__(self, request):
+        request.META["wsgi.url_scheme"] = "https"
+        return self.get_response(request)
 
 
 class NoStoreMiddleware:
