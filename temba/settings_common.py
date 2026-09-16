@@ -225,6 +225,7 @@ FORM_RENDERER = "django.forms.renderers.TemplatesSetting"
 # things that are only for the app's own responses go below it - static files are served pre-compressed with a
 # far-future max-age and mustn't be gzipped again or marked uncacheable.
 MIDDLEWARE = (
+    "temba.middleware.AssumeHTTPSMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.csp.ContentSecurityPolicyMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -243,6 +244,10 @@ MIDDLEWARE = (
     "temba.middleware.ToastMiddleware",
     "allauth.account.middleware.AccountMiddleware",
 )
+
+# whether to treat every request as having arrived over https regardless of what the connection or any forwarded header
+# says - for when TLS is always terminated in front of the app
+SECURE_ASSUME_HTTPS = False
 
 # nothing here is meant to be embedded in a frame - this is the same thing as X-Frame-Options for browsers that have
 # moved on to CSP for it

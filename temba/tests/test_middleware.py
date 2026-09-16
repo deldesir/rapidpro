@@ -2,11 +2,12 @@ import tempfile
 from pathlib import Path
 
 from django.conf import settings
+from django.core.exceptions import MiddlewareNotUsed
 from django.http import HttpResponse
 from django.test import Client, RequestFactory, override_settings
 from django.urls import reverse
 
-from temba.middleware import NoStoreMiddleware
+from temba.middleware import AssumeHTTPSMiddleware, NoStoreMiddleware
 from temba.tests import TembaTest
 
 
@@ -48,3 +49,19 @@ class ResponseHeadersTest(TembaTest):
         middleware = NoStoreMiddleware(lambda r: HttpResponse("ok", headers={"Cache-Control": "max-age=60"}))
 
         self.assertEqual("max-age=60", middleware(request)["Cache-Control"])
+
+
+class AssumeHTTPSTest(TembaTest):
+    def test_scheme(self):
+        request = RequestFactory().get("/")
+        self.assertFalse(request.is_secure())
+
+        with override_settings(SECURE_ASSUME_HTTPS=True):
+            AssumeHTTPSMiddleware(lambda r: HttpResponse())(request)
+
+        self.assertTrue(request.is_secure())
+        self.assertEqual("https", request.scheme)
+
+    def test_not_used_when_off(self):
+        with self.assertRaises(MiddlewareNotUsed):
+            AssumeHTTPSMiddleware(lambda r: HttpResponse())
