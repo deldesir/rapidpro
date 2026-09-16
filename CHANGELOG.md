@@ -1,3 +1,7 @@
+v26.3.98 (2026-09-16)
+-------------------------
+ * Correct the scheme and host of requests arriving through a load balancer
+
 v26.3.97 (2026-09-16)
 -------------------------
  * Add a setting to treat every request as https instead of trusting a forwarded header
