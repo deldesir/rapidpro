@@ -1,3 +1,7 @@
+v26.3.96 (2026-09-16)
+-------------------------
+ * Page a label's messages by the uuid carried on each labelling
+
 v26.3.95 (2026-09-15)
 -------------------------
  * Set the security, caching and compression response headers from the app rather than relying on a proxy
