@@ -24,21 +24,36 @@ class ExceptionMiddleware:
         return None
 
 
-class AssumeHTTPSMiddleware:
+class ProxiedRequestMiddleware:
     """
-    Tells Django every request arrived over https, for when TLS is always terminated in front of the app. Everything
-    that keys off the scheme - CSRF origin checks, HSTS, absolute URLs, the API's SSL requirement - then works without
-    the app having to trust a forwarded header from whatever is in front of it.
+    Corrects what a request says about how it arrived, for deployments where something always sits in front of the app.
+
+    Two things are otherwise wrong behind a load balancer. The connection reaching the app is plain http even though
+    the client's was https, and everything that keys off the scheme gets that wrong - CSRF origin checks, HSTS,
+    absolute URLs, the API's SSL requirement. And some requests reach the app by its network address rather than by one
+    of its domains, so the allowed hosts check rejects them - health checks being the case that matters, since a load
+    balancer can't be told to address an instance any other way and failing them takes the deployment out of service.
+
+    Both corrections are settings-gated, so a deployment with nothing in front of it is left alone. This has to run
+    before anything that reads the scheme or the host, which is why it's first.
     """
 
     def __init__(self, get_response=None):
-        if not settings.SECURE_ASSUME_HTTPS:
+        if not settings.SECURE_ASSUME_HTTPS and not settings.ALLOWED_HOSTS_EXEMPT_PATHS:
             raise MiddlewareNotUsed()
 
         self.get_response = get_response
 
     def __call__(self, request):
-        request.META["wsgi.url_scheme"] = "https"
+        if settings.SECURE_ASSUME_HTTPS:
+            request.META["wsgi.url_scheme"] = "https"
+
+        # only the host these are addressed by is corrected - whatever is served at them still runs as normal
+        if request.path in settings.ALLOWED_HOSTS_EXEMPT_PATHS:
+            request.META["HTTP_HOST"] = settings.BRAND["domain"]
+            if settings.USE_X_FORWARDED_HOST:
+                request.META["HTTP_X_FORWARDED_HOST"] = settings.BRAND["domain"]
+
         return self.get_response(request)
 
 

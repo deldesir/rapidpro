@@ -225,7 +225,7 @@ FORM_RENDERER = "django.forms.renderers.TemplatesSetting"
 # things that are only for the app's own responses go below it - static files are served pre-compressed with a
 # far-future max-age and mustn't be gzipped again or marked uncacheable.
 MIDDLEWARE = (
-    "temba.middleware.AssumeHTTPSMiddleware",
+    "temba.middleware.ProxiedRequestMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.csp.ContentSecurityPolicyMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -244,6 +244,14 @@ MIDDLEWARE = (
     "temba.middleware.ToastMiddleware",
     "allauth.account.middleware.AccountMiddleware",
 )
+
+# paths which are reached by network address rather than by one of the app's domains, and so would otherwise be
+# rejected by the ALLOWED_HOSTS check - a load balancer health checking an instance is the case that matters. For
+# these the host is replaced with the app's own domain, so get_host() returns that rather than whatever was sent.
+# Nothing served at one of these paths may build URLs from the host, since a forged host is accepted here. Each must
+# be exactly the path asked for, trailing slash and all: a near miss doesn't error, it falls through to the usual
+# host check and fails there.
+ALLOWED_HOSTS_EXEMPT_PATHS = ()
 
 # whether to treat every request as having arrived over https regardless of what the connection or any forwarded header
 # says - for when TLS is always terminated in front of the app

@@ -2,12 +2,12 @@ import tempfile
 from pathlib import Path
 
 from django.conf import settings
-from django.core.exceptions import MiddlewareNotUsed
+from django.core.exceptions import DisallowedHost, MiddlewareNotUsed
 from django.http import HttpResponse
 from django.test import Client, RequestFactory, override_settings
 from django.urls import reverse
 
-from temba.middleware import AssumeHTTPSMiddleware, NoStoreMiddleware
+from temba.middleware import NoStoreMiddleware, ProxiedRequestMiddleware
 from temba.tests import TembaTest
 
 
@@ -51,17 +51,67 @@ class ResponseHeadersTest(TembaTest):
         self.assertEqual("max-age=60", middleware(request)["Cache-Control"])
 
 
-class AssumeHTTPSTest(TembaTest):
-    def test_scheme(self):
+class ProxiedRequestTest(TembaTest):
+    EXEMPT = dict(
+        ALLOWED_HOSTS_EXEMPT_PATHS=("/system/ping/",),
+        ALLOWED_HOSTS=["app.example.com"],
+        BRAND={"domain": "app.example.com"},
+    )
+
+    def test_scheme_assumed_https(self):
         request = RequestFactory().get("/")
         self.assertFalse(request.is_secure())
 
         with override_settings(SECURE_ASSUME_HTTPS=True):
-            AssumeHTTPSMiddleware(lambda r: HttpResponse())(request)
+            ProxiedRequestMiddleware(lambda r: HttpResponse())(request)
 
         self.assertTrue(request.is_secure())
         self.assertEqual("https", request.scheme)
 
-    def test_not_used_when_off(self):
-        with self.assertRaises(MiddlewareNotUsed):
-            AssumeHTTPSMiddleware(lambda r: HttpResponse())
+    def test_scheme_left_alone_when_not_assumed(self):
+        request = RequestFactory().get("/")
+
+        with override_settings(SECURE_ASSUME_HTTPS=False, **self.EXEMPT):
+            ProxiedRequestMiddleware(lambda r: HttpResponse())(request)
+
+        self.assertFalse(request.is_secure())
+
+    def test_host_replaced_for_an_exempt_path(self):
+        # a health checker addresses the instance by its own address, which is never one of our domains
+        request = RequestFactory().get("/system/ping/", headers={"host": "10.0.1.23:8020"})
+
+        with override_settings(**self.EXEMPT):
+            ProxiedRequestMiddleware(lambda r: HttpResponse())(request)
+
+            self.assertEqual("app.example.com", request.get_host())
+
+    def test_forwarded_host_replaced_when_thats_what_is_trusted(self):
+        request = RequestFactory().get(
+            "/system/ping/", headers={"host": "10.0.1.23:8020", "x-forwarded-host": "10.0.1.23:8020"}
+        )
+
+        with override_settings(USE_X_FORWARDED_HOST=True, **self.EXEMPT):
+            ProxiedRequestMiddleware(lambda r: HttpResponse())(request)
+
+            self.assertEqual("app.example.com", request.get_host())
+
+    def test_other_paths_are_untouched(self):
+        request = RequestFactory().get("/msg/", headers={"host": "10.0.1.23:8020"})
+
+        with override_settings(**self.EXEMPT):
+            ProxiedRequestMiddleware(lambda r: HttpResponse())(request)
+
+            self.assertRaises(DisallowedHost, request.get_host)
+
+    def test_not_used_when_neither_correction_is_wanted(self):
+        with override_settings(SECURE_ASSUME_HTTPS=False, ALLOWED_HOSTS_EXEMPT_PATHS=()):
+            with self.assertRaises(MiddlewareNotUsed):
+                ProxiedRequestMiddleware(lambda r: HttpResponse())
+
+    def test_used_when_only_one_correction_is_wanted(self):
+        for only in (
+            dict(SECURE_ASSUME_HTTPS=True, ALLOWED_HOSTS_EXEMPT_PATHS=()),
+            dict(SECURE_ASSUME_HTTPS=False, **self.EXEMPT),
+        ):
+            with override_settings(**only):
+                self.assertIsNotNone(ProxiedRequestMiddleware(lambda r: HttpResponse()))
