@@ -1,3 +1,7 @@
+v26.3.99 (2026-09-16)
+-------------------------
+ * Edit help articles as the help site renders them
+
 v26.3.98 (2026-09-16)
 -------------------------
  * Correct the scheme and host of requests arriving through a load balancer
