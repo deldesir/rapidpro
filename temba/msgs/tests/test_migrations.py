@@ -1,6 +1,7 @@
 from importlib import import_module
 from unittest.mock import patch
 
+from django.db import connection
 from django.utils import timezone
 
 from temba.msgs.models import Msg
@@ -419,3 +420,26 @@ class BackfillMsgLabelUUIDNoRowsTest(MigrationTest):
 
     def test_migration(self):
         self.assertFalse(Msg.labels.through.objects.exists())
+
+
+class RemoveMsgLabelLabelIndexTest(MigrationTest):
+    app = "msgs"
+    migrate_from = "0326_msglabel_msg_uuid_not_null"
+    migrate_to = "0327_remove_msglabel_label_index"
+
+    def setUpBeforeMigration(self, apps):
+        # a database whose table predates Django's index naming has the index under a different name, so the
+        # migration has to find it by what it's on rather than what it's called
+        with connection.cursor() as cursor:
+            cursor.execute("ALTER INDEX msgs_msg_labels_label_id_525dfbc1 RENAME TO msgs_msg_labels_label_id")
+
+    def test_migration(self):
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'msgs_msg_labels'")
+            indexes = dict(cursor.fetchall())
+
+        self.assertNotIn("msgs_msg_labels_label_id", indexes)
+        self.assertNotIn("msgs_msg_labels_label_id_525dfbc1", indexes)
+        self.assertIn("msgs_by_label", indexes)  # the compound index which replaces it is left alone
+        self.assertIn("unique_msg_labels", indexes)
+        self.assertEqual(4, len(indexes))  # pk, msg_id, unique, msgs_by_label
