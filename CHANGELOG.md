@@ -1,3 +1,8 @@
+v26.3.97 (2026-09-16)
+-------------------------
+ * Add a setting to treat every request as https instead of trusting a forwarded header
+ * Drop the plain index on message labellings by label
+
 v26.3.96 (2026-09-16)
 -------------------------
  * Page a label's messages by the uuid carried on each labelling
