@@ -4,6 +4,7 @@ import argparse
 import ast
 import os
 import pathlib
+import re
 import subprocess
 import tempfile
 import tomllib
@@ -176,6 +177,13 @@ if __name__ == "__main__":
                 # output is empty when nothing matches, and otherwise a catalog whose first entry is the header
                 if entries := cmd(f"msgattrib {flags} --no-wrap {po}").strip().split("\n\n", 1)[1:]:
                     problems.append(f"{po}:\n\n{entries[0]}")
+
+            # msgattrib judges a plural entry by its first form alone, so also catch later forms left empty - which
+            # with the catalogs unwrapped is a msgstr[n] "" line with no continuation line after it
+            with open(po) as f:
+                entries = f.read().split("\n\n")
+            if partial := [e for e in entries if "msgid_plural" in e and re.search(r'^msgstr\[\d+\] ""$(?!\n")', e, re.M)]:
+                problems.append(f"{po}:\n\n" + "\n\n".join(partial))
         if problems:
             print(
                 colorama.Fore.RED
