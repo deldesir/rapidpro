@@ -5,6 +5,7 @@ from django.utils import timezone
 from temba.flows.models import Flow
 from temba.msgs.models import Msg, MsgFolder
 from temba.tests import CRUDLTestMixin, TembaTest, mock_mailroom
+from temba.tests.mailroom import derive_msg_folder
 from temba.utils.uuid import uuid7
 
 
@@ -19,25 +20,28 @@ class MsgTest(TembaTest, CRUDLTestMixin):
         self.just_joe = self.create_group("Just Joe", [self.joe])
         self.joe_and_frank = self.create_group("Joe and Frank", [self.joe, self.frank])
 
-    def test_derive_folder(self):
+    def test_folder(self):
         flow = self.create_flow("Test")
 
         def assert_folder(msg, expected):
-            self.assertEqual(expected, msg.derive_folder(), f"folder mismatch for msg #{msg.id}")
+            # test fixtures write the folder at creation like mailroom and courier do
+            self.assertEqual(expected, msg.folder, f"folder mismatch for msg #{msg.id}")
+            self.assertEqual(expected, derive_msg_folder(msg), f"folder mismatch for msg #{msg.id}")
 
         assert_folder(self.create_incoming_msg(self.joe, "Hi"), Msg.FOLDER_INBOX)
         assert_folder(self.create_incoming_msg(self.joe, "Hi", flow=flow), Msg.FOLDER_HANDLED)
-        assert_folder(self.create_incoming_msg(self.joe, "Hi", visibility=Msg.VISIBILITY_ARCHIVED), Msg.FOLDER_ARCHIVED)
-        assert_folder(self.create_outgoing_msg(self.joe, "Hi", status=Msg.STATUS_QUEUED), Msg.FOLDER_OUTBOX)
-        assert_folder(self.create_outgoing_msg(self.joe, "Hi", status=Msg.STATUS_SENT), Msg.FOLDER_SENT)
         assert_folder(self.create_outgoing_msg(self.joe, "Hi", status=Msg.STATUS_FAILED), Msg.FOLDER_FAILED)
 
-        # incoming messages which haven't been handled yet are pending, whatever their visibility
+        # the outbox and sent folders each fold in several statuses
+        for status in (Msg.STATUS_INITIALIZING, Msg.STATUS_QUEUED, Msg.STATUS_ERRORED):
+            assert_folder(self.create_outgoing_msg(self.joe, "Hi", status=status), Msg.FOLDER_OUTBOX)
+
+        for status in (Msg.STATUS_WIRED, Msg.STATUS_SENT, Msg.STATUS_DELIVERED, Msg.STATUS_READ):
+            msg = self.create_outgoing_msg(self.joe, "Hi", status=status, sent_on=timezone.now())
+            assert_folder(msg, Msg.FOLDER_SENT)
+
+        # incoming messages which haven't been handled yet are pending
         assert_folder(self.create_incoming_msg(self.joe, "Hi", status=Msg.STATUS_PENDING), Msg.FOLDER_PENDING)
-        assert_folder(
-            self.create_incoming_msg(self.joe, "Hi", status=Msg.STATUS_PENDING, visibility=Msg.VISIBILITY_ARCHIVED),
-            Msg.FOLDER_PENDING,
-        )
 
         # being deleted takes precedence over everything else
         for visibility in (Msg.VISIBILITY_DELETED_BY_USER, Msg.VISIBILITY_DELETED_BY_SENDER):
@@ -46,6 +50,10 @@ class MsgTest(TembaTest, CRUDLTestMixin):
                 self.create_incoming_msg(self.joe, "Hi", status=Msg.STATUS_PENDING, visibility=visibility),
                 Msg.FOLDER_DELETED,
             )
+
+        # an outgoing message that is pending belongs to no folder - unlikely, but the database permits it
+        with self.assertRaises(AssertionError):
+            derive_msg_folder(Msg(direction=Msg.DIRECTION_OUT, status=Msg.STATUS_PENDING))
 
     def test_as_archive_json(self):
         flow = self.create_flow("Color Flow")
@@ -121,22 +129,6 @@ class MsgTest(TembaTest, CRUDLTestMixin):
             msg2.as_archive_json(),
         )
 
-    def test_as_json_logs_url_without_user_or_org(self):
-        # defensive guard in _get_logs_url: a truthy context missing user/org returns None rather than raising
-        msg = self.create_incoming_msg(self.joe, "hi")
-        self.assertIsNone(msg._get_logs_url({"unrelated": "value"}))
-
-    def test_as_json_logs_url_channel_without_logs(self):
-        context = {"user": self.admin, "org": self.org}
-
-        msg1 = self.create_incoming_msg(self.joe, "hi")
-        self.assertIsNotNone(msg1._get_logs_url(context))
-
-        # msgs on channels of types that don't have logs don't get a logs URL
-        webchat_channel = self.create_channel("WCH", "WebChat", "123")
-        msg2 = self.create_incoming_msg(self.joe, "hi", channel=webchat_channel)
-        self.assertIsNone(msg2._get_logs_url(context))
-
     @patch("django.core.files.storage.default_storage.delete")
     @mock_mailroom
     def test_bulk_soft_delete(self, mr_mocks, mock_storage_delete):
@@ -156,7 +148,7 @@ class MsgTest(TembaTest, CRUDLTestMixin):
         label = self.create_label("Spam")
         label.toggle_label([msg1, msg2], add=True)
 
-        self.assertEqual(2, label.get_visible_count())
+        self.assertEqual(2, label.get_message_count())
 
         # can't soft delete outgoing messages
         with self.assertRaises(AssertionError):
@@ -178,7 +170,7 @@ class MsgTest(TembaTest, CRUDLTestMixin):
         self.assertEqual([], msg1.attachments)
         self.assertEqual(set(), set(msg1.labels.all()))
 
-        self.assertEqual(0, label.get_visible_count())
+        self.assertEqual(0, label.get_message_count())
 
     @patch("django.core.files.storage.default_storage.delete")
     def test_bulk_delete(self, mock_storage_delete):
@@ -212,13 +204,13 @@ class MsgTest(TembaTest, CRUDLTestMixin):
         Msg.bulk_archive(self.org, [msg1])
 
         msg1 = Msg.objects.get(pk=msg1.pk)
-        self.assertEqual(msg1.visibility, Msg.VISIBILITY_ARCHIVED)
+        self.assertEqual(Msg.FOLDER_ARCHIVED, msg1.folder)
         self.assertEqual(set(msg1.labels.all()), {label})  # don't remove labels
 
         Msg.bulk_restore(self.org, [msg1])
 
         msg1 = Msg.objects.get(pk=msg1.id)
-        self.assertEqual(msg1.visibility, Msg.VISIBILITY_VISIBLE)
+        self.assertEqual(Msg.FOLDER_INBOX, msg1.folder)
 
         msg1.delete()
         self.assertFalse(Msg.objects.filter(pk=msg1.pk).exists())
@@ -252,7 +244,8 @@ class MsgTest(TembaTest, CRUDLTestMixin):
             else:
                 msg = self.create_incoming_msg(self.joe, "Hey hey", flow=flow, status=status)
 
-            Msg.objects.filter(id=msg.id).update(visibility=visibility)
+            # write the state the way mailroom does, with the folder
+            Msg.objects.filter(id=msg.id).update(visibility=visibility, folder=folder.code)
 
             # assert our folder count is right
             self.assertEqual(folder.get_count(self.org), 1)
@@ -269,7 +262,7 @@ class MsgTest(TembaTest, CRUDLTestMixin):
 
         # incoming labels
         assertReleaseCount("I", Msg.STATUS_HANDLED, Msg.VISIBILITY_VISIBLE, None, MsgFolder.INBOX)
-        assertReleaseCount("I", Msg.STATUS_HANDLED, Msg.VISIBILITY_ARCHIVED, None, MsgFolder.ARCHIVED)
+        assertReleaseCount("I", Msg.STATUS_HANDLED, Msg.VISIBILITY_VISIBLE, None, MsgFolder.ARCHIVED)
         assertReleaseCount("I", Msg.STATUS_HANDLED, Msg.VISIBILITY_VISIBLE, flow, MsgFolder.HANDLED)
 
     def test_big_ids(self):
@@ -284,6 +277,7 @@ class MsgTest(TembaTest, CRUDLTestMixin):
             text="Hi there",
             channel=self.channel,
             status="H",
+            folder="I",
             msg_type="T",
             is_android=False,
             visibility="V",
@@ -292,7 +286,7 @@ class MsgTest(TembaTest, CRUDLTestMixin):
             modified_on=timezone.now(),
         )
         spam = self.create_label("Spam")
-        msg.labels.add(spam)
+        self.add_msg_label(msg, spam)
 
     def test_foreign_keys(self):
         # create a message which references a flow

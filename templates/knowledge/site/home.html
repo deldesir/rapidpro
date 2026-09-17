@@ -1,0 +1,58 @@
+{% extends "knowledge/site/base.html" %}
+{% load i18n %}
+
+{% block header-search %}
+{% endblock header-search %}
+{% block content %}
+  <section class="hero">
+    <h1>
+      {% if site.tagline %}
+        {{ site.tagline }}
+      {% else %}
+        {% trans "How can we help?" %}
+      {% endif %}
+    </h1>
+    <form class="search hero-search" action="{{ prefix }}/search/" method="get" role="search">
+      <input type="search"
+             name="q"
+             placeholder="{% trans "Search for answers" %}"
+             aria-label="{% trans "Search for answers" %}"
+             autofocus>
+      <button type="submit">{% trans "Search" %}</button>
+    </form>
+  </section>
+  {% if sections %}
+    <section class="sections" aria-label="{% trans "Sections" %}">
+      {% for section in sections %}
+        <a class="card section-card" href="{{ prefix }}/{{ section.slug }}/">
+          <h2>{{ section.title }}</h2>
+          {% if section.description %}<p>{{ section.description }}</p>{% endif %}
+          <span class="meta">
+            {% blocktrans trimmed count counter=section.num_articles %}
+              {{ counter }} article
+            {% plural %}
+              {{ counter }} articles
+            {% endblocktrans %}
+          </span>
+        </a>
+      {% endfor %}
+    </section>
+  {% else %}
+    <p class="empty">{% trans "Nothing has been published here yet." %}</p>
+  {% endif %}
+  {% if popular %}
+    <section class="popular" aria-label="{% trans "Popular articles" %}">
+      <h2>{% trans "Popular articles" %}</h2>
+      <ol>
+        {% for article in popular %}
+          <li>
+            <a href="{{ prefix }}/{{ article.parent.slug }}/{{ article.slug }}/">
+              <span class="title">{{ article.title }}</span>
+              <span class="section">{{ article.parent.title }}</span>
+            </a>
+          </li>
+        {% endfor %}
+      </ol>
+    </section>
+  {% endif %}
+{% endblock content %}

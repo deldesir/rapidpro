@@ -11,6 +11,7 @@ from temba.utils import json
 from ..modifiers import Modifier
 from .exceptions import (
     AIServiceException,
+    ContactLimitReachedException,
     FlowValidationException,
     QueryValidationException,
     RequestException,
@@ -43,31 +44,6 @@ class MailroomClient:
         self.headers = self.default_headers.copy()
         if auth_token:
             self.headers["Authorization"] = "Token " + auth_token
-
-    def android_event(self, org, channel, phone: str, event_type: str, extra: dict, occurred_on):
-        return self._request(
-            "android/event",
-            {
-                "org_id": org.id,
-                "channel_id": channel.id,
-                "phone": phone,
-                "event_type": event_type,
-                "extra": extra,
-                "occurred_on": occurred_on.isoformat(),
-            },
-        )
-
-    def android_message(self, org, channel, phone: str, text: str, received_on):
-        return self._request(
-            "android/message",
-            {
-                "org_id": org.id,
-                "channel_id": channel.id,
-                "phone": phone,
-                "text": text,
-                "received_on": received_on.isoformat(),
-            },
-        )
 
     def android_sync(self, channel):
         return self._request("android/sync", {"channel_id": channel.id})
@@ -243,6 +219,15 @@ class MailroomClient:
 
         return RecipientsPreview(query=resp["query"], total=resp["total"])
 
+    def knowledge_search(self, org, query: str, limit: int = 10) -> list[dict]:
+        """
+        Searches the org's indexed knowledge semantically, returning the matching chunks best first - each naming its
+        source (knowledge_uuid) and item (item_key) along with the chunk's text and score.
+        """
+        resp = self._request("knowledge/search", {"org_id": org.id, "query": query, "limit": limit})
+
+        return resp["results"]
+
     def llm_translate(self, llm, source: str, target: str, items: dict[str, list[str]]) -> dict[str, list[str]]:
         resp = self._request(
             "llm/translate",
@@ -266,7 +251,6 @@ class MailroomClient:
         contacts,
         urns: list,
         query: str,
-        node_uuid: str,
         exclude: Exclusions,
         template,
         template_variables: list,
@@ -283,7 +267,6 @@ class MailroomClient:
                 "contact_ids": [c.id for c in contacts],
                 "urns": urns,
                 "query": query,
-                "node_uuid": node_uuid,
                 "exclude": asdict(exclude) if exclude else None,
                 "template_id": template.id if template else None,
                 "template_variables": template_variables,
@@ -315,6 +298,12 @@ class MailroomClient:
 
     def msg_handle(self, org, msgs):
         return self._request("msg/handle", {"org_id": org.id, "msg_uuids": [str(m.uuid) for m in msgs]})
+
+    def msg_label(self, org, label, msgs, *, add: bool):
+        return self._request(
+            "msg/label",
+            {"org_id": org.id, "label_uuid": str(label.uuid), "msg_uuids": [str(m.uuid) for m in msgs], "add": add},
+        )
 
     def msg_resend(self, org, user, msgs):
         return self._request(
@@ -475,8 +464,14 @@ class MailroomClient:
                 raise QueryValidationException(error, code, extra)
             elif domain == "urn":
                 raise URNValidationException(error, code, extra["index"])
+            elif domain == "limit" and code == "contacts":
+                raise ContactLimitReachedException(error, extra["limit"])
             elif domain == "ai":
                 raise AIServiceException(error, code, extra["instructions"], extra["input"])
+            else:
+                # an error domain we don't know about is still an error, so fail loudly rather than returning
+                # the error body to the caller as if it was a successful response
+                raise RequestException(endpoint, payload, response)
 
         elif 400 <= response.status_code < 600:
             raise RequestException(endpoint, payload, response)

@@ -2,13 +2,16 @@
 SESSION_COOKIE_SECURE = True
 SESSION_COOKIE_AGE = 1209600  # 2 weeks
 
+# ... and since nothing can work without https, treat every request as having arrived over it. TLS is terminated by
+# whatever sits in front of the app, so this is what tells Django the scheme rather than a forwarded header it would
+# otherwise have to trust.
+SECURE_ASSUME_HTTPS = True
+
 # settings used by SecurityMiddleware
-SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = False
-SECURE_HSTS_SECONDS = 86400  # 24 hours
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "HTTPS")
+SECURE_HSTS_SECONDS = 31536000  # 1 year
 SECURE_REDIRECT_EXEMPT = []
 SECURE_SSL_HOST = None
 SECURE_SSL_REDIRECT = False

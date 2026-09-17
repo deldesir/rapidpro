@@ -24,7 +24,7 @@ from django.contrib.postgres.validators import ArrayMinLengthValidator
 from django.core.files import File
 from django.core.files.storage import default_storage
 from django.db import models, transaction
-from django.db.models import Count, Prefetch, Q
+from django.db.models import Count, Exists, Prefetch, Q
 from django.utils import timezone
 from django.utils.encoding import force_str
 from django.utils.functional import cached_property
@@ -257,7 +257,9 @@ class Org(LegacyIDMixin, SmartModel):
     )
 
     LIMIT_CHANNELS = "channels"
+    LIMIT_CONTACTS = "contacts"
     LIMIT_FIELDS = "fields"
+    LIMIT_FLOWS = "flows"
     LIMIT_GLOBALS = "globals"
     LIMIT_GROUPS = "groups"
     LIMIT_KNOWLEDGE = "knowledge"
@@ -283,6 +285,9 @@ class Org(LegacyIDMixin, SmartModel):
     name = models.CharField(verbose_name=_("Name"), max_length=128)
     parent = models.ForeignKey("orgs.Org", on_delete=models.PROTECT, null=True, related_name="children")
     users = models.ManyToManyField(settings.AUTH_USER_MODEL, through="OrgMembership", related_name="orgs")
+
+    # auth groups whose members have the administrator role in this org without needing a membership
+    admin_groups = models.ManyToManyField(Group, related_name="admin_orgs")
 
     language = models.CharField(
         verbose_name=_("Default Language"),
@@ -336,6 +341,7 @@ class Org(LegacyIDMixin, SmartModel):
         super().__init__(*args, **kwargs)
 
         self._membership_cache = {}
+        self._group_admin_cache = {}
 
     @classmethod
     def get_unique_slug(cls, name):
@@ -435,7 +441,7 @@ class Org(LegacyIDMixin, SmartModel):
 
         return [t for t in IntegrationType.get_all(category) if t.is_connected(self)]
 
-    def get_limit(self, limit_type):
+    def get_limit(self, limit_type) -> int:
         return int(self.limits.get(limit_type, settings.ORG_LIMIT_DEFAULTS.get(limit_type)))
 
     def suspend(self):
@@ -905,18 +911,40 @@ class Org(LegacyIDMixin, SmartModel):
         """
 
         def get():
-            return OrgMembership.objects.filter(org=self, user=user).first()
+            # fetch the membership along with whether the user is in one of our admin groups so we can cache that too
+            # without an extra query
+            in_admin_group = Exists(self.admin_groups.filter(user=user))
+            membership = (
+                OrgMembership.objects.filter(org=self, user=user).annotate(user_in_admin_group=in_admin_group).first()
+            )
+            if membership:
+                self._group_admin_cache[user] = membership.user_in_admin_group
+            return membership
 
         if user not in self._membership_cache:
             self._membership_cache[user] = get()
         return self._membership_cache[user]
 
-    def get_user_role(self, user: User):
+    def has_group_admin(self, user: User) -> bool:
         """
-        Convenience method to get just the role of the given user in this org (if any).
+        Returns whether the given user is an administrator of this org via one of its admin groups.
         """
 
-        membership = self.get_membership(user)
+        if user not in self._group_admin_cache:
+            self._group_admin_cache[user] = self.admin_groups.filter(user=user).exists()
+        return self._group_admin_cache[user]
+
+    def get_user_role(self, user: User):
+        """
+        Gets the role of the given user in this org (if any). Members of the org's admin groups always have the
+        administrator role regardless of any explicit membership.
+        """
+
+        membership = self.get_membership(user)  # fetched first as it also caches the admin group check
+
+        if self.has_group_admin(user):
+            return OrgRole.ADMINISTRATOR
+
         return membership.role if membership else None
 
     def create_sample_flows(self, api_url):
@@ -1042,14 +1070,16 @@ class Org(LegacyIDMixin, SmartModel):
         Initializes an organization, creating all the dependent objects we need for it to work properly.
         """
         from temba.contacts.models import ContactField, ContactGroup
-        from temba.knowledge.models import Knowledge
+        from temba.knowledge.models import KnowledgeSource
         from temba.tickets.models import Team, Topic
 
         ContactGroup.create_system_groups(self)
         ContactField.create_system_fields(self)
         Team.create_system(self)
         Topic.create_system(self)
-        Knowledge.create_system(self)  # both system sources; MUST be last so seeded UUIDs stay stable in test dumps
+        KnowledgeSource.create_system(
+            self
+        )  # both system sources; MUST be last so seeded UUIDs stay stable in test dumps
 
         # we should be called within a transaction, create the sample flows when its committed
         if sample_flows:
@@ -1080,7 +1110,7 @@ class Org(LegacyIDMixin, SmartModel):
         # release any user that belongs only to us
         if release_users:
             for org_user in self.users.all():
-                # check if this user is a member of any org
+                # check if this user has access to any other org
                 other_orgs = org_user.get_orgs().exclude(id=self.id)
                 if not other_orgs:
                     org_user.release(user)
@@ -1139,8 +1169,8 @@ class Org(LegacyIDMixin, SmartModel):
 
         # delete contact-related data
         delete_in_batches(self.http_logs.all())
-        for kb in self.knowledge.all():
-            kb.delete()  # batched purge of chunks, items, articles, images + their storage objects
+        for source in self.sources.all():
+            source.delete()  # batched purge of chunks, items, articles, images + their storage objects
         delete_in_batches(self.shortcuts.all())
         delete_in_batches(self.tickets.all())
         delete_in_batches(self.topics.all())

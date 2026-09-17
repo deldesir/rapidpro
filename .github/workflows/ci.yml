@@ -106,12 +106,14 @@ jobs:
         ports:
           - 5432:5432
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
-      localstack:
-        image: localstack/localstack:4.14
+      s3:
+        image: chrislusf/seaweedfs:4.47
         env:
-          SERVICES: s3
+          AWS_ACCESS_KEY_ID: root
+          AWS_SECRET_ACCESS_KEY: tembatemba
         ports:
-          - 4566:4566
+          - 8333:8333
+        options: --health-cmd "curl -f http://localhost:8333/status" --health-interval 5s --health-timeout 2s --health-retries 10
       dynamodb:
         image: amazon/dynamodb-local:3.3.1
         ports:
@@ -156,6 +158,9 @@ jobs:
           # check we can collect and compress all static files
           uv run python manage.py collectstatic --noinput --verbosity=0
           uv run python manage.py compress --extension=".html" --settings=temba.settings_compress
+          # collectstatic writes .gz/.br siblings for what it collects, but the compressor bundles are written
+          # after it, so they need their own pass - without it WhiteNoise serves them uncompressed
+          uv run python -m whitenoise.compress sitestatic
 
       - name: Run tests
         run: uv run coverage run manage.py test --keepdb --noinput --verbosity=2 --parallel 4

@@ -344,6 +344,11 @@ const foreignInline = (node: Node): Node[] => {
     }
     const img = document.createElement('img');
     img.setAttribute('src', src);
+    // a relative reference resolved for display keeps the reference it was written with alongside
+    const reference = element.getAttribute('data-src');
+    if (reference) {
+      img.setAttribute('data-src', reference);
+    }
     img.setAttribute('alt', element.getAttribute('alt') || '');
     return [img];
   }
@@ -708,7 +713,8 @@ const inlineNode = (node: Node): string => {
       return codeSpan(element.textContent.replace(NBSP, ' '));
     case 'IMG': {
       const alt = (element.getAttribute('alt') || '').replace(/[[\]]/g, '');
-      return `![${alt}](${destination(element.getAttribute('src') || '')})`;
+      // written as it was referenced - the src may be that reference resolved for display
+      return `![${alt}](${destination(element.getAttribute('data-src') ?? (element.getAttribute('src') || ''))})`;
     }
     case 'A': {
       const title = element.getAttribute('title');

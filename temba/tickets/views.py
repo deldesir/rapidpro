@@ -4,7 +4,6 @@ from datetime import timedelta
 from smartmin.views import SmartCRUDL, SmartListView, SmartTemplateView, SmartUpdateView
 
 from django import forms
-from django.conf import settings
 from django.db import models
 from django.db.models import F, Sum, Value
 from django.db.models.aggregates import Max
@@ -17,6 +16,7 @@ from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 
 from temba import mailroom
+from temba.channels.models import ChannelLog
 from temba.contacts.models import URN
 from temba.msgs.models import Msg
 from temba.orgs.models import Org, OrgRole
@@ -65,9 +65,26 @@ def shortcuts_url(org) -> str:
     Where shortcut CRUD lands: the fixed shortcuts page for agent orgs, the plain list otherwise.
     """
     if Org.FEATURE_AGENTS in org.features:
-        return reverse("knowledge.knowledge_shortcuts")
+        return reverse("knowledge.knowledgesource_shortcuts")
 
     return reverse("tickets.shortcut_list")
+
+
+class SearchMixin:
+    """
+    Mounts cross-ticket search (see tickets/search.html) on a page in the tickets section. The search button is part of
+    the section menu (see TicketCRUDL.Menu) rather than any one page, so every page there needs to be able to open it.
+    """
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        # cross-ticket search is only available to users who can access all topics (see TicketCRUDL.Search)
+        context["can_search"] = (
+            self.has_org_perm("tickets.ticket_list")
+            and Topic.get_restriction(self.request.org, self.request.user) is None
+        )
+        return context
 
 
 class ShortcutCRUDL(SmartCRUDL):
@@ -95,7 +112,7 @@ class ShortcutCRUDL(SmartCRUDL):
         def get_redirect_url(self, **kwargs):
             return shortcuts_url(self.request.org)
 
-    class List(SpaMixin, ContextMenuMixin, BaseListView):
+    class List(SpaMixin, SearchMixin, ContextMenuMixin, BaseListView):
         menu_path = "/ticket/shortcuts"
 
         def derive_queryset(self, **kwargs):
@@ -149,7 +166,13 @@ class TeamCRUDL(SmartCRUDL):
         success_url = "@tickets.team_list"
 
         def save(self, obj):
-            return Team.create(self.request.org, self.request.user, obj.name, topics=self.form.cleaned_data["topics"])
+            return Team.create(
+                self.request.org,
+                self.request.user,
+                obj.name,
+                topics=self.form.cleaned_data["topics"],
+                all_topics=self.form.cleaned_data["all_topics"],
+            )
 
     class Update(BaseUpdateModal):
         form_class = TeamForm
@@ -173,7 +196,7 @@ class TeamCRUDL(SmartCRUDL):
             return super().derive_queryset(**kwargs).order_by(Lower("name"))
 
         def build_context_menu(self, menu):
-            if self.has_org_perm("tickets.team_create") and not self.is_limit_reached():
+            if self.has_org_perm("tickets.team_create") and not self.is_limit_reached:
                 menu.add_modax(
                     _("New"), "new-team", reverse("tickets.team_create"), title=_("New Team"), as_button=True
                 )
@@ -186,6 +209,17 @@ class TeamCRUDL(SmartCRUDL):
                 team.user_count = team.get_users().count()
 
             return context
+
+
+class TeamScopedMixin:
+    """
+    Mixin for analytics views which agent users see scoped to their team. Other users see the whole workspace.
+    """
+
+    @cached_property
+    def team(self):
+        membership = self.request.org.get_membership(self.request.user)
+        return membership.team if membership else None  # only agent memberships have a team
 
 
 class TicketCRUDL(SmartCRUDL):
@@ -289,21 +323,23 @@ class TicketCRUDL(SmartCRUDL):
 
             return menu
 
-    class Analytics(SpaMixin, ContextMenuMixin, OrgPermsMixin, SmartTemplateView):
+    class Analytics(TeamScopedMixin, SpaMixin, SearchMixin, ContextMenuMixin, OrgPermsMixin, SmartTemplateView):
         permission = "tickets.ticket_analytics"
         title = _("Analytics")
         menu_path = "/ticket/analytics"
 
         def build_context_menu(self, menu):
-            menu.add_link(_("Export Raw"), reverse("tickets.ticket_analytics_export"))
+            if self.has_org_perm("tickets.ticket_analytics_export"):
+                menu.add_link(_("Export Raw"), reverse("tickets.ticket_analytics_export"))
 
         def get_context_data(self, **kwargs):
             context = super().get_context_data(**kwargs)
-            context["has_teams"] = Org.FEATURE_TEAMS in self.request.org.features
+            context["team"] = self.team
+            context["has_teams"] = Org.FEATURE_TEAMS in self.request.org.features and not self.team
             return context
 
     class AnalyticsExport(OrgPermsMixin, SmartTemplateView):
-        permission = "tickets.ticket_analytics"
+        permission = "tickets.ticket_analytics_export"
 
         def render_to_response(self, context, **response_kwargs):
             num_days = self.request.GET.get("days", 90)
@@ -314,7 +350,7 @@ class TicketCRUDL(SmartCRUDL):
 
             return response_from_workbook(workbook, f"ticket-stats-{timezone.now().strftime('%Y-%m-%d')}.xlsx")
 
-    class List(SpaMixin, ContextMenuMixin, OrgPermsMixin, SmartListView):
+    class List(SpaMixin, SearchMixin, ContextMenuMixin, OrgPermsMixin, SmartListView):
         """
         Placeholder view for the ticketing frontend components which fetch tickets from the folders view below.
         """
@@ -373,7 +409,7 @@ class TicketCRUDL(SmartCRUDL):
             context["title"] = folder.name
             context["folder"] = str(folder.slug)
             context["has_tickets"] = self.request.org.tickets.exists()
-            context["msg_logs_after"] = (timezone.now() - settings.RETENTION_PERIODS["channellog"]).isoformat()
+            context["msg_logs_after"] = ChannelLog.get_retention_cutoff().isoformat()
             # serialized for temba-card-layout's settings attribute
             context["card_settings"] = json.dumps(self.request.user.settings.get("contact_cards", {}))
             context["contact_urn_schemes"] = [
@@ -393,9 +429,6 @@ class TicketCRUDL(SmartCRUDL):
             context["user_role"] = membership.role_code if membership else OrgRole.ADMINISTRATOR.code
             context["can_assign"] = membership.can_assign if membership else True
             context["can_reply_non_own"] = membership.can_reply_non_own if membership else True
-
-            # cross-ticket search is only available to users who can access all topics (see TicketCRUDL.Search)
-            context["can_search"] = Topic.get_restriction(self.request.org, self.request.user) is None
 
             return context
 
@@ -719,7 +752,7 @@ class TicketCRUDL(SmartCRUDL):
             self.get_object().add_note(self.request.user, note=form.cleaned_data["note"])
             return self.render_modal_response(form)
 
-    class Chart(OrgPermsMixin, ChartViewMixin, SmartTemplateView):
+    class Chart(TeamScopedMixin, OrgPermsMixin, ChartViewMixin, SmartTemplateView):
         permission = "tickets.ticket_analytics"
         default_chart_period = (-timedelta(days=90), timedelta(days=1))
 
@@ -730,7 +763,13 @@ class TicketCRUDL(SmartCRUDL):
         def get_opened_chart(self, org, since, until) -> tuple:
             topics_by_id = {t.id: t.name for t in org.topics.filter(is_active=True)}
 
-            counts = org.daily_counts.period(since, until).prefix("tickets:opened:").day_totals(scoped=True)
+            counts = org.daily_counts.period(since, until).prefix("tickets:opened:")
+
+            # agents on a topic-limited team only see openings in their team's topics
+            if self.team and not self.team.all_topics:
+                counts = counts.filter(scope__in=[f"tickets:opened:{t.id}" for t in self.team.topics.all()])
+
+            counts = counts.day_totals(scoped=True)
 
             # collect all dates and values by topic
             dates_set = set()
@@ -753,6 +792,9 @@ class TicketCRUDL(SmartCRUDL):
             return [d.strftime("%Y-%m-%d") for d in labels], datasets
 
         def get_resptime_chart(self, org, since, until) -> tuple:
+            if self.team:  # response times are only tracked workspace-wide
+                raise Http404()
+
             counts = org.daily_counts.period(since, until).prefix("ticketresptime:").day_totals(scoped=True)
             totals_by_date, counts_by_date = {}, {}
             for (day, scope), count in counts.items():
@@ -776,6 +818,18 @@ class TicketCRUDL(SmartCRUDL):
             return [d.strftime("%Y-%m-%d") for d in labels], [{"label": _("Response Time"), "data": data}]
 
         def get_replies_chart(self, org, since, until) -> tuple:
+            # agents only see replies from their own team
+            if self.team:
+                counts = (
+                    org.daily_counts.period(since, until)
+                    .prefix(f"msgs:ticketreplies:{self.team.id}:")
+                    .day_totals(scoped=False)
+                )
+                labels = sorted(counts.keys())
+                return [d.strftime("%Y-%m-%d") for d in labels], [
+                    {"label": self.team.name, "data": [counts[d] for d in labels]}
+                ]
+
             teams_by_id = {t.id: t.name for t in org.teams.filter(is_active=True)}
             # Add default team (id=0) for users not assigned to specific teams
             teams_by_id[0] = _("No Team")
@@ -821,14 +875,16 @@ class TicketCRUDL(SmartCRUDL):
             elif chart == "replies":
                 return self.get_replies_chart(self.request.org, since, until)
 
-    class Leaderboard(OrgPermsMixin, ChartViewMixin, SmartTemplateView):
+    class Leaderboard(TeamScopedMixin, OrgPermsMixin, ChartViewMixin, SmartTemplateView):
         permission = "tickets.ticket_analytics"
 
         def render_to_response(self, context, **response_kwargs):
             org = self.request.org
             since, until = self.get_chart_period()
 
-            daily_counts = org.daily_counts.period(since, until).prefix("msgs:ticketreplies:")
+            # agents only see responders from their own team
+            prefix = f"msgs:ticketreplies:{self.team.id}:" if self.team else "msgs:ticketreplies:"
+            daily_counts = org.daily_counts.period(since, until).prefix(prefix)
 
             counts = (
                 daily_counts.annotate(

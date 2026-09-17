@@ -242,9 +242,21 @@ class ModifiedOnCursorPagination(CursorPagination):
             return self.ordering
 
 
-class SentOnCursorPagination(CursorPagination):
-    ordering = ("-sent_on", "-id")
-    offset_cutoff = 100000
+class UUIDCursorPagination(CursorPagination):
+    """
+    For objects whose uuids are v7 and so time ordered
+    """
+
+    ordering = ("-uuid",)
+
+
+class LabelMsgUUIDCursorPagination(CursorPagination):
+    """
+    For messages listed by label, which are paged by the copy of the message's uuid carried on each labelling (see
+    Label.get_queryset), so that a page is a read of the labellings index rather than a sort.
+    """
+
+    ordering = ("-label_msg_uuid",)
 
 
 class DateJoinedCursorPagination(CursorPagination):

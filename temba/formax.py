@@ -3,6 +3,7 @@ import logging
 from django.conf import settings
 import time
 
+from django.core.exceptions import PermissionDenied
 from django.http import HttpResponseRedirect
 from django.urls import resolve
 
@@ -66,7 +67,11 @@ class Formax:
         if open == name:  # pragma: needs cover
             action = "open"
 
-        response = resolver.func(self.request, *resolver.args, **resolver.kwargs)
+        # sections the user doesn't have permission for are just omitted
+        try:
+            response = resolver.func(self.request, *resolver.args, **resolver.kwargs)
+        except PermissionDenied:
+            return
 
         # redirects don't do us any good
         if not isinstance(response, HttpResponseRedirect):

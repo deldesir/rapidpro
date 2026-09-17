@@ -50,6 +50,24 @@ class Call(models.Model):
         (ERROR_SUSPENDED, _("Workspace suspended")),  # the call was never made because the workspace is suspended
     )
 
+    # slugs used for statuses and error reasons in the internal API
+    STATUS_SLUGS = {
+        STATUS_PENDING: "pending",
+        STATUS_QUEUED: "queued",
+        STATUS_WIRED: "wired",
+        STATUS_IN_PROGRESS: "in_progress",
+        STATUS_COMPLETED: "completed",
+        STATUS_ERRORED: "errored",
+        STATUS_FAILED: "failed",
+    }
+    ERROR_SLUGS = {
+        ERROR_PROVIDER: "provider",
+        ERROR_BUSY: "busy",
+        ERROR_NOANSWER: "no_answer",
+        ERROR_MACHINE: "machine",
+        ERROR_SUSPENDED: "suspended",
+    }
+
     RETRY_CHOICES = ((-1, _("Never")), (30, _("After 30 minutes")), (60, _("After 1 hour")), (1440, _("After 1 day")))
 
     uuid = models.UUIDField(unique=True)
@@ -87,23 +105,36 @@ class Call(models.Model):
 
         return timedelta(seconds=duration)
 
-    @property
-    def status_display(self) -> str:
-        """
-        Gets the status/error_reason as display text, e.g. Wired, Errored (No Answer)
-        """
-        status = self.get_status_display()
-        if self.status in (self.STATUS_ERRORED, self.STATUS_FAILED) and self.error_reason:
-            status += f" ({self.get_error_reason_display()})"
-        return status
-
     def get_logs(self) -> list:
         return ChannelLog.get_by_uuid(self.channel, self.log_uuids or [])
 
+    def as_json(self, context=None) -> dict:
+        """
+        Internal API shape, consumed by the temba-call-list component. The channel is included so the component can
+        link to the call's channel logs, which the page enables when the user can view them.
+        """
+        if self.contact.name:
+            contact_name = self.contact.name
+        elif self.org.is_anon:
+            contact_name = self.contact.ref
+        else:
+            contact_name = self.contact_urn.get_display(self.org)
+
+        return {
+            "uuid": str(self.uuid),
+            "direction": "in" if self.direction == self.DIRECTION_IN else "out",
+            "status": self.STATUS_SLUGS[self.status],
+            "error_reason": self.ERROR_SLUGS[self.error_reason] if self.error_reason else None,
+            "contact": {"uuid": str(self.contact.uuid), "name": contact_name},
+            "channel": {"uuid": str(self.channel.uuid), "name": self.channel.name},
+            "duration": int(self.get_duration().total_seconds()),
+            "created_on": self.created_on.isoformat(),
+        }
+
     class Meta:
         indexes = [
-            # used to list calls in UI
-            models.Index(name="calls_org_created_on", fields=["org", "-created_on"]),
+            # used to list calls in the UI, which pages by uuid (time ordered, as call uuids are v7)
+            models.Index(name="calls_by_org", fields=["org", "-uuid"]),
             # used by mailroom to fetch calls that need to be retried
             models.Index(
                 name="calls_to_retry",

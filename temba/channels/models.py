@@ -12,6 +12,7 @@ from django_valkey import get_valkey_connection
 from phonenumbers import NumberParseException
 from twilio.base.exceptions import TwilioRestException
 
+from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
 from django.contrib.postgres.indexes import OpClass
 from django.db import models
@@ -594,51 +595,12 @@ class Channel(LegacyIDMixin, TembaModel, DependencyMixin):
 
         return self.address
 
-    def get_last_sent_message(self):
-        from temba.msgs.models import Msg
-
-        # find last successfully sent message
-        return (
-            self.msgs.filter(status__in=[Msg.STATUS_SENT, Msg.STATUS_DELIVERED], direction=Msg.DIRECTION_OUT)
-            .exclude(sent_on=None)
-            .order_by("-sent_on")
-            .first()
-        )
-
-    def get_delayed_outgoing_messages(self):
-        from temba.msgs.models import Msg
-
-        one_hour_ago = timezone.now() - timedelta(hours=1)
-        latest_sent_message = self.get_last_sent_message()
-
-        # if the last sent message was in the last hour, assume this channel is ok
-        if latest_sent_message and latest_sent_message.sent_on > one_hour_ago:  # pragma: no cover
-            return Msg.objects.none()
-
-        messages = self.get_unsent_messages()
-
-        # channels have an hour to send messages before we call them delays, so ignore all messages created in last hour
-        messages = messages.filter(created_on__lt=one_hour_ago)
-
-        # if we have a successfully sent message, we're only interested a new failures since then. Note that we use id
-        # here instead of created_on because we won't hit the outbox index if we use a range condition on created_on.
-        if latest_sent_message:  # pragma: needs cover
-            messages = messages.filter(id__gt=latest_sent_message.id)
-
-        return messages
-
     @cached_property
     def last_sync(self):
         """
         Gets the last sync event for this channel (only applies to Android channels)
         """
         return self.sync_events.order_by("id").last()
-
-    def get_unsent_messages(self):
-        # use our optimized index for our org outbox
-        from temba.msgs.models import Msg
-
-        return Msg.objects.filter(org=self.org.id, status__in=["P", "Q"], direction="O", visibility="V", channel=self)
 
     def is_new(self):
         # is this channel newer than an hour
@@ -673,9 +635,13 @@ class Channel(LegacyIDMixin, TembaModel, DependencyMixin):
             # delay mailroom call for 5 seconds, so mailroom assets cache expires
             interrupt_channel_task.apply_async((self.id,), countdown=5)
 
-        # trigger the orphaned channel
-        if trigger_sync and self.is_android:
-            mailroom.get_client().android_sync(self)
+        # trigger a sync so the orphaned device learns it has been released - this needs the device's FCM registration
+        # id which older channels may not have, and is a best effort call which shouldn't block releasing the channel
+        if trigger_sync and self.is_android and self.config.get(Channel.CONFIG_FCM_ID):
+            try:
+                mailroom.get_client().android_sync(self)
+            except Exception as e:
+                logger.error(f"Unable to sync a released android channel: {str(e)}", exc_info=True)
 
         # any triggers associated with our channel get archived and released
         for trigger in self.triggers.filter(is_active=True):
@@ -786,7 +752,6 @@ class ChannelEvent(TembaUUIDMixin, models.Model):
         (TYPE_DELETE_CONTACT, _("Delete Contact"), "delete-contact"),
     )
     TYPE_CHOICES = [(t[0], t[1]) for t in TYPE_CONFIG]
-    ALL_TYPES = {t[0] for t in TYPE_CONFIG}
 
     STATUS_PENDING = "P"
     STATUS_HANDLED = "H"
@@ -806,10 +771,6 @@ class ChannelEvent(TembaUUIDMixin, models.Model):
 
     log_uuids = ArrayField(models.UUIDField(), null=True)
 
-    @classmethod
-    def is_valid_type(cls, event_type: str) -> bool:
-        return event_type in cls.ALL_TYPES
-
 
 @dataclass
 class ChannelLog:
@@ -823,9 +784,13 @@ class ChannelLog:
     LOG_TYPE_UNKNOWN = "unknown"
     LOG_TYPE_MSG_SEND = "msg_send"
     LOG_TYPE_MSG_STATUS = "msg_status"
+    LOG_TYPE_RECEIVE = "receive"
+
+    # deprecated receive types, replaced by LOG_TYPE_RECEIVE, but kept for logs already in storage
     LOG_TYPE_MSG_RECEIVE = "msg_receive"
     LOG_TYPE_EVENT_RECEIVE = "event_receive"
     LOG_TYPE_MULTI_RECEIVE = "multi_receive"
+
     LOG_TYPE_IVR_START = "ivr_start"
     LOG_TYPE_IVR_INCOMING = "ivr_incoming"
     LOG_TYPE_IVR_CALLBACK = "ivr_callback"
@@ -839,6 +804,7 @@ class ChannelLog:
         LOG_TYPE_UNKNOWN: _("Other Event"),
         LOG_TYPE_MSG_SEND: _("Message Send"),
         LOG_TYPE_MSG_STATUS: _("Message Status"),
+        LOG_TYPE_RECEIVE: _("Receive"),
         LOG_TYPE_MSG_RECEIVE: _("Message Receive"),
         LOG_TYPE_EVENT_RECEIVE: _("Event Receive"),
         LOG_TYPE_MULTI_RECEIVE: _("Events Receive"),
@@ -861,6 +827,14 @@ class ChannelLog:
     is_error: bool
     elapsed_ms: int
     created_on: datetime
+
+    @classmethod
+    def get_retention_cutoff(cls) -> datetime:
+        """
+        Gets the time before which logs will have been deleted by retention. Pages pass this to components so they
+        only link to logs which can still be viewed.
+        """
+        return timezone.now() - settings.RETENTION_PERIODS["channellog"]
 
     @classmethod
     def get_by_uuid(cls, channel, uuids: list) -> list:

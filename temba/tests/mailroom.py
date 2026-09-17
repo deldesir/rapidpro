@@ -13,7 +13,6 @@ from django.utils import timezone
 
 from temba import mailroom
 from temba.campaigns.models import CampaignEvent
-from temba.channels.models import ChannelEvent
 from temba.contacts.models import URN, Contact, ContactField, ContactGroup, ContactURN
 from temba.flows.models import Flow, FlowRun, FlowSession, FlowStart
 from temba.locations.models import AdminBoundary
@@ -234,6 +233,7 @@ class Mocks:
         self._flow_inspect = []
         self._flow_migrate = []
         self._flow_start_preview = []
+        self._knowledge_search = []
         self._llm_translate = []
         self._msg_broadcast_preview = []
         self._msg_search = []
@@ -301,6 +301,9 @@ class Mocks:
 
         self._flow_start_preview.append(mock)
 
+    def knowledge_search(self, results: list):
+        self._knowledge_search.append(results)
+
     def llm_translate(self, items: dict):
         self._llm_translate.append(items)
 
@@ -353,50 +356,6 @@ class TestClient(MailroomClient):
         raise LiveMailroomError(
             f"test reached un-faked mailroom endpoint /mi/{endpoint}; add a fake for it to TestClient"
         )
-
-    @_client_method
-    def android_event(self, org, channel, phone: str, event_type: str, extra: dict, occurred_on):
-        contact, contact_urn = contact_resolve(org, phone)
-
-        event = ChannelEvent.objects.create(
-            org=channel.org,
-            channel=channel,
-            contact=contact,
-            contact_urn=contact_urn,
-            occurred_on=occurred_on,
-            event_type=event_type,
-            extra=extra,
-        )
-        return {"id": event.id}
-
-    @_client_method
-    def android_message(self, org, channel, phone: str, text: str, received_on):
-        contact, contact_urn = contact_resolve(org, phone)
-        text = text[: Msg.MAX_TEXT_LEN]
-
-        now = timezone.now()
-
-        # don't create duplicate messages
-        existing = Msg.objects.filter(text=text, sent_on=received_on, contact=contact, direction="I").first()
-        if existing:
-            return {"id": existing.id, "duplicate": True}
-
-        msg = Msg.objects.create(
-            uuid=uuid7(),
-            org=org,
-            channel=channel,
-            contact=contact,
-            contact_urn=contact_urn,
-            text=text,
-            sent_on=received_on,
-            created_on=now,
-            modified_on=now,
-            direction=Msg.DIRECTION_IN,
-            status=Msg.STATUS_PENDING,
-            msg_type=Msg.TYPE_TEXT,
-            is_android=True,
-        )
-        return {"id": msg.id, "duplicate": False}
 
     @_client_method
     def android_sync(self, channel):
@@ -591,7 +550,6 @@ class TestClient(MailroomClient):
         contacts,
         urns: list,
         query: str,
-        node_uuid: str,
         exclude: mailroom.Exclusions,
         template,
         template_variables: list,
@@ -606,7 +564,6 @@ class TestClient(MailroomClient):
             contacts=contacts,
             urns=urns,
             query=query,
-            node_uuid=node_uuid,
             exclude=exclude,
             template=template,
             template_variables=template_variables,
@@ -623,7 +580,7 @@ class TestClient(MailroomClient):
 
     @_client_method
     def msg_archive(self, org, msgs):
-        update_msgs_visibility(msgs, Msg.VISIBILITY_VISIBLE, Msg.VISIBILITY_ARCHIVED)
+        archive_msgs(msgs)
 
         return {}
 
@@ -635,9 +592,21 @@ class TestClient(MailroomClient):
 
     @_client_method
     def msg_restore(self, org, msgs):
-        update_msgs_visibility(msgs, Msg.VISIBILITY_ARCHIVED, Msg.VISIBILITY_VISIBLE)
+        restore_msgs(msgs)
 
         return {}
+
+    @_client_method
+    def msg_label(self, org, label, msgs, *, add: bool):
+        label_msgs(label, msgs, add)
+
+        return {}
+
+    @_client_method
+    def knowledge_search(self, org, query: str, limit: int = 10) -> list[dict]:
+        assert self.mocks._knowledge_search, "missing knowledge_search mock"
+
+        return self.mocks._knowledge_search.pop(0)
 
     @_client_method
     def msg_search(self, org, text: str, contact=None, in_ticket=False) -> list[tuple[Contact, dict]]:
@@ -841,27 +810,8 @@ def apply_modifiers(org, user, contacts, modifiers: list):
                     g.contacts.remove(c)
 
 
-PHONE_REGEX = re.compile(r"^\+?[A-Za-z0-9]{1,64}$")
-
-
 def contact_urn_lookup(org, urn: str):
     return ContactURN.objects.filter(org=org, identity=URN.identity(urn)).first()
-
-
-def contact_resolve(org, phone: str) -> tuple:
-    if not PHONE_REGEX.match(phone):
-        raise mailroom.URNValidationException("not a number", "invalid", 0)
-
-    urn = f"tel:{phone}"
-
-    contact_urn = contact_urn_lookup(org, urn)
-    if contact_urn:
-        contact = contact_urn.contact
-    else:
-        contact = create_contact_locally(org, None, name="", language="", urns=[urn], fields={}, group_uuids=[])
-        contact_urn = contact_urn_lookup(org, urn)
-
-    return contact, contact_urn
 
 
 def create_contact_locally(
@@ -893,42 +843,101 @@ def create_contact_locally(
     return contact
 
 
+def derive_msg_folder(msg) -> str:
+    """
+    Derives the folder for a message from its state, as mailroom and courier do when they write it. Archived isn't
+    derivable - it's recorded by the folder alone, and a message gets there by being moved (see archive_msgs). In
+    particular this pins down the precedence, which matters for states that fall outside the user facing folders
+    entirely: a message can be deleted while still pending, and such messages must not appear in the Deleted folder.
+    """
+
+    if msg.visibility in (Msg.VISIBILITY_DELETED_BY_USER, Msg.VISIBILITY_DELETED_BY_SENDER):
+        return Msg.FOLDER_DELETED
+
+    if msg.direction == Msg.DIRECTION_IN:
+        if msg.status != Msg.STATUS_HANDLED:
+            return Msg.FOLDER_PENDING
+        return Msg.FOLDER_HANDLED if msg.flow_id else Msg.FOLDER_INBOX
+    elif msg.visibility == Msg.VISIBILITY_VISIBLE:
+        if msg.status in (Msg.STATUS_INITIALIZING, Msg.STATUS_QUEUED, Msg.STATUS_ERRORED):
+            return Msg.FOLDER_OUTBOX
+        elif msg.status in (Msg.STATUS_WIRED, Msg.STATUS_SENT, Msg.STATUS_DELIVERED, Msg.STATUS_READ):
+            return Msg.FOLDER_SENT
+        elif msg.status == Msg.STATUS_FAILED:
+            return Msg.FOLDER_FAILED
+
+    raise AssertionError(f"unable to derive folder for msg #{msg.id}")
+
+
 def delete_msgs(msgs):
     """
     Simulates mailroom soft deleting the given incoming messages - clearing their content and labels as well as
-    updating their visibility. Messages which aren't visible or archived are ignored. Note that unlike the visibility
-    changes below, mailroom doesn't bump modified_on here.
+    updating their visibility. Messages which are already deleted are ignored. Note that unlike the folder moves
+    below, mailroom doesn't bump modified_on here.
     """
 
     for msg in msgs:
-        if msg.direction != Msg.DIRECTION_IN or msg.visibility not in (
-            Msg.VISIBILITY_VISIBLE,
-            Msg.VISIBILITY_ARCHIVED,
-        ):
+        if msg.direction != Msg.DIRECTION_IN or msg.visibility != Msg.VISIBILITY_VISIBLE:
             continue
 
         msg.visibility = Msg.VISIBILITY_DELETED_BY_USER
-        msg.folder = msg.derive_folder()
+        msg.folder = derive_msg_folder(msg)
         msg.text = ""
         msg.attachments = []
         msg.save(update_fields=("visibility", "folder", "text", "attachments"))
         msg.labels.clear()
 
 
-def update_msgs_visibility(msgs, from_visibility: str, to_visibility: str):
+def archive_msgs(msgs):
     """
-    Simulates mailroom changing the visibility of the given messages, and the folder that follows from it. Messages
-    which aren't in the visibility we're transitioning from are ignored.
+    Simulates mailroom archiving the given messages, i.e. moving them into the Archived folder. Messages which aren't
+    in the inbox or the handled folder are ignored.
     """
 
     for msg in msgs:
-        if msg.visibility != from_visibility:
+        if msg.folder not in (Msg.FOLDER_INBOX, Msg.FOLDER_HANDLED):
             continue
 
-        msg.visibility = to_visibility
-        msg.folder = msg.derive_folder()
+        msg.folder = Msg.FOLDER_ARCHIVED
         msg.modified_on = timezone.now()
-        msg.save(update_fields=("visibility", "folder", "modified_on"))
+        msg.save(update_fields=("folder", "modified_on"))
+
+
+def label_msgs(label, msgs, add: bool):
+    """
+    Simulates mailroom adding or removing a label on the given messages. Messages which aren't incoming or aren't
+    currently visible are ignored, and only messages whose labelling actually changes have their modified_on bumped.
+    """
+
+    for msg in msgs:
+        if msg.direction != Msg.DIRECTION_IN or msg.visibility != Msg.VISIBILITY_VISIBLE:
+            continue
+
+        has_label = msg.labels.filter(id=label.id).exists()
+        if add and not has_label:
+            msg.labels.add(label, through_defaults={"msg_uuid": msg.uuid})
+        elif not add and has_label:
+            msg.labels.remove(label)
+        else:
+            continue
+
+        msg.modified_on = timezone.now()
+        msg.save(update_fields=("modified_on",))
+
+
+def restore_msgs(msgs):
+    """
+    Simulates mailroom restoring the given messages, i.e. moving them out of the Archived folder and back into the
+    folder their state implies. Messages which aren't archived are ignored.
+    """
+
+    for msg in msgs:
+        if msg.folder != Msg.FOLDER_ARCHIVED:
+            continue
+
+        msg.folder = derive_msg_folder(msg)
+        msg.modified_on = timezone.now()
+        msg.save(update_fields=("folder", "modified_on"))
 
 
 def update_fields_locally(user, contact, fields):
@@ -1186,12 +1195,14 @@ def send_to_contact(org, contact, text: str, attachments: list[str], quick_repli
     channel, contact_urn = resolve_destination(org, contact)
 
     if contact_urn and channel:
-        status = "Q"
+        status = Msg.STATUS_QUEUED
+        folder = Msg.FOLDER_OUTBOX
         failed_reason = None
     else:
         contact_urn = None
         channel = None
-        status = "F"
+        status = Msg.STATUS_FAILED
+        folder = Msg.FOLDER_FAILED
         failed_reason = Msg.FAILED_NO_DESTINATION
 
     return Msg.objects.create(
@@ -1202,6 +1213,7 @@ def send_to_contact(org, contact, text: str, attachments: list[str], quick_repli
         contact_urn=contact_urn,
         direction=Msg.DIRECTION_OUT,
         status=status,
+        folder=folder,
         failed_reason=failed_reason,
         text=text or "",
         attachments=attachments or [],
@@ -1223,7 +1235,6 @@ def create_broadcast(
     contacts,
     urns: list,
     query: str,
-    node_uuid: str,
     exclude: mailroom.Exclusions,
     template,
     template_variables: list,
@@ -1244,7 +1255,6 @@ def create_broadcast(
         base_language=base_language,
         urns=urns,
         query=query,
-        node_uuid=node_uuid,
         exclusions=asdict(exclude) if exclude else None,
         template=template,
         template_variables=template_variables,

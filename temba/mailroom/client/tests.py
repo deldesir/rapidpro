@@ -1,4 +1,3 @@
-from datetime import datetime, timezone as tzone
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -7,7 +6,6 @@ from temba.ai.types.openai.type import OpenAIType
 from temba.campaigns.models import Campaign, CampaignEvent
 from temba.contacts.models import ContactField, ContactImport
 from temba.flows.models import Flow, FlowStart
-from temba.msgs.models import Msg
 from temba.schedules.models import Schedule
 from temba.tests import MockJsonResponse, MockResponse, TembaTest
 from temba.tickets.models import Topic
@@ -17,6 +15,7 @@ from .. import modifiers
 from .client import MailroomClient
 from .exceptions import (
     AIServiceException,
+    ContactLimitReachedException,
     FlowValidationException,
     QueryValidationException,
     RequestException,
@@ -30,58 +29,6 @@ class MailroomClientTest(TembaTest):
         super().setUp()
 
         self.client = MailroomClient("http://localhost:8090", "sesame")
-
-    @patch("requests.post")
-    def test_android_event(self, mock_post):
-        mock_post.return_value = MockJsonResponse(200, {"id": 12345})
-        response = self.client.android_event(
-            org=self.org,
-            channel=self.channel,
-            phone="+1234567890",
-            event_type="mo_miss",
-            extra={"duration": 45},
-            occurred_on=datetime(2024, 4, 1, 16, 28, 30, 0, tzone.utc),
-        )
-
-        self.assertEqual({"id": 12345}, response)
-
-        mock_post.assert_called_once_with(
-            "http://localhost:8090/mi/android/event",
-            headers={"User-Agent": "Temba", "Authorization": "Token sesame"},
-            json={
-                "org_id": self.org.id,
-                "channel_id": self.channel.id,
-                "phone": "+1234567890",
-                "event_type": "mo_miss",
-                "extra": {"duration": 45},
-                "occurred_on": "2024-04-01T16:28:30+00:00",
-            },
-        )
-
-    @patch("requests.post")
-    def test_android_message(self, mock_post):
-        mock_post.return_value = MockJsonResponse(200, {"id": 12345})
-        response = self.client.android_message(
-            org=self.org,
-            channel=self.channel,
-            phone="+1234567890",
-            text="hello",
-            received_on=datetime(2024, 4, 1, 16, 28, 30, 0, tzone.utc),
-        )
-
-        self.assertEqual({"id": 12345}, response)
-
-        mock_post.assert_called_once_with(
-            "http://localhost:8090/mi/android/message",
-            headers={"User-Agent": "Temba", "Authorization": "Token sesame"},
-            json={
-                "org_id": self.org.id,
-                "channel_id": self.channel.id,
-                "phone": "+1234567890",
-                "text": "hello",
-                "received_on": "2024-04-01T16:28:30+00:00",
-            },
-        )
 
     @patch("requests.post")
     def test_android_sync(self, mock_post):
@@ -705,7 +652,6 @@ class MailroomClientTest(TembaTest):
             [ann, bob],
             ["tel:1234"],
             "age > 20",
-            "",
             Exclusions(in_a_flow=True),
             template,
             ["@contact"],
@@ -726,7 +672,6 @@ class MailroomClientTest(TembaTest):
                 "contact_ids": [ann.id, bob.id],
                 "urns": ["tel:1234"],
                 "query": "age > 20",
-                "node_uuid": "",
                 "exclude": {
                     "in_a_flow": True,
                     "non_active": False,
@@ -790,10 +735,32 @@ class MailroomClientTest(TembaTest):
         )
 
     @patch("requests.post")
+    def test_msg_label(self, mock_post):
+        ann = self.create_contact("Ann", urns=["tel:+12340000001"])
+        msg1 = self.create_incoming_msg(ann, "Hi")
+        msg2 = self.create_incoming_msg(ann, "Hi again")
+        label = self.create_label("Spam")
+        mock_post.return_value = MockJsonResponse(200, {})
+        response = self.client.msg_label(self.org, label, [msg1, msg2], add=True)
+
+        self.assertEqual({}, response)
+
+        mock_post.assert_called_once_with(
+            "http://localhost:8090/mi/msg/label",
+            headers={"User-Agent": "Temba", "Authorization": "Token sesame"},
+            json={
+                "org_id": self.org.id,
+                "label_uuid": str(label.uuid),
+                "msg_uuids": [str(msg1.uuid), str(msg2.uuid)],
+                "add": True,
+            },
+        )
+
+    @patch("requests.post")
     def test_msg_restore(self, mock_post):
         ann = self.create_contact("Ann", urns=["tel:+12340000001"])
-        msg1 = self.create_incoming_msg(ann, "Hi", visibility=Msg.VISIBILITY_ARCHIVED)
-        msg2 = self.create_incoming_msg(ann, "Hi again", visibility=Msg.VISIBILITY_ARCHIVED)
+        msg1 = self.create_incoming_msg(ann, "Hi", archived=True)
+        msg2 = self.create_incoming_msg(ann, "Hi again", archived=True)
         mock_post.return_value = MockJsonResponse(200, {})
         response = self.client.msg_restore(self.org, [msg1, msg2])
 
@@ -851,6 +818,34 @@ class MailroomClientTest(TembaTest):
             "http://localhost:8090/mi/msg/resend",
             headers={"User-Agent": "Temba", "Authorization": "Token sesame"},
             json={"org_id": self.org.id, "user_id": self.admin.id, "msg_uuids": [str(msg1.uuid), str(msg2.uuid)]},
+        )
+
+    @patch("requests.post")
+    def test_knowledge_search(self, mock_post):
+        mock_post.return_value = MockJsonResponse(
+            200,
+            {
+                "results": [
+                    {
+                        "knowledge_uuid": "97180291-8d95-4a6b-8a1a-63c44bb84b77",
+                        "item_key": "e0d47f61-9531-46a5-89dd-8e8437bee883",
+                        "item_name": "Refunds",
+                        "text": "We offer full refunds within 30 days...",
+                        "score": 0.9034,
+                    }
+                ]
+            },
+        )
+
+        results = self.client.knowledge_search(self.org, "how do I get a refund?", limit=5)
+
+        self.assertEqual(1, len(results))
+        self.assertEqual("Refunds", results[0]["item_name"])
+
+        mock_post.assert_called_once_with(
+            "http://localhost:8090/mi/knowledge/search",
+            headers={"User-Agent": "Temba", "Authorization": "Token sesame"},
+            json={"org_id": self.org.id, "query": "how do I get a refund?", "limit": 5},
         )
 
     @patch("requests.post")
@@ -1215,6 +1210,40 @@ class MailroomClientTest(TembaTest):
         self.assertEqual("taken", e.exception.code)
         self.assertEqual(1, e.exception.index)
         self.assertEqual("URN 1 is taken", str(e.exception))
+
+        mock_post.return_value = MockJsonResponse(
+            422,
+            {
+                "error": "workspace has reached its limit of 50000000 contacts",
+                "code": "limit:contacts",
+                "extra": {"limit": 50000000},
+            },
+        )
+
+        with self.assertRaises(ContactLimitReachedException) as e:
+            self.client.contact_create(
+                self.org,
+                self.admin,
+                ContactSpec(name="Bob", language="eng", status="active", urns=["tel:+123456789"], fields={}, groups=[]),
+                "ui",
+            )
+
+        self.assertEqual("workspace has reached its limit of 50000000 contacts", e.exception.error)
+        self.assertEqual(50000000, e.exception.limit)
+        self.assertEqual("This workspace has reached its limit of 50,000,000 contacts.", str(e.exception))
+
+        # a 422 with an error domain we don't know about is still an error
+        mock_post.return_value = MockJsonResponse(422, {"error": "workspace limit reached", "code": "limit:groups"})
+
+        with self.assertRaises(RequestException) as e:
+            self.client.contact_create(
+                self.org,
+                self.admin,
+                ContactSpec(name="Bob", language="eng", status="active", urns=["tel:+123456789"], fields={}, groups=[]),
+                "ui",
+            )
+
+        self.assertEqual("workspace limit reached", e.exception.error)
 
         mock_post.return_value = MockJsonResponse(500, {"error": "error loading fields"})
 

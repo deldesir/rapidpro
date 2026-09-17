@@ -15,13 +15,12 @@ from django.db.models.functions import Upper
 from django.http import Http404, HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
-from django.utils import timezone
 from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 from django.views import View
 
 from temba import mailroom
-from temba.channels.models import Channel
+from temba.channels.models import Channel, ChannelLog
 from temba.orgs.models import Org
 from temba.orgs.views.base import (
     BaseCreateModal,
@@ -317,7 +316,7 @@ class ContactCRUDL(SmartCRUDL):
 
         def get_context_data(self, **kwargs):
             context = super().get_context_data(**kwargs)
-            context["msg_logs_after"] = (timezone.now() - settings.RETENTION_PERIODS["channellog"]).isoformat()
+            context["msg_logs_after"] = ChannelLog.get_retention_cutoff().isoformat()
             # serialized for temba-card-layout's settings attribute
             context["card_settings"] = json.dumps(self.request.user.settings.get("contact_cards", {}))
             context["contact_urn_schemes"] = [
@@ -684,6 +683,9 @@ class ContactCRUDL(SmartCRUDL):
                 error = _("In use by another contact.") if e.code == "taken" else _("Not a valid phone number.")
                 self.form.add_error("phone", error)
                 return self.form_invalid(form)
+            except mailroom.ContactLimitReachedException as e:
+                self.form.add_error(None, str(e))
+                return self.form_invalid(form)
 
             return self.render_modal_response(form)
 
@@ -1041,7 +1043,7 @@ class ContactFieldCRUDL(SmartCRUDL):
         template_name = "contacts/contactfield_list.html"
 
         def build_context_menu(self, menu):
-            if self.has_org_perm("contacts.contactfield_create") and not self.is_limit_reached():
+            if self.has_org_perm("contacts.contactfield_create") and not self.is_limit_reached:
                 menu.add_modax(
                     _("New"),
                     "new-field",
@@ -1333,6 +1335,10 @@ class ContactImportCRUDL(SmartCRUDL):
 
                 add_to_group = self.cleaned_data["add_to_group"]
                 if add_to_group:
+                    # a rejected mode means new group was requested but isn't a choice at the group limit
+                    if "group_mode" not in self.cleaned_data:
+                        raise forms.ValidationError(_("This workspace has reached its limit of groups."))
+
                     group_mode = self.cleaned_data["group_mode"]
                     if group_mode == self.GROUP_MODE_NEW:
                         new_group_name = self.cleaned_data.get("new_group_name")

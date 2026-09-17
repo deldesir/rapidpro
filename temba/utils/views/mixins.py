@@ -16,7 +16,15 @@ from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 
 from temba import __version__ as temba_version
-from temba.utils.fields import CheckboxWidget, DateWidget, InputWidget, SelectMultipleWidget, SelectWidget
+from temba.utils.fields import (
+    CheckboxWidget,
+    ColorInputWidget,
+    ColorPickerWidget,
+    DateWidget,
+    InputWidget,
+    SelectMultipleWidget,
+    SelectWidget,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +79,16 @@ class ComponentFormMixin:
         # don't replace the widget if it is already one of us
         if isinstance(
             field.widget,
-            (forms.widgets.HiddenInput, CheckboxWidget, InputWidget, SelectWidget, SelectMultipleWidget, DateWidget),
+            (
+                forms.widgets.HiddenInput,
+                CheckboxWidget,
+                ColorInputWidget,
+                ColorPickerWidget,
+                InputWidget,
+                SelectWidget,
+                SelectMultipleWidget,
+                DateWidget,
+            ),
         ):
             return field
 

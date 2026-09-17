@@ -26,7 +26,6 @@ from temba.utils import json
 from temba.utils.fields import NameValidator
 
 from ..models import BulkActionFailure, Resthook, ResthookSubscriber, WebHookEvent
-from ..support import record_deprecated
 from ..validators import UniqueForOrgValidator
 from . import fields
 
@@ -947,11 +946,9 @@ class ContactBulkActionSerializer(WriteSerializer):
     BLOCK = "block"
     UNBLOCK = "unblock"
     INTERRUPT = "interrupt"
-    ARCHIVE_MESSAGES = "archive_messages"
     DELETE = "delete"
-    ARCHIVE = "archive"  # backward compatibility
 
-    ACTIONS = (ADD, REMOVE, BLOCK, UNBLOCK, INTERRUPT, ARCHIVE_MESSAGES, DELETE, ARCHIVE)
+    ACTIONS = (ADD, REMOVE, BLOCK, UNBLOCK, INTERRUPT, DELETE)
     ACTIONS_WITH_GROUP = (ADD, REMOVE)
 
     contacts = fields.ContactField(many=True)
@@ -995,11 +992,6 @@ class ContactBulkActionSerializer(WriteSerializer):
             Contact.bulk_change_group(user, contacts, group, add=False, via_api=True)
         elif action == self.INTERRUPT:
             Contact.bulk_interrupt(user, contacts)
-        elif action == self.ARCHIVE_MESSAGES or action == self.ARCHIVE:
-            # tracked separately for each action name so we can see if the older alias can be dropped on its own
-            record_deprecated(self.context["org"], f"contact_actions#{action}")
-
-            Msg.archive_all_for_contacts(contacts)
         elif action == self.BLOCK:
             Contact.bulk_change_status(user, contacts, modifiers.Status.BLOCKED, via_api=True)
         elif action == self.UNBLOCK:
@@ -1292,7 +1284,7 @@ class LabelReadSerializer(ReadSerializer):
 
     def get_count(self, obj):
         # count may be cached on the object
-        return obj.count if hasattr(obj, "count") else obj.get_visible_count()
+        return obj.count if hasattr(obj, "count") else obj.get_message_count()
 
     class Meta:
         model = Label
@@ -1358,11 +1350,6 @@ class MsgReadSerializer(ReadSerializer):
         Msg.STATUS_ERRORED: "errored",
         Msg.STATUS_FAILED: "failed",
     }
-    VISIBILITIES = {  # deleted messages should never be exposed over API
-        Msg.VISIBILITY_VISIBLE: "visible",
-        Msg.VISIBILITY_ARCHIVED: "archived",
-    }
-
     broadcast = serializers.SerializerMethodField()
     contact = fields.ContactField()
     urn = fields.URNField(source="contact_urn")
@@ -1403,10 +1390,11 @@ class MsgReadSerializer(ReadSerializer):
         return obj.attachments[0] if obj.attachments else None
 
     def get_archived(self, obj):
-        return obj.visibility == Msg.VISIBILITY_ARCHIVED
+        return obj.folder == Msg.FOLDER_ARCHIVED
 
     def get_visibility(self, obj):
-        return self.VISIBILITIES.get(obj.visibility)
+        # deleted messages are never exposed over the API so everything is either visible or archived
+        return "archived" if obj.folder == Msg.FOLDER_ARCHIVED else "visible"
 
     def get_labels(self, obj):
         # to optimize the POST case that creates an outgoing message, don't even try to look for labels
@@ -1511,9 +1499,6 @@ class MsgBulkActionSerializer(WriteSerializer):
     messages = fields.MessageField(many=True)
     action = serializers.ChoiceField(required=True, choices=ACTIONS)
     label = fields.LabelField(required=False)
-    label_name = serializers.CharField(
-        required=False, max_length=Label.MAX_NAME_LEN, validators=[NameValidator(max_length=Label.MAX_NAME_LEN)]
-    )
 
     def validate_messages(self, value):
         for msg in value:
@@ -1525,14 +1510,10 @@ class MsgBulkActionSerializer(WriteSerializer):
     def validate(self, data):
         action = data["action"]
         label = data.get("label")
-        label_name = data.get("label_name")
 
-        if label and label_name:
-            raise serializers.ValidationError("Can't specify both label and label_name.")
-
-        if action in self.ACTIONS_WITH_LABEL and not (label or label_name):
+        if action in self.ACTIONS_WITH_LABEL and not label:
             raise serializers.ValidationError('For action "%s" you should also specify a label' % action)
-        elif action not in self.ACTIONS_WITH_LABEL and (label or label_name):
+        elif action not in self.ACTIONS_WITH_LABEL and label:
             raise serializers.ValidationError('For action "%s" you should not specify a label' % action)
 
         return data
@@ -1540,7 +1521,6 @@ class MsgBulkActionSerializer(WriteSerializer):
     def save(self):
         action = self.validated_data["action"]
         label = self.validated_data.get("label")
-        label_name = self.validated_data.get("label_name")
 
         requested_message_ids = self.initial_data["messages"]
         requested_messages = self.validated_data["messages"]
@@ -1555,16 +1535,9 @@ class MsgBulkActionSerializer(WriteSerializer):
                 missing_message_ids.append(requested_message_ids[m])
 
         if action == self.LABEL:
-            if not label:
-                label, _ = Label.import_def(self.context["org"], self.context["user"], {"name": label_name})
-            if label:
-                label.toggle_label(messages, add=True)
+            label.toggle_label(messages, add=True)
         elif action == self.UNLABEL:
-            if not label:
-                label = Label.get_active_for_org(self.context["org"]).filter(name=label_name).first()
-
-            if label:
-                label.toggle_label(messages, add=False)
+            label.toggle_label(messages, add=False)
         elif action == self.DELETE:
             Msg.bulk_soft_delete(self.context["org"], self.context["user"], messages)
         elif action == self.ARCHIVE:

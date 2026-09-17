@@ -2,6 +2,7 @@ import itertools
 from collections import defaultdict
 from datetime import date, timedelta
 from enum import Enum
+from functools import cached_property
 
 from rest_framework import generics, status
 from rest_framework.pagination import CursorPagination
@@ -41,9 +42,10 @@ from ..support import (
     DateJoinedCursorPagination,
     DocumentationRenderer,
     InvalidQueryError,
+    LabelMsgUUIDCursorPagination,
     ModifiedOnCursorPagination,
     OrgUserRateThrottle,
-    SentOnCursorPagination,
+    UUIDCursorPagination,
     record_deprecated,
 )
 from ..views import BaseAPIView, BulkWriteAPIMixin, DeleteAPIMixin, ListAPIMixin, WriteAPIMixin
@@ -2218,7 +2220,7 @@ class MessagesEndpoint(ListAPIMixin, WriteAPIMixin, BaseEndpoint):
      * **text** - the text of the message received (string). Note this is the logical view and the message may have been received as multiple physical messages.
      * **attachments** - the attachments on the message (array of objects).
      * **quick_replies** - the quick_replies on the message (array of objects).
-     * **labels** - any labels set on this message (array of objects).
+     * **labels** - any labels set on this message (array of objects), filterable as `label` by UUID or name.
      * **flow** - the UUID and name of the flow if message was part of a flow (object, optional).
      * **created_on** - when this message was either received by the channel or created (datetime), filterable as `before` and `after`.
      * **sent_on** - for outgoing messages, when the channel sent the message (null if not yet sent or an incoming message) (datetime).
@@ -2226,7 +2228,7 @@ class MessagesEndpoint(ListAPIMixin, WriteAPIMixin, BaseEndpoint):
 
     You can also filter by `folder` where folder is one of `inbox`, `flows`, `archived`, `outbox`, `sent` or `failed`.
 
-    The sort order for the `sent` folder is the sent date. All other requests are sorted by the message creation date.
+    Results are sorted by the message creation date, most recent first.
 
     Without any parameters this endpoint will return all incoming and outgoing messages ordered by creation date.
 
@@ -2310,14 +2312,17 @@ class MessagesEndpoint(ListAPIMixin, WriteAPIMixin, BaseEndpoint):
 
     class Pagination(CreatedOnCursorPagination):
         """
-        Overridden paginator that switches depending on folder being requested.
+        Folder requests are paged by uuid, which is what the folder index is keyed on (and time ordered, as message
+        uuids are v7), and label requests by the message uuid carried on each labelling, which is what the labellings
+        index is keyed on. Everything else is paged by created_on.
         """
 
-        ordering = {"sent": SentOnCursorPagination.ordering}
-
         def get_ordering(self, request, queryset, view=None):
-            folder = request.query_params.get("folder", "").lower()
-            return self.ordering.get(folder, CreatedOnCursorPagination.ordering)
+            if view.folder:
+                return UUIDCursorPagination.ordering
+            if view.label:
+                return LabelMsgUUIDCursorPagination.ordering
+            return self.ordering
 
     model = Msg
     serializer_class = MsgReadSerializer
@@ -2336,19 +2341,52 @@ class MessagesEndpoint(ListAPIMixin, WriteAPIMixin, BaseEndpoint):
         "failed": MsgFolder.FAILED,
     }
 
+    @cached_property
+    def folder(self):
+        """
+        The folder selected by the `folder` param, or None if there isn't one or it isn't valid
+        """
+        folder = self.request.query_params.get("folder")
+        return self.FOLDER_FILTERS.get(folder.lower()) if folder else None
+
+    @cached_property
+    def label(self):
+        """
+        The label selected by the `label` param, by uuid or name, or None if there isn't one or it isn't valid
+        """
+        label_ref = self.request.query_params.get("label")
+        if not label_ref:
+            return None
+
+        label_filter = Q(name=label_ref)
+        if is_uuid(label_ref):
+            label_filter |= Q(uuid=label_ref)
+
+        return Label.get_active_for_org(self.request.org).filter(label_filter).first()
+
     def derive_queryset(self):
         org = self.request.org
-        folder = self.request.query_params.get("folder")
+        params = self.request.query_params
 
-        if folder:
-            if msg_folder := self.FOLDER_FILTERS.get(folder.lower()):
-                return msg_folder.get_queryset(org)
-            else:
+        if not params.get("folder") and not params.get("label"):
+            return self.model.objects.filter(org=org).exclude(folder__in=(Msg.FOLDER_PENDING, Msg.FOLDER_DELETED))
+
+        # before/after are passed to the folder or label as uuid bounds so that they're conditions on its index -
+        # filter_queryset still applies them to created_on so that they're exact, and rejects them if malformed (an
+        # empty queryset here couldn't be ordered by a label's annotation)
+        try:
+            before, after = self.get_before_after()
+        except ValueError:
+            before, after = None, None
+
+        if params.get("folder"):
+            if not self.folder:
                 return self.model.objects.none()
-        else:
-            return self.model.objects.filter(
-                org=org, visibility__in=(Msg.VISIBILITY_VISIBLE, Msg.VISIBILITY_ARCHIVED)
-            ).exclude(status=Msg.STATUS_PENDING)
+            return self.folder.get_queryset(org, after=after, before=before)
+
+        if not self.label:
+            return self.model.objects.none()
+        return self.label.get_queryset(after=after, before=before)
 
     def filter_queryset(self, queryset):
         params = self.request.query_params
@@ -2373,18 +2411,6 @@ class MessagesEndpoint(ListAPIMixin, WriteAPIMixin, BaseEndpoint):
             contact = Contact.objects.filter(org=org, is_active=True, uuid=contact_uuid).first()
             if contact:
                 queryset = queryset.filter(contact=contact)
-            else:
-                queryset = queryset.none()
-
-        # filter by label name/uuid (optional)
-        if label_ref := params.get("label"):
-            label_filter = Q(name=label_ref)
-            if is_uuid(label_ref):
-                label_filter |= Q(uuid=label_ref)
-
-            label = Label.get_active_for_org(org).filter(label_filter).first()
-            if label:
-                queryset = queryset.filter(labels=label)
             else:
                 queryset = queryset.none()
 
@@ -2462,12 +2488,10 @@ class MessageActionsEndpoint(BulkWriteAPIMixin, BaseEndpoint):
         * `restore` - restore the messages if they are archived.
         * `delete` - permanently delete the messages.
 
-    * **label** - the UUID or name of an existing label (string, optional).
-    * **label_name** - the name of a label which can be created if it doesn't exist (string, optional).
+    * **label** - the UUID or name of an existing label (string, required for `label` and `unlabel` actions).
 
-    If labelling or unlabelling messages using `label` you will get an error response (400) if the label doesn't exist.
-    If labelling with `label_name` the label will be created if it doesn't exist, and if unlabelling it is ignored if
-    it doesn't exist.
+    You will get an error response (400) if the label doesn't exist. Labels can be created using the
+    [labels](/api/v2/labels) endpoint.
 
     Example:
 
@@ -2502,7 +2526,7 @@ class MessageActionsEndpoint(BulkWriteAPIMixin, BaseEndpoint):
             "fields": [
                 {"name": "messages", "required": True, "help": "The ids of the messages to update"},
                 {"name": "action", "required": True, "help": "One of the following strings: " + ", ".join(actions)},
-                {"name": "label", "required": False, "help": "The UUID or name of a message label"},
+                {"name": "label", "required": False, "help": "The UUID or name of an existing message label"},
             ],
         }
 
@@ -2813,8 +2837,6 @@ class RunsEndpoint(ListAPIMixin, BaseEndpoint):
      * **modified_on** - when this run was last modified (datetime), filterable as `before` and `after`.
      * **exited_on** - the datetime when this run exited or null if it is still active (datetime).
      * **exit_type** - how the run ended, one of `interrupted`, `completed`, `expired`.
-
-    Note that you cannot filter by `flow` and `contact` at the same time.
 
     Example:
 

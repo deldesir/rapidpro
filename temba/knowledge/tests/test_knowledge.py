@@ -7,11 +7,13 @@ from django.test.utils import override_settings
 
 from temba.knowledge.models import (
     Article,
+    ArticleCount,
     ArticleImage,
     ColumnStylesProcessor,
-    Knowledge,
+    HelpSite,
     KnowledgeChunk,
     KnowledgeItem,
+    KnowledgeSource,
     _sanitize_attribute,
     get_article_image_path,
     parse_column_style,
@@ -21,18 +23,18 @@ from temba.utils.s3 import public_file_storage
 from temba.utils.uuid import uuid4
 
 
-class KnowledgeTest(TembaTest):
-    def create_chunk(self, knowledge, item_key, text: str):
+class KnowledgeSourceTest(TembaTest):
+    def create_chunk(self, source, item_key, text: str):
         return KnowledgeChunk.objects.create(
-            knowledge=knowledge, item_key=item_key, item_name="Test", text=text, embedding=[0.0] * 384
+            source=source, item_key=item_key, item_name="Test", text=text, embedding=[0.0] * 384
         )
 
-    def create_article(self, knowledge, title: str, *, parent=None, status=Article.STATUS_DRAFT):
+    def create_article(self, source, title: str, *, parent=None, status=Article.STATUS_DRAFT):
         return Article.objects.create(
-            knowledge=knowledge,
+            source=source,
             parent=parent,
             title=title,
-            slug=Article.get_unique_slug(knowledge, title),
+            slug=Article.get_unique_slug(source, title),
             status=status,
             created_by=self.admin,
             modified_by=self.admin,
@@ -40,33 +42,33 @@ class KnowledgeTest(TembaTest):
 
     def test_create_system(self):
         # both orgs got their system sources from Org.initialize()
-        shortcuts = self.org.knowledge.get(knowledge_type=Knowledge.TYPE_SHORTCUTS)
-        helpdesk = self.org.knowledge.get(knowledge_type=Knowledge.TYPE_HELPDESK)
+        shortcuts = self.org.sources.get(source_type=KnowledgeSource.TYPE_SHORTCUTS)
+        helpdesk = self.org.sources.get(source_type=KnowledgeSource.TYPE_HELPDESK)
 
         self.assertEqual("Shortcuts", shortcuts.name)
         self.assertTrue(shortcuts.is_system)
         self.assertEqual("Helpdesk", helpdesk.name)
         self.assertTrue(helpdesk.is_system)
-        self.assertEqual(2, self.org2.knowledge.filter(is_system=True).count())
+        self.assertEqual(2, self.org2.sources.filter(is_system=True).count())
 
         # can't create them again
         with self.assertRaises(AssertionError):
-            Knowledge.create_system(self.org)
+            KnowledgeSource.create_system(self.org)
 
     def test_create_website(self):
-        website = Knowledge.create_website(self.org, self.admin, "Nyaruka", "https://nyaruka.com")
+        website = KnowledgeSource.create_website(self.org, self.admin, "Nyaruka", "https://nyaruka.com")
 
         self.assertEqual("Nyaruka", website.name)
-        self.assertEqual(Knowledge.TYPE_WEBSITE, website.knowledge_type)
+        self.assertEqual(KnowledgeSource.TYPE_WEBSITE, website.source_type)
         self.assertEqual("https://nyaruka.com", website.url)
         self.assertEqual(
             {"url": "https://nyaruka.com", "max_depth": 3, "max_pages": 500, "refresh": "weekly"}, website.config
         )
-        self.assertEqual(Knowledge.STATUS_PENDING, website.status)
+        self.assertEqual(KnowledgeSource.STATUS_PENDING, website.status)
         self.assertFalse(website.is_system)
 
         # explicit settings are used as given
-        custom = Knowledge.create_website(
+        custom = KnowledgeSource.create_website(
             self.org, self.admin, "Custom", "https://example.com", max_depth=2, max_pages=100, refresh="daily"
         )
         self.assertEqual(
@@ -75,33 +77,33 @@ class KnowledgeTest(TembaTest):
 
         # try to create with an invalid name
         with self.assertRaises(AssertionError):
-            Knowledge.create_website(self.org, self.admin, '"Nope"', "https://nyaruka.com")
+            KnowledgeSource.create_website(self.org, self.admin, '"Nope"', "https://nyaruka.com")
 
         # try to create with a name that's taken
         with self.assertRaises(AssertionError):
-            Knowledge.create_website(self.org, self.admin, "nyaruka", "https://nyaruka.com")
+            KnowledgeSource.create_website(self.org, self.admin, "nyaruka", "https://nyaruka.com")
 
     def test_create_documents(self):
-        docs = Knowledge.create_documents(self.org, self.admin, "Guides")
+        docs = KnowledgeSource.create_documents(self.org, self.admin, "Guides")
 
         self.assertEqual("Guides", docs.name)
-        self.assertEqual(Knowledge.TYPE_DOCUMENTS, docs.knowledge_type)
+        self.assertEqual(KnowledgeSource.TYPE_DOCUMENTS, docs.source_type)
         self.assertEqual({}, docs.config)
         self.assertIsNone(docs.url)
-        self.assertEqual(Knowledge.STATUS_READY, docs.status)  # nothing to index yet
+        self.assertEqual(KnowledgeSource.STATUS_READY, docs.status)  # nothing to index yet
 
         with self.assertRaises(AssertionError):
-            Knowledge.create_documents(self.org, self.admin, '"Nope"')
+            KnowledgeSource.create_documents(self.org, self.admin, '"Nope"')
         with self.assertRaises(AssertionError):
-            Knowledge.create_documents(self.org, self.admin, "guides")
+            KnowledgeSource.create_documents(self.org, self.admin, "guides")
 
     def test_unique_names(self):
-        Knowledge.create_documents(self.org, self.admin, "Guides")
+        KnowledgeSource.create_documents(self.org, self.admin, "Guides")
 
         with self.assertRaises(IntegrityError):
-            self.org.knowledge.create(
+            self.org.sources.create(
                 name="GUIDES",
-                knowledge_type=Knowledge.TYPE_DOCUMENTS,
+                source_type=KnowledgeSource.TYPE_DOCUMENTS,
                 created_by=self.admin,
                 modified_by=self.admin,
             )
@@ -109,30 +111,30 @@ class KnowledgeTest(TembaTest):
     @override_settings(ORG_LIMIT_DEFAULTS={"knowledge": 2})
     def test_limits(self):
         # neither system row counts against the limit
-        self.assertFalse(Knowledge.is_limit_reached(self.org))
+        self.assertFalse(KnowledgeSource.is_limit_reached(self.org))
 
-        Knowledge.create_documents(self.org, self.admin, "Guides")
-        self.assertFalse(Knowledge.is_limit_reached(self.org))
+        KnowledgeSource.create_documents(self.org, self.admin, "Guides")
+        self.assertFalse(KnowledgeSource.is_limit_reached(self.org))
 
-        Knowledge.create_website(self.org, self.admin, "Nyaruka", "https://nyaruka.com")
-        self.assertTrue(Knowledge.is_limit_reached(self.org))
-        self.assertFalse(Knowledge.is_limit_reached(self.org2))
+        KnowledgeSource.create_website(self.org, self.admin, "Nyaruka", "https://nyaruka.com")
+        self.assertTrue(KnowledgeSource.is_limit_reached(self.org))
+        self.assertFalse(KnowledgeSource.is_limit_reached(self.org2))
 
     def test_mark_pending(self):
-        docs = Knowledge.create_documents(self.org, self.admin, "Guides")
-        docs.status = Knowledge.STATUS_FAILED
+        docs = KnowledgeSource.create_documents(self.org, self.admin, "Guides")
+        docs.status = KnowledgeSource.STATUS_FAILED
         docs.error = "boom"
         docs.save(update_fields=("status", "error"))
 
         docs.mark_pending()
 
         docs.refresh_from_db()
-        self.assertEqual(Knowledge.STATUS_PENDING, docs.status)
+        self.assertEqual(KnowledgeSource.STATUS_PENDING, docs.status)
         self.assertIsNone(docs.error)
 
     @cleanup(s3=True)
     def test_release(self):
-        docs = Knowledge.create_documents(self.org, self.admin, "Guides")
+        docs = KnowledgeSource.create_documents(self.org, self.admin, "Guides")
         item = KnowledgeItem.from_upload(
             docs, self.admin, SimpleUploadedFile("guide.txt", b"hello", content_type="text/plain")
         )
@@ -142,9 +144,9 @@ class KnowledgeTest(TembaTest):
         docs.save(update_fields=("num_items", "num_chunks"))
 
         # can't release either system source
-        for kb_type in Knowledge.SYSTEM_TYPES:
+        for kb_type in KnowledgeSource.SYSTEM_TYPES:
             with self.assertRaises(AssertionError):
-                self.org.knowledge.get(knowledge_type=kb_type).release(self.admin)
+                self.org.sources.get(source_type=kb_type).release(self.admin)
 
         docs.release(self.admin)
 
@@ -160,7 +162,7 @@ class KnowledgeTest(TembaTest):
     @cleanup(s3=True)
     def test_delete(self):
         # deleting purges articles and their images - use the system helpdesk row since that's where articles live
-        helpdesk = self.org.knowledge.get(knowledge_type=Knowledge.TYPE_HELPDESK)
+        helpdesk = self.org.sources.get(source_type=KnowledgeSource.TYPE_HELPDESK)
         parent = self.create_article(helpdesk, "Flows", status=Article.STATUS_PUBLISHED)
         child = self.create_article(helpdesk, "Nodes", parent=parent)
         self.create_chunk(helpdesk, parent.uuid, "flows are...")
@@ -176,20 +178,24 @@ class KnowledgeTest(TembaTest):
             size=3,
             created_by=self.admin,
         )
+        ArticleCount.record_view(parent)
+        site = HelpSite.get_or_create(helpdesk, self.admin)
 
         helpdesk.delete()
 
-        self.assertFalse(Knowledge.objects.filter(id=helpdesk.id).exists())
+        self.assertFalse(KnowledgeSource.objects.filter(id=helpdesk.id).exists())
         self.assertFalse(Article.objects.filter(id__in=(parent.id, child.id)).exists())
         self.assertEqual(0, ArticleImage.objects.count())
+        self.assertEqual(0, ArticleCount.objects.count())
+        self.assertFalse(HelpSite.objects.filter(id=site.id).exists())
         self.assertEqual(0, KnowledgeChunk.objects.count())
         self.assertFalse(public_file_storage.exists(image_path))
 
 
 class KnowledgeItemTest(TembaTest):
-    def create_chunk(self, knowledge, item_key, text: str):
+    def create_chunk(self, source, item_key, text: str):
         return KnowledgeChunk.objects.create(
-            knowledge=knowledge, item_key=item_key, item_name="Test", text=text, embedding=[0.0] * 384
+            source=source, item_key=item_key, item_name="Test", text=text, embedding=[0.0] * 384
         )
 
     def test_clean_name(self):
@@ -206,14 +212,14 @@ class KnowledgeItemTest(TembaTest):
 
     @cleanup(s3=True)
     def test_from_upload(self):
-        docs = Knowledge.create_documents(self.org, self.admin, "Guides")
-        self.assertEqual(Knowledge.STATUS_READY, docs.status)
+        docs = KnowledgeSource.create_documents(self.org, self.admin, "Guides")
+        self.assertEqual(KnowledgeSource.STATUS_READY, docs.status)
 
         item = KnowledgeItem.from_upload(
             docs, self.admin, SimpleUploadedFile("A Guide!.txt", b"hello world", content_type="text/plain")
         )
 
-        self.assertEqual(docs, item.knowledge)
+        self.assertEqual(docs, item.source)
         self.assertEqual("A Guide.txt", item.name)
         self.assertIsNone(item.url)
         self.assertEqual(f"orgs/{self.org.id}/knowledge/{docs.uuid}/{item.uuid}.txt", item.path)
@@ -226,11 +232,11 @@ class KnowledgeItemTest(TembaTest):
 
         # the parent source now needs reindexing
         docs.refresh_from_db()
-        self.assertEqual(Knowledge.STATUS_PENDING, docs.status)
+        self.assertEqual(KnowledgeSource.STATUS_PENDING, docs.status)
 
     @cleanup(s3=True)
     def test_delete(self):
-        docs = Knowledge.create_documents(self.org, self.admin, "Guides")
+        docs = KnowledgeSource.create_documents(self.org, self.admin, "Guides")
         item1 = KnowledgeItem.from_upload(
             docs, self.admin, SimpleUploadedFile("one.txt", b"one", content_type="text/plain")
         )
@@ -240,7 +246,7 @@ class KnowledgeItemTest(TembaTest):
         self.create_chunk(docs, item1.uuid, "one")
         chunk2 = self.create_chunk(docs, item2.uuid, "two")
 
-        docs.status = Knowledge.STATUS_READY
+        docs.status = KnowledgeSource.STATUS_READY
         docs.save(update_fields=("status",))
 
         item1_path = item1.path
@@ -252,48 +258,48 @@ class KnowledgeItemTest(TembaTest):
         self.assertFalse(default_storage.exists(item1_path))
         self.assertTrue(default_storage.exists(item2.path))
         docs.refresh_from_db()
-        self.assertEqual(Knowledge.STATUS_PENDING, docs.status)
+        self.assertEqual(KnowledgeSource.STATUS_PENDING, docs.status)
 
         # a crawled page row has no storage object - deleting it is a no-op on storage
-        website = Knowledge.create_website(self.org, self.admin, "Nyaruka", "https://nyaruka.com")
+        website = KnowledgeSource.create_website(self.org, self.admin, "Nyaruka", "https://nyaruka.com")
         page = KnowledgeItem.objects.create(
-            knowledge=website, name="Home", url="https://nyaruka.com/", content_type="text/html", size=1024
+            source=website, name="Home", url="https://nyaruka.com/", content_type="text/html", size=1024
         )
         page.delete()
         self.assertFalse(KnowledgeItem.objects.filter(id=page.id).exists())
 
     def test_unique_urls(self):
-        website = Knowledge.create_website(self.org, self.admin, "Nyaruka", "https://nyaruka.com")
+        website = KnowledgeSource.create_website(self.org, self.admin, "Nyaruka", "https://nyaruka.com")
         KnowledgeItem.objects.create(
-            knowledge=website, name="Home", url="https://nyaruka.com/", content_type="text/html", size=1024
+            source=website, name="Home", url="https://nyaruka.com/", content_type="text/html", size=1024
         )
 
         # same url within the source collides
         with self.assertRaises(IntegrityError):
             KnowledgeItem.objects.create(
-                knowledge=website, name="Home Again", url="https://nyaruka.com/", content_type="text/html", size=1024
+                source=website, name="Home Again", url="https://nyaruka.com/", content_type="text/html", size=1024
             )
 
     def test_null_urls_can_coexist(self):
         # the subtle side of unique_knowledge_item_urls: NULLs are distinct, so documents are exempt
-        docs = Knowledge.create_documents(self.org, self.admin, "Guides")
+        docs = KnowledgeSource.create_documents(self.org, self.admin, "Guides")
         KnowledgeItem.objects.create(
-            knowledge=docs, name="one.txt", url=None, path="a/b/one.txt", content_type="text/plain", size=3
+            source=docs, name="one.txt", url=None, path="a/b/one.txt", content_type="text/plain", size=3
         )
         KnowledgeItem.objects.create(
-            knowledge=docs, name="two.txt", url=None, path="a/b/two.txt", content_type="text/plain", size=3
+            source=docs, name="two.txt", url=None, path="a/b/two.txt", content_type="text/plain", size=3
         )
 
         self.assertEqual(2, docs.items.count())
 
 
 class ArticleTest(TembaTest):
-    def create_article(self, knowledge, title: str, *, parent=None, status=Article.STATUS_DRAFT):
+    def create_article(self, source, title: str, *, parent=None, status=Article.STATUS_DRAFT):
         return Article.objects.create(
-            knowledge=knowledge,
+            source=source,
             parent=parent,
             title=title,
-            slug=Article.get_unique_slug(knowledge, title),
+            slug=Article.get_unique_slug(source, title),
             status=status,
             created_by=self.admin,
             modified_by=self.admin,
@@ -302,7 +308,7 @@ class ArticleTest(TembaTest):
     def setUp(self):
         super().setUp()
 
-        self.helpdesk = self.org.knowledge.get(knowledge_type=Knowledge.TYPE_HELPDESK)
+        self.helpdesk = self.org.sources.get(source_type=KnowledgeSource.TYPE_HELPDESK)
 
     def test_get_unique_slug(self):
         self.assertEqual("getting-started", Article.get_unique_slug(self.helpdesk, "Getting Started"))
@@ -335,7 +341,7 @@ class ArticleTest(TembaTest):
 
         with self.assertRaises(IntegrityError):
             Article.objects.create(
-                knowledge=self.helpdesk,
+                source=self.helpdesk,
                 title="Getting Started",
                 slug="getting-started",
                 created_by=self.admin,
@@ -345,24 +351,30 @@ class ArticleTest(TembaTest):
     def test_create(self):
         article1 = Article.create(self.helpdesk, self.admin, "Getting Started")
 
-        self.assertEqual(self.helpdesk, article1.knowledge)
+        self.assertEqual(self.helpdesk, article1.source)
         self.assertIsNone(article1.parent)
         self.assertEqual(0, article1.sort_order)
         self.assertEqual("getting-started", article1.slug)
         self.assertEqual("", article1.body)
+        self.assertEqual("", article1.description)
+        self.assertTrue(article1.is_section)  # a root of the tree is a section
         self.assertEqual(Article.STATUS_DRAFT, article1.status)  # new articles are always drafts
         self.assertIsNone(article1.published_on)
         self.assertEqual("eng", article1.language)  # defaults to the workspace's primary flow language
 
         # new articles go to the end of their level so creating one never reshuffles the tree
-        article2 = Article.create(self.helpdesk, self.admin, "Flows", body="# Flows", language="spa")
+        article2 = Article.create(
+            self.helpdesk, self.admin, "Flows", body="# Flows", description="All about flows.", language="spa"
+        )
         self.assertEqual(1, article2.sort_order)
         self.assertEqual("# Flows", article2.body)
+        self.assertEqual("All about flows.", article2.description)
         self.assertEqual("spa", article2.language)
 
         child = Article.create(self.helpdesk, self.admin, "Nodes", parent=article2)
         self.assertEqual(article2, child.parent)
         self.assertEqual(0, child.sort_order)
+        self.assertFalse(child.is_section)
 
     def test_get_tree(self):
         flows = self.create_article(self.helpdesk, "Flows")
@@ -409,17 +421,18 @@ class ArticleTest(TembaTest):
     def test_apply_sort(self):
         flows = self.create_article(self.helpdesk, "Flows")
         contacts = self.create_article(self.helpdesk, "Contacts")
-        nodes = self.create_article(self.helpdesk, "Nodes")
-        other = self.create_article(self.org2.knowledge.get(knowledge_type=Knowledge.TYPE_HELPDESK), "Other")
+        nodes = self.create_article(self.helpdesk, "Nodes", parent=flows)
+        other = self.create_article(self.org2.sources.get(source_type=KnowledgeSource.TYPE_HELPDESK), "Other")
         modified_on = flows.modified_on
 
+        # sections can be reordered, and an article moved to another section
         Article.apply_sort(
             self.helpdesk,
-            [(str(contacts.uuid), None, 0), (str(flows.uuid), None, 1), (str(nodes.uuid), str(flows.uuid), 0)],
+            [(str(contacts.uuid), None, 0), (str(flows.uuid), None, 1), (str(nodes.uuid), str(contacts.uuid), 0)],
         )
 
-        self.assertEqual([contacts, flows, nodes], Article.get_tree(self.helpdesk))
-        self.assertEqual([0, 0, 1], [a.depth for a in Article.get_tree(self.helpdesk)])
+        self.assertEqual([contacts, nodes, flows], Article.get_tree(self.helpdesk))
+        self.assertEqual([0, 1, 0], [a.depth for a in Article.get_tree(self.helpdesk)])
 
         # reordering isn't something mailroom indexes, so it doesn't make articles look stale
         flows.refresh_from_db()
@@ -429,28 +442,30 @@ class ArticleTest(TembaTest):
         with self.assertRaises(ValueError):
             Article.apply_sort(self.helpdesk, [(str(other.uuid), None, 0)])
         with self.assertRaises(ValueError):
-            Article.apply_sort(self.helpdesk, [(str(flows.uuid), str(other.uuid), 0)])
+            Article.apply_sort(self.helpdesk, [(str(nodes.uuid), str(other.uuid), 0)])
+
+        # a section can't be made an article, nor an article a section - what each is, is where it sits
+        with self.assertRaises(ValueError):
+            Article.apply_sort(self.helpdesk, [(str(flows.uuid), str(contacts.uuid), 0)])
+        with self.assertRaises(ValueError):
+            Article.apply_sort(self.helpdesk, [(str(nodes.uuid), None, 0)])
 
         # nor can an article be its own ancestor
         with self.assertRaises(ValueError):
-            Article.apply_sort(self.helpdesk, [(str(flows.uuid), str(flows.uuid), 0)])
-        with self.assertRaises(ValueError):
-            Article.apply_sort(
-                self.helpdesk, [(str(flows.uuid), str(contacts.uuid), 0), (str(contacts.uuid), str(flows.uuid), 0)]
-            )
+            Article.apply_sort(self.helpdesk, [(str(nodes.uuid), str(nodes.uuid), 0)])
 
         # nesting is allowed up to the cap...
-        deep = self.create_article(self.helpdesk, "Deep")
-        deeper = self.create_article(self.helpdesk, "Deeper")
-        Article.apply_sort(self.helpdesk, [(str(deep.uuid), str(flows.uuid), 1)])
+        deep = self.create_article(self.helpdesk, "Deep", parent=flows)
+        deeper = self.create_article(self.helpdesk, "Deeper", parent=contacts)
+        Article.apply_sort(self.helpdesk, [(str(deep.uuid), str(contacts.uuid), 1)])
 
         # ...but no further - deep's parent comes from the part of the tree the client didn't mention
         with self.assertRaises(ValueError):
             Article.apply_sort(self.helpdesk, [(str(deeper.uuid), str(deep.uuid), 0)])
 
         # none of the rejected moves changed anything
-        self.assertEqual([contacts, deeper, flows, nodes, deep], Article.get_tree(self.helpdesk))
-        self.assertEqual([0, 0, 0, 1, 1], [a.depth for a in Article.get_tree(self.helpdesk)])
+        self.assertEqual([contacts, deeper, nodes, deep, flows], Article.get_tree(self.helpdesk))
+        self.assertEqual([0, 1, 1, 1, 0], [a.depth for a in Article.get_tree(self.helpdesk)])
 
     def test_as_html(self):
         article = self.create_article(self.helpdesk, "Getting Started")
@@ -486,6 +501,15 @@ class ArticleTest(TembaTest):
         # images survive, since screenshots are the point of them
         article.body = "![shot](https://example.com/shot.png)"
         self.assertEqual('<p><img alt="shot" src="https://example.com/shot.png"></p>', article.as_html())
+
+        # an uploaded image is referenced by its storage key, which is resolved to where storage serves it from only
+        # as the article is rendered - the fragment riding along
+        article.body = "![shot](orgs/1/knowledge/shot.png#size=small) ![abs](/local/shot.png)"
+        self.assertEqual(
+            f'<p><img alt="shot" class="size-small" src="{public_file_storage.url("orgs/1/knowledge/shot.png")}#size=small"> '
+            '<img alt="abs" src="/local/shot.png"></p>',
+            article.as_html(),
+        )
 
         # the size and layout an image was given ride the fragment of its URL and come out as classes on the <img>,
         # with the src untouched - fragment and all
@@ -713,42 +737,47 @@ class ArticleTest(TembaTest):
 
     @cleanup(s3=True)
     def test_release(self):
-        parent = self.create_article(self.helpdesk, "Flows", status=Article.STATUS_PUBLISHED)
-        child1 = self.create_article(self.helpdesk, "Nodes", parent=parent)
-        child2 = self.create_article(self.helpdesk, "Edges", parent=parent)
-        modified_on = parent.modified_on
+        section = self.create_article(self.helpdesk, "Flows", status=Article.STATUS_PUBLISHED)
+        article = self.create_article(self.helpdesk, "Nodes", parent=section, status=Article.STATUS_PUBLISHED)
+        modified_on = article.modified_on
 
         path = public_file_storage.save(
-            get_article_image_path(parent, uuid4(), "image/png"), SimpleUploadedFile("shot.png", b"png")
+            get_article_image_path(article, uuid4(), "image/png"), SimpleUploadedFile("shot.png", b"png")
         )
         ArticleImage.objects.create(
-            article=parent, name="shot.png", path=path, content_type="image/png", size=3, created_by=self.admin
+            article=article, name="shot.png", path=path, content_type="image/png", size=3, created_by=self.admin
         )
 
-        parent.release(self.admin)
+        # a section with articles in it can't go - they'd be left as sections themselves
+        with self.assertRaises(AssertionError):
+            section.release(self.admin)
+
+        section.refresh_from_db()
+        self.assertTrue(section.is_active)
+
+        article.release(self.admin)
 
         # soft deleted, back to draft, and modified_on bumped so mailroom's sweep sees the tombstone
-        parent.refresh_from_db()
-        self.assertFalse(parent.is_active)
-        self.assertEqual(Article.STATUS_DRAFT, parent.status)
-        self.assertIsNone(parent.published_on)
-        self.assertGreater(parent.modified_on, modified_on)
+        article.refresh_from_db()
+        self.assertFalse(article.is_active)
+        self.assertEqual(Article.STATUS_DRAFT, article.status)
+        self.assertIsNone(article.published_on)
+        self.assertGreater(article.modified_on, modified_on)
 
-        # children reparented to our parent (the root) so the tree stays connected
-        child1.refresh_from_db()
-        child2.refresh_from_db()
-        self.assertIsNone(child1.parent)
-        self.assertIsNone(child2.parent)
-
-        # and our images are gone for good - rows first, then the storage objects
+        # and its images are gone for good - rows first, then the storage objects
         self.assertEqual(0, ArticleImage.objects.count())
         self.assertFalse(public_file_storage.exists(path))
+
+        # emptied, the section can go too
+        section.release(self.admin)
+        section.refresh_from_db()
+        self.assertFalse(section.is_active)
 
 
 class ArticleImageTest(TembaTest):
     @cleanup(s3=True)
     def test_from_upload(self):
-        helpdesk = self.org.knowledge.get(knowledge_type=Knowledge.TYPE_HELPDESK)
+        helpdesk = self.org.sources.get(source_type=KnowledgeSource.TYPE_HELPDESK)
         article = Article.create(helpdesk, self.admin, "Getting Started")
 
         image = ArticleImage.from_upload(
@@ -775,9 +804,9 @@ class ArticleImageTest(TembaTest):
 
     @cleanup(s3=True)
     def test_delete(self):
-        helpdesk = self.org.knowledge.get(knowledge_type=Knowledge.TYPE_HELPDESK)
+        helpdesk = self.org.sources.get(source_type=KnowledgeSource.TYPE_HELPDESK)
         article = Article.objects.create(
-            knowledge=helpdesk,
+            source=helpdesk,
             title="Getting Started",
             slug="getting-started",
             created_by=self.admin,

@@ -78,6 +78,14 @@ class ColorPickerWidget(TembaWidgetMixin, forms.TextInput):  # pragma: needs cov
     template_name = "utils/forms/color_picker.html"
 
 
+class ColorInputWidget(TembaWidgetMixin, forms.TextInput):
+    """
+    A color chosen with the browser's own picker - a swatch with the hex alongside, clearable unless required.
+    """
+
+    template_name = "utils/forms/color_input.html"
+
+
 class ImagePickerWidget(TembaWidgetMixin, forms.ClearableFileInput):
     template_name = "utils/forms/image_picker.html"
 
@@ -268,17 +276,6 @@ class ContactSearchWidget(forms.Widget):
                 attrs["exclusions"] = json.dumps(value.get("exclusions", []))
 
         return super().render(name, value, attrs)
-
-
-class CompletionTextarea(forms.Widget):
-    template_name = "utils/forms/completion_textarea.html"
-    is_annotated = True
-
-    def __init__(self, attrs=None):
-        default_attrs = {"width": "100%", "height": "100%"}
-        if attrs:
-            default_attrs.update(attrs)
-        super().__init__(default_attrs)
 
 
 class OmniboxChoice(forms.Widget):

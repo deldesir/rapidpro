@@ -45,7 +45,7 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
         msg2 = self.create_incoming_msg(contact1, "message number 2")
         msg3 = self.create_incoming_msg(contact2, "message number 3")
         self.create_incoming_msg(contact2, "message number 4")
-        msg5 = self.create_incoming_msg(contact2, "message number 5", visibility="A")
+        msg5 = self.create_incoming_msg(contact2, "message number 5", archived=True)
         self.create_incoming_msg(contact2, "message number 6", status=Msg.STATUS_PENDING)
 
         inbox_url = reverse("msgs.msg_inbox")
@@ -61,6 +61,18 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
         response = self.assertListFetch(inbox_url, [self.editor, self.admin])
         self.assertContains(response, "temba-msg-list")
         self.assertEqual("/api/internal/messages.json?folder=inbox", response.context["list_url"])
+
+        # incoming folders opt into search
+        self.assertTrue(response.context["list_searchable"])
+        self.assertContains(response, "searchable")
+
+        # admins can view channel logs so the component is told to link to them
+        self.assertIn("list_logs_after", response.context)
+        self.assertContains(response, "show-logs-after")
+
+        response = self.requestView(inbox_url, self.editor)
+        self.assertNotIn("list_logs_after", response.context)
+        self.assertNotContains(response, "show-logs-after")
 
         # the label bulk action carries the create affordance for viewers who can create labels
         new_actions = {a["key"]: a for a in response.context["list_bulk_actions"]}
@@ -135,7 +147,7 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
 
         # test archiving a msg
         self.client.post(inbox_url, {"action": "archive", "objects": str(msg1.uuid)})
-        self.assertEqual({msg1, msg5}, set(Msg.objects.filter(visibility=Msg.VISIBILITY_ARCHIVED)))
+        self.assertEqual({msg1, msg5}, set(Msg.objects.filter(folder=Msg.FOLDER_ARCHIVED)))
 
         # archiving doesn't remove labels
         msg1.refresh_from_db()
@@ -168,9 +180,9 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
     def test_archived(self, mr_mocks):
         contact1 = self.create_contact("Joe Blow", phone="+250788000001")
         contact2 = self.create_contact("Frank", phone="+250788000002")
-        msg1 = self.create_incoming_msg(contact1, "message number 1", visibility=Msg.VISIBILITY_ARCHIVED)
-        msg2 = self.create_incoming_msg(contact1, "message number 2", visibility=Msg.VISIBILITY_ARCHIVED)
-        msg3 = self.create_incoming_msg(contact2, "message number 3", visibility=Msg.VISIBILITY_ARCHIVED)
+        msg1 = self.create_incoming_msg(contact1, "message number 1", archived=True)
+        msg2 = self.create_incoming_msg(contact1, "message number 2", archived=True)
+        msg3 = self.create_incoming_msg(contact2, "message number 3", archived=True)
         self.create_incoming_msg(contact2, "message number 4", visibility=Msg.VISIBILITY_DELETED_BY_USER)
         self.create_incoming_msg(contact2, "message number 5", status=Msg.STATUS_PENDING)
 
@@ -190,7 +202,7 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
             archived_url, self.editor, post_data={"action": "restore", "objects": [str(msg1.uuid)]}
         )
         self.assertEqual(200, response.status_code)
-        self.assertEqual({msg2, msg3}, set(Msg.objects.filter(visibility=Msg.VISIBILITY_ARCHIVED)))
+        self.assertEqual({msg2, msg3}, set(Msg.objects.filter(folder=Msg.FOLDER_ARCHIVED)))
 
         # can also delete messages
         response = self.requestView(
@@ -225,6 +237,10 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
         response = self.assertListFetch(outbox_url, [self.editor, self.admin])
         self.assertBulkActions(response, [])
 
+        # outgoing folders don't
+        self.assertFalse(response.context["list_searchable"])
+        self.assertNotContains(response, "searchable")
+
         # create another broadcast this time with 3 messages
         contact4 = self.create_contact("Kevin", phone="+250788000003")
         group = self.create_group("Testers", contacts=[contact2, contact3])
@@ -254,7 +270,10 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
             self.client.get(sent_url)
 
         self.assertRequestDisallowed(sent_url, [None, self.agent])
-        self.assertListFetch(sent_url, [self.editor, self.admin])
+        response = self.assertListFetch(sent_url, [self.editor, self.admin])
+
+        self.assertFalse(response.context["list_searchable"])
+        self.assertNotContains(response, "searchable")
 
     @mock_mailroom
     def test_failed(self, mr_mocks):
@@ -265,7 +284,7 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
 
         # create broadcast and fail the only message
         broadcast = self.create_broadcast(self.admin, {"eng": {"text": "message number 2"}}, contacts=[contact1])
-        broadcast.get_messages().update(status="F")
+        broadcast.get_messages().update(status="F", folder=Msg.FOLDER_FAILED)
         msg2 = broadcast.get_messages()[0]
 
         # message without a broadcast
@@ -280,6 +299,8 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
         response = self.assertListFetch(failed_url, [self.editor, self.admin])
 
         self.assertBulkActions(response, ["resend"])
+        self.assertFalse(response.context["list_searchable"])
+        self.assertNotContains(response, "searchable")
 
         # resend some messages
         self.client.post(failed_url, {"action": "resend", "objects": [str(msg2.uuid)]})
@@ -306,7 +327,7 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
         msg1 = self.create_incoming_msg(joe, "test1")
         msg2 = self.create_incoming_msg(frank, "test2")
         msg3 = self.create_incoming_msg(frank, "test3")
-        msg4 = self.create_incoming_msg(joe, "test4", visibility=Msg.VISIBILITY_ARCHIVED)
+        msg4 = self.create_incoming_msg(joe, "test4", archived=True)
         msg5 = self.create_incoming_msg(joe, "test5", visibility=Msg.VISIBILITY_DELETED_BY_USER)
         msg6 = self.create_incoming_msg(joe, "IVR test", flow=flow)
 
@@ -326,7 +347,7 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
         response = self.requestView(label3_url, self.editor, HTTP_X_TEMBA_SPA=1)
         self.assertEqual(f"/msg/labels/{label3.uuid}", response.headers[TEMBA_MENU_SELECTION])
         self.assertEqual(200, response.status_code)
-        self.assertBulkActions(response, ["label", "archive"])
+        self.assertBulkActions(response, ["label"])
 
         self.assertContentMenu(label3_url, self.editor, ["Edit", "Delete", "-", "Export", "Usages"])
         self.assertContentMenu(label1_url, self.admin, ["Edit", "Delete", "-", "Export", "Usages"])

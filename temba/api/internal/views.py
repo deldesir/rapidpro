@@ -12,13 +12,12 @@ from temba.channels.models import Channel
 from temba.contacts.models import Contact, ContactField, ContactGroup
 from temba.flows.models import Flow, FlowLabel
 from temba.globals.models import Global
-from temba.knowledge.models import Article, Knowledge
+from temba.knowledge.models import Article, KnowledgeSource
 from temba.locations.models import AdminBoundary
 from temba.notifications.models import Notification
 from temba.orgs.models import Org
 from temba.templates.models import Template, TemplateTranslation
 from temba.tickets.models import Shortcut, Topic
-from temba.users.models import User
 
 from ..models import APIPermission, SSLPermission
 from ..support import (
@@ -75,8 +74,8 @@ class ArticlesEndpoint(BaseEndpoint):
 
         # the helpdesk is part of the agents feature, same as every other view of it
         if Org.FEATURE_AGENTS in org.features:
-            helpdesk = org.knowledge.filter(
-                knowledge_type=Knowledge.TYPE_HELPDESK, is_system=True, is_active=True
+            helpdesk = org.sources.filter(
+                source_type=KnowledgeSource.TYPE_HELPDESK, is_system=True, is_active=True
             ).first()
             if helpdesk:
                 articles = Article.get_tree(helpdesk)
@@ -275,7 +274,7 @@ class OrgsEndpoint(ListAPIMixin, BaseEndpoint):
     pagination_class = ModifiedOnCursorPagination
 
     def get_queryset(self):
-        return User.get_orgs_for_request(self.request)
+        return self.request.user.get_orgs(self.request)
 
 
 class ShortcutsEndpoint(SearchLengthMixin, ListAPIMixin, BaseEndpoint):

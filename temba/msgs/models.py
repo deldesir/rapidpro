@@ -5,6 +5,7 @@ import os
 import re
 from array import array
 from dataclasses import dataclass
+from datetime import timedelta
 from enum import Enum
 from fnmatch import fnmatch
 from urllib.parse import unquote, urlparse
@@ -15,9 +16,8 @@ from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
 from django.core.files.storage import default_storage
 from django.db import models
-from django.db.models import Prefetch, Q, Sum
+from django.db.models import F, Prefetch, Q, Sum
 from django.db.models.functions import Lower
-from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -31,7 +31,7 @@ from temba.utils.export.models import MultiSheetExporter
 from temba.utils.models import LegacyIDMixin, TembaModel
 from temba.utils.models.counts import BaseSquashableCount
 from temba.utils.s3 import public_file_storage
-from temba.utils.uuid import uuid4
+from temba.utils.uuid import uuid4, uuid7_range
 
 logger = logging.getLogger(__name__)
 
@@ -212,7 +212,6 @@ class Broadcast(LegacyIDMixin, models.Model):
     contacts = models.ManyToManyField(Contact, related_name="addressed_broadcasts")
     urns = ArrayField(models.TextField(), null=True)
     query = models.TextField(null=True)
-    node_uuid = models.UUIDField(null=True)
     exclusions = models.JSONField(default=dict, null=True)
 
     # message content
@@ -243,13 +242,12 @@ class Broadcast(LegacyIDMixin, models.Model):
         contacts=(),
         urns=(),
         query=None,
-        node_uuid=None,
         exclude=None,
         template=None,
         template_variables=(),
         schedule=None,
     ):
-        assert groups or contacts or urns or query or node_uuid, "can't create broadcast without recipients"
+        assert groups or contacts or urns or query, "can't create broadcast without recipients"
         assert base_language and languages.get_name(base_language), f"{base_language} is not a valid language code"
         assert base_language in translations, "no translation for base language"
 
@@ -262,7 +260,6 @@ class Broadcast(LegacyIDMixin, models.Model):
             contacts=contacts,
             urns=urns,
             query=query,
-            node_uuid=node_uuid,
             exclude=exclude,
             template=template,
             template_variables=template_variables,
@@ -549,12 +546,10 @@ class Msg(models.Model):
     )
 
     VISIBILITY_VISIBLE = "V"
-    VISIBILITY_ARCHIVED = "A"
     VISIBILITY_DELETED_BY_USER = "D"
     VISIBILITY_DELETED_BY_SENDER = "X"
     VISIBILITY_CHOICES = (
         (VISIBILITY_VISIBLE, "Visible"),
-        (VISIBILITY_ARCHIVED, "Archived"),
         (VISIBILITY_DELETED_BY_USER, "Deleted by user"),
         (VISIBILITY_DELETED_BY_SENDER, "Deleted by sender"),
     )
@@ -570,7 +565,7 @@ class Msg(models.Model):
     TYPE_SLUGS = {TYPE_TEXT: "text", TYPE_OPTIN: "optin", TYPE_VOICE: "voice"}
 
     # which folder this message belongs to. the first six are the user facing folders defined by MsgFolder - the last
-    # two exist so that every message has a folder, and so that a null folder means only "not yet written".
+    # two exist so that messages outside the user facing folders still have one.
     FOLDER_INBOX = "I"
     FOLDER_HANDLED = "W"
     FOLDER_ARCHIVED = "A"
@@ -647,12 +642,13 @@ class Msg(models.Model):
     direction = models.CharField(max_length=1, choices=DIRECTION_CHOICES)
     status = models.CharField(max_length=1, choices=STATUS_CHOICES, default=STATUS_PENDING)
     visibility = models.CharField(max_length=1, choices=VISIBILITY_CHOICES, default=VISIBILITY_VISIBLE)
-    # denormalized folder, derived from direction/visibility/status/flow, maintained by mailroom and courier. null
-    # means not yet written, not "in no folder" - see derive_folder.
-    folder = models.CharField(max_length=1, null=True, choices=FOLDER_CHOICES)
+    # the folder this message is in, derived from direction/visibility/status/flow and maintained by mailroom and
+    # courier - every message is in one, including those not in a user facing folder. This is what's read to tell
+    # which folder a message is in, including whether it's archived, rather than the state it's derived from.
+    folder = models.CharField(max_length=1, choices=FOLDER_CHOICES)
 
     is_android = models.BooleanField()
-    labels = models.ManyToManyField("Label", related_name="msgs")
+    labels = models.ManyToManyField("Label", related_name="msgs", through="MsgLabel")
 
     # the number of actual messages the channel sent this as (outgoing only)
     msg_count = models.IntegerField(default=1)
@@ -670,10 +666,8 @@ class Msg(models.Model):
 
     def as_json(self, context=None) -> dict:
         """
-        Internal API shape, consumed by the temba-msg-list component.
-        `context` is the DRF serializer context (with `user` / `org`) and
-        is used to resolve the channel-log link, which is permission- and
-        retention-gated.
+        Internal API shape, consumed by the temba-msg-list component. The channel is included so the component can
+        link to the message's channel logs, which the page enables when the user can view them.
         """
         return {
             "uuid": str(self.uuid),
@@ -683,28 +677,9 @@ class Msg(models.Model):
             "attachments": [a.as_json() for a in self.get_attachments()],
             "labels": [{"uuid": str(lb.uuid), "name": lb.name} for lb in self.labels.all()],
             "flow": {"uuid": str(self.flow.uuid), "name": self.flow.name} if self.flow else None,
+            "channel": {"uuid": str(self.channel.uuid), "name": self.channel.name} if self.channel else None,
             "created_on": self.created_on.isoformat() if self.created_on else None,
-            "logs_url": self._get_logs_url(context) if context else None,
         }
-
-    def _get_logs_url(self, context):
-        """
-        Mirrors the channel_log_link template tag — returns the URL of
-        this message's channel log only when the viewer can read logs,
-        the channel is still active, and the message is within the
-        channel-log retention window.
-        """
-        user = context.get("user")
-        org = context.get("org")
-        if not (user and org):
-            return None
-        if not (user.has_org_perm(org, "channels.channel_logs") or user.is_staff):
-            return None
-        if not (self.channel and self.channel.is_active and self.channel.type.has_logs and self.created_on):
-            return None
-        if timezone.now() - self.created_on >= settings.RETENTION_PERIODS["channellog"]:
-            return None
-        return reverse("channels.channel_logs_read", args=[self.channel.uuid, "msg", self.uuid])
 
     def as_archive_json(self):
         """
@@ -747,38 +722,6 @@ class Msg(models.Model):
         """
 
         mailroom.get_client().msg_handle(self.org, [self])
-
-    def derive_folder(self) -> str:
-        """
-        Derives the folder code for this message. Nothing reads this yet - it exists to pin down the contract that
-        mailroom and courier implement, in particular the precedence, which matters for states that fall outside the
-        user facing folders entirely: a message can be archived or deleted while still pending, and such messages
-        must not appear in the Archived folder.
-        """
-
-        if self.visibility in (self.VISIBILITY_DELETED_BY_USER, self.VISIBILITY_DELETED_BY_SENDER):
-            return self.FOLDER_DELETED
-        if self.direction == self.DIRECTION_IN and self.status == self.STATUS_PENDING:
-            return self.FOLDER_PENDING
-
-        folder = MsgFolder.from_msg(self)
-
-        assert folder is not None, f"unable to derive folder for msg #{self.id}"
-
-        return folder.code
-
-    @classmethod
-    def archive_all_for_contacts(cls, contacts):
-        """
-        Archives all incoming messages for the given contacts
-        """
-        msgs = Msg.objects.filter(direction=cls.DIRECTION_IN, visibility=cls.VISIBILITY_VISIBLE, contact__in=contacts)
-        msg_ids = list(msgs.values_list("pk", flat=True))
-
-        # update modified on in small batches to avoid long table lock, and having too many non-unique values for
-        # modified_on which is the primary ordering for the API
-        for batch in itertools.batched(msg_ids, 100):
-            Msg.objects.filter(pk__in=batch).update(visibility=cls.VISIBILITY_ARCHIVED, modified_on=timezone.now())
 
     @classmethod
     def apply_action_label(cls, user, msgs, label):
@@ -873,47 +816,35 @@ class Msg(models.Model):
             # used by API messages endpoint hence the ordering, and general fetching by org or contact
             models.Index(name="msgs_by_org", fields=["org", "-created_on", "-id"]),
             models.Index(name="msgs_by_contact", fields=["contact", "-created_on", "-id"]),
-            # used for finding errored messages to retry
+            # used for finding errored messages to retry. Like the Android index below, the predicate doesn't
+            # reference status, so that changing a message's status alone doesn't touch it - next_attempt is only ever
+            # set whilst a message is awaiting a retry, which mailroom and courier maintain.
             models.Index(
-                name="msgs_outgoing_to_retry",
+                name="msgs_outgoing_awaiting_retry",
                 fields=["next_attempt", "created_on", "id"],
-                condition=Q(direction="O", status__in=("I", "E"), next_attempt__isnull=False),
+                condition=Q(direction="O", next_attempt__isnull=False),
             ),
-            # used for finding old Android messages to fail
+            # used for finding old Android messages to fail. The predicate is on the folder rather than the statuses
+            # it's derived from so that changing a message's status doesn't touch this index - outbox membership is
+            # exactly the visible outgoing messages still waiting to be sent (the folder derivation lives in mailroom
+            # and courier). Postgres can only make a heap-only (HOT) update when no column that actually changed is
+            # referenced by any index, and a partial index's predicate counts.
+            #
+            # Being keyed on the folder makes this narrower than indexing the statuses would: an outgoing message
+            # that was deleted whilst still waiting to be sent is in the deleted folder, not the outbox. That's what
+            # the query wants - there's nothing to fail on a message the user can no longer see.
             models.Index(
-                name="msgs_outgoing_android_to_fail",
+                name="msgs_android_outbox",
                 fields=["created_on"],
-                condition=Q(direction="O", is_android=True, status__in=("I", "Q", "E")),
+                condition=Q(direction="O", folder="O", is_android=True),
             ),
-            # used for Inbox view and API folder
+            # used by the folder views and API folders, which filter by folder and page by uuid (time ordered as
+            # message uuids are v7) - see MsgFolder.get_queryset. Partial on the user facing folders so it doesn't
+            # also index every pending and deleted message.
             models.Index(
-                name="msgs_inbox",
-                fields=["org", "-created_on", "-id"],
-                condition=Q(direction="I", visibility="V", status="H", flow__isnull=True),
-            ),
-            # used for Flows view and API folder
-            models.Index(
-                name="msgs_flows",
-                fields=["org", "-created_on", "-id"],
-                condition=Q(direction="I", visibility="V", status="H", flow__isnull=False),
-            ),
-            # used for Archived view and API folder
-            models.Index(
-                name="msgs_archived",
-                fields=["org", "-created_on", "-id"],
-                condition=Q(direction="I", visibility="A", status="H"),
-            ),
-            # used for Outbox and Failed views and API folders
-            models.Index(
-                name="msgs_outbox_and_failed",
-                fields=["org", "status", "-created_on", "-id"],
-                condition=Q(direction="O", visibility="V", status__in=("I", "Q", "E", "F")),
-            ),
-            # used for Sent view / API folder (distinct because of the ordering)
-            models.Index(
-                name="msgs_sent",
-                fields=["org", "-sent_on", "-id"],
-                condition=Q(direction="O", visibility="V", status__in=("W", "S", "D", "R")),
+                name="msgs_by_folder",
+                fields=["org", "folder", "-uuid"],
+                condition=Q(folder__in=("I", "W", "A", "O", "S", "X")),
             ),
         ]
         constraints = [
@@ -967,100 +898,59 @@ class MsgFolder(Enum):
     A folder of messages owned by an org.
     """
 
+    # each folder's code (the Msg.folder value) and the S3 Select query which selects its messages from archived
+    # message records - which have no folder field, so describe messages by state
     INBOX = (
         Msg.FOLDER_INBOX,
-        dict(
-            direction=Msg.DIRECTION_IN,
-            visibility=Msg.VISIBILITY_VISIBLE,
-            status=Msg.STATUS_HANDLED,
-            flow__isnull=True,
-        ),
         dict(direction="in", visibility="visible", status="handled", flow__isnull=True),
     )
     HANDLED = (
         Msg.FOLDER_HANDLED,
-        dict(
-            direction=Msg.DIRECTION_IN,
-            visibility=Msg.VISIBILITY_VISIBLE,
-            status=Msg.STATUS_HANDLED,
-            flow__isnull=False,
-        ),
         dict(direction="in", visibility="visible", status="handled", flow__isnull=False),
     )
     ARCHIVED = (
         Msg.FOLDER_ARCHIVED,
-        dict(
-            direction=Msg.DIRECTION_IN,
-            visibility=Msg.VISIBILITY_ARCHIVED,
-            status=Msg.STATUS_HANDLED,
-        ),
         dict(direction="in", visibility="archived", status="handled"),
     )
     OUTBOX = (
         Msg.FOLDER_OUTBOX,
-        dict(
-            direction=Msg.DIRECTION_OUT,
-            visibility=Msg.VISIBILITY_VISIBLE,
-            status__in=(Msg.STATUS_INITIALIZING, Msg.STATUS_QUEUED, Msg.STATUS_ERRORED),
-        ),
         dict(direction="out", visibility="visible", status__in=("initializing", "queued", "errored")),
     )
     SENT = (
         Msg.FOLDER_SENT,
-        dict(
-            direction=Msg.DIRECTION_OUT,
-            visibility=Msg.VISIBILITY_VISIBLE,
-            status__in=(Msg.STATUS_WIRED, Msg.STATUS_SENT, Msg.STATUS_DELIVERED, Msg.STATUS_READ),
-        ),
         dict(direction="out", visibility="visible", status__in=("wired", "sent", "delivered", "read")),
     )
     FAILED = (
         Msg.FOLDER_FAILED,
-        dict(direction=Msg.DIRECTION_OUT, visibility=Msg.VISIBILITY_VISIBLE, status=Msg.STATUS_FAILED),
         dict(direction="out", visibility="visible", status="failed"),
     )
 
-    def __init__(self, code, query: dict, archive_query: dict = None):
+    def __init__(self, code, records_query: dict):
         self.code = code
-        self.query = query
-        self.archive_query = archive_query
+        self.records_query = records_query
 
     @classmethod
     def from_code(cls, code):
         return next(f for f in cls if f.code == code)
 
-    @classmethod
-    def from_msg(cls, msg):
+    def get_queryset(self, org, *, after=None, before=None):
         """
-        Derives the folder that the given message belongs to, or None if it isn't in one (e.g. an unhandled incoming
-        message, or one deleted by its sender).
+        Returns the messages in this folder, newest first, optionally bounded by created_on (inclusive at both ends).
+        The bounds are applied to uuid rather than created_on so that they're conditions on the folder index rather
+        than a filter over everything it yields - see msg_uuid_bounds for what that means for callers.
         """
-
-        def matches(lookup: str, expected) -> bool:
-            field, _, op = lookup.partition("__")
-            actual = getattr(msg, Msg._meta.get_field(field).attname)
-
-            if op == "in":
-                return actual in expected
-            elif op == "isnull":
-                return (actual is None) == expected
-
-            assert op == "", f"unsupported lookup: {lookup}"
-
-            return actual == expected
-
-        for folder in cls:
-            if all(matches(lookup, expected) for lookup, expected in folder.query.items()):
-                return folder
-
-        return None
-
-    def get_queryset(self, org):
         # we don't use org.msgs here because it causes problems when the API is using different db connections
-        return Msg.objects.filter(org=org, **self.query)
+        qs = Msg.objects.filter(org=org, folder=self.code)
+        lower, upper = msg_uuid_bounds(after, before)
+        if lower:
+            qs = qs.filter(uuid__gte=lower)
+        if upper:
+            qs = qs.filter(uuid__lte=upper)
+
+        return qs.order_by("-uuid")
 
     def get_archive_query(self) -> dict:
-        return self.archive_query.copy()
+        return self.records_query.copy()
 
     @property
     def _count_scope(self) -> str:
@@ -1082,6 +972,25 @@ class MsgFolder(Enum):
 
     def __repr__(self):  # pragma: no cover
         return f"<MsgFolder.{self.name} code={self.code}>"
+
+
+# how far the bounds of a uuid range are widened - see msg_uuid_bounds
+MSG_UUID_BOUNDS_PADDING = timedelta(milliseconds=10)
+
+
+def msg_uuid_bounds(after, before) -> tuple:
+    """
+    Converts a created_on range (inclusive at both ends, either end optional) into the inclusive uuid bounds which
+    cover it, for querying an index keyed by message uuid rather than by created_on - message uuids are v7 and so
+    time ordered. A message's uuid can be a few milliseconds either side of its created_on - the writers read the
+    clock separately for each, and a v7 generator which exhausts its sequence within a millisecond spills into the
+    next - so both bounds are padded to cover that, at the cost of a few milliseconds of rows read and discarded at
+    each end of a walk of the index. The bounds are therefore a superset of the messages created in the range, and
+    callers which need created_on itself honored filter on it as well.
+    """
+    lower = uuid7_range(after - MSG_UUID_BOUNDS_PADDING)[0] if after else None
+    upper = uuid7_range(before + MSG_UUID_BOUNDS_PADDING)[1] if before else None
+    return lower, upper
 
 
 class Label(TembaModel, DependencyMixin):
@@ -1110,45 +1019,57 @@ class Label(TembaModel, DependencyMixin):
     def get_messages(self):
         return self.msgs.all()
 
-    def get_visible_count(self):
+    def get_queryset(self, *, after=None, before=None):
         """
-        Returns the count of visible, non-test message tagged with this label
+        Returns the messages with this label, newest first, whatever folder they're in (archived included) except
+        deleted, optionally bounded by created_on (inclusive at both ends). Like MsgFolder.get_queryset this is paged
+        by uuid rather than created_on, but here by the copy of the message's uuid that each labelling carries, which
+        is what the labellings index (msgs_by_label, see MsgLabel.Meta.indexes) is keyed on. It's exposed as the
+        `label_msg_uuid` annotation, which is what callers order and page by - ordering by the message's own uuid
+        would be the same order but a sort, as the database can't know the two are equal. The bounds are applied to
+        it too, so they're conditions on the index - see msg_uuid_bounds for what that means for callers.
+
+        Deleted messages lose their labellings, so excluding them is belt and braces.
+        """
+        qs = (
+            Msg.objects.filter(org=self.org, msglabel__label=self)
+            .annotate(label_msg_uuid=F("msglabel__msg_uuid"))
+            .exclude(folder=Msg.FOLDER_DELETED)
+        )
+        lower, upper = msg_uuid_bounds(after, before)
+        if lower:
+            qs = qs.filter(label_msg_uuid__gte=lower)
+        if upper:
+            qs = qs.filter(label_msg_uuid__lte=upper)
+
+        return qs.order_by("-label_msg_uuid")
+
+    def get_message_count(self):
+        """
+        Returns the count of messages tagged with this label, whatever folder they're in - a label is the user's own
+        tag and is independent of where a message is filed. Deleted messages have their labellings removed so
+        contribute nothing.
         """
 
         return LabelCount.get_totals([self])[self]
 
-    def toggle_label(self, msgs, add):
+    def toggle_label(self, msgs, add: bool):
         """
-        Adds or removes this label from the given messages
+        Adds or removes this label from the given incoming messages, via mailroom which ignores messages that aren't
+        visible or whose labelling wouldn't change.
         """
-
-        changed = set()
 
         for msg in msgs:
-            assert msg.direction == Msg.DIRECTION_IN
+            assert msg.direction == Msg.DIRECTION_IN, "only incoming messages can be labelled"
 
-            # if we are adding the label and this message doesn't have it, add it
-            if add:
-                if not msg.labels.filter(pk=self.pk):
-                    msg.labels.add(self)
-                    changed.add(msg.pk)
-
-            # otherwise, remove it if not already present
-            else:
-                if msg.labels.filter(pk=self.pk):
-                    msg.labels.remove(self)
-                    changed.add(msg.pk)
-
-        # update modified on all our changed msgs
-        Msg.objects.filter(id__in=changed).update(modified_on=timezone.now())
-
-        return changed
+        if msgs:
+            mailroom.get_client().msg_label(self.org, self, msgs, add=add)
 
     def release(self, user):
         super().release(user)  # releases flow dependencies
 
         # delete labellings of messages with this label (not the actual messages)
-        Msg.labels.through.objects.filter(label=self).delete()
+        MsgLabel.objects.filter(label=self).delete()
 
         self.counts.all().delete()
 
@@ -1164,26 +1085,42 @@ class Label(TembaModel, DependencyMixin):
         constraints = [models.UniqueConstraint("org", Lower("name"), name="unique_label_names")]
 
 
+class MsgLabel(models.Model):
+    """
+    The labelling of a message with a label. Rows are written by mailroom - labelling goes through it - and only
+    removed here when a label is released. Counts per label are maintained by database triggers (see LabelCount).
+
+    The message's uuid is duplicated here so that a label's messages can be paged and date-bounded by uuid (time
+    ordered, as message uuids are v7) from the index on (label, -msg_uuid) alone, the same way the folder views page
+    the msgs_by_folder index - see MsgFolder.get_queryset.
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    msg = models.ForeignKey(Msg, on_delete=models.CASCADE)
+    msg_uuid = models.UUIDField()
+    label = models.ForeignKey(Label, on_delete=models.CASCADE, db_index=False)  # msgs_by_label serves lookups by label
+
+    class Meta:
+        db_table = "msgs_msg_labels"  # the table Django created for Msg.labels before this model was declared
+        indexes = [models.Index(name="msgs_by_label", fields=["label", "-msg_uuid"])]
+        constraints = [models.UniqueConstraint(name="unique_msg_labels", fields=["msg", "label"])]
+
+
 class LabelCount(BaseSquashableCount):
     """
     Counts of user labels maintained by database level triggers
     """
 
-    squash_over = ("label_id", "is_archived")
+    squash_over = ("label_id",)
 
     label = models.ForeignKey(Label, on_delete=models.PROTECT, related_name="counts")
-    is_archived = models.BooleanField(default=False)
 
     @classmethod
     def get_totals(cls, labels):
         """
         Gets total counts for all the given labels
         """
-        counts = (
-            cls.objects.filter(label__in=labels, is_archived=False)
-            .values_list("label_id")
-            .annotate(count_sum=Sum("count"))
-        )
+        counts = cls.objects.filter(label__in=labels).values_list("label_id").annotate(count_sum=Sum("count"))
         counts_by_label_id = {c[0]: c[1] for c in counts}
         return {lb: counts_by_label_id.get(lb.id, 0) for lb in labels}
 
@@ -1297,7 +1234,8 @@ class MessageExport(ExportType):
         if folder:
             where = folder.get_archive_query()
         elif label:
-            where = {"visibility": "visible", "__raw__": f"'{label.uuid}' IN s.labels[*].uuid"}
+            # a label's messages are exported regardless of folder, and deleted messages are never archived
+            where = {"__raw__": f"'{label.uuid}' IN s.labels[*].uuid"}
         else:
             where = {"visibility": "visible"}
 
@@ -1314,31 +1252,36 @@ class MessageExport(ExportType):
                 matching.append(record)
             yield matching
 
+        order_by = "created_on"
+
         if folder:
-            messages = folder.get_queryset(export.org)
+            # the uuid bounds put the date range on the folder index, and ordering by uuid walks it rather than
+            # sorting - they're a superset of the range, which the created_on filter below then makes exact
+            messages = folder.get_queryset(export.org, after=start_date, before=end_date)
+            order_by = "uuid"
         elif label:
-            messages = label.get_messages()
+            # likewise for a label, whose messages are paged by the uuid carried on each labelling
+            messages = label.get_queryset(after=start_date, before=end_date)
+            order_by = "label_msg_uuid"
         else:
-            messages = export.org.msgs.filter(visibility=Msg.VISIBILITY_VISIBLE)
+            messages = export.org.msgs.exclude(folder__in=(Msg.FOLDER_ARCHIVED, Msg.FOLDER_DELETED))
 
         messages = messages.filter(created_on__gte=start_date, created_on__lte=end_date)
 
-        messages = messages.order_by("created_on").using("readonly")
+        messages = messages.order_by(order_by).using("readonly")
         if last_created_on:
             messages = messages.filter(created_on__gt=last_created_on)
 
         all_message_ids = array(str("l"), messages.values_list("id", flat=True))
 
-        # Django 6.1 no longer routes custom Prefetch querysets by the parent queryset's database so the
-        # prefetches need their own explicit .using(..)
         for msg_batch in MsgIterator(
             all_message_ids,
             order_by=("created_on",),
             select_related=("channel", "contact_urn"),
             prefetch_related=(
-                Prefetch("contact", queryset=Contact.objects.only("uuid", "name").using("readonly")),
-                Prefetch("flow", queryset=Flow.objects.only("uuid", "name").using("readonly")),
-                Prefetch("labels", queryset=Label.objects.only("uuid", "name").order_by("name").using("readonly")),
+                Prefetch("contact", queryset=Contact.objects.only("uuid", "name")),
+                Prefetch("flow", queryset=Flow.objects.only("uuid", "name")),
+                Prefetch("labels", queryset=Label.objects.only("uuid", "name").order_by("name")),
             ),
             using="readonly",
         ):
