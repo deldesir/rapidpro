@@ -5745,6 +5745,9 @@ msgstr "Última actualización: %(date)s"
 msgid "In this section"
 msgstr "En esta sección"
 
+msgid "In this article"
+msgstr "En este artículo"
+
 msgid "This is a preview of your help site as its readers will see it."
 msgstr "Esta es una vista previa de tu sitio de ayuda tal como lo verán sus lectores."
 

@@ -5697,6 +5697,9 @@ msgstr ""
 msgid "In this section"
 msgstr ""
 
+msgid "In this article"
+msgstr ""
+
 msgid "This is a preview of your help site as its readers will see it."
 msgstr ""
 
