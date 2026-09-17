@@ -162,6 +162,30 @@ if __name__ == "__main__":
         # nothing to do, so restore the originals rather than leaving a dirty working tree behind
         cmd(f"cp -a {backup_dir}/. {locale_dir}")
 
+    # a string without a translation falls back to English at runtime, which is invisible in an English-speaking dev
+    # environment. makemessages makes it easy to miss: a new string that resembles an existing one gets that string's
+    # translation copied in flagged as fuzzy, and msgfmt then drops fuzzy entries when compiling. so every string has to
+    # have a real translation in each of the maintained locales - the source language's catalog is exempt as it's
+    # never translated
+    if translated := config.get("translated", []):
+        status("Check translations are complete")
+        problems = []
+        for locale in translated:
+            po = f"{locale_dir}/{locale}/LC_MESSAGES/django.po"
+            for flags in ("--untranslated --no-fuzzy", "--only-fuzzy"):
+                # output is empty when nothing matches, and otherwise a catalog whose first entry is the header
+                if entries := cmd(f"msgattrib {flags} --no-wrap {po}").strip().split("\n\n", 1)[1:]:
+                    problems.append(f"{po}:\n\n{entries[0]}")
+        if problems:
+            print(
+                colorama.Fore.RED
+                + "\n\n".join(problems)
+                + "\n\nEach of these will show in English to users of that locale. Author a translation for it, and if it's "
+                + "flagged fuzzy then remove that flag and the `#|` lines above it once the translation is right."
+                + colorama.Style.RESET_ALL
+            )
+            exit(1)
+
     status("Check for module-level state mutated in functions")
     problems = []
     for package in config["packages"]:
