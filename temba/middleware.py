@@ -4,7 +4,7 @@ import traceback
 from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import MiddlewareNotUsed
-from django.http import HttpResponseForbidden
+from django.http import Http404, HttpResponseForbidden
 from django.utils import timezone, translation
 
 from temba.orgs.models import Org
@@ -26,25 +26,36 @@ class ExceptionMiddleware:
 
 class ProxiedRequestMiddleware:
     """
-    Corrects what a request says about how it arrived, for deployments where something always sits in front of the app.
+    Adjusts requests for the load balancing in front of the app. Everything here is settings-gated, so a deployment
+    with nothing in front of it is left alone, and it all has to happen before anything reads the scheme or the host
+    or answers a request - static files included - which is why this is first.
 
-    Two things are otherwise wrong behind a load balancer. The connection reaching the app is plain http even though
-    the client's was https, and everything that keys off the scheme gets that wrong - CSRF origin checks, HSTS,
-    absolute URLs, the API's SSL requirement. And some requests reach the app by its network address rather than by one
-    of its domains, so the allowed hosts check rejects them - health checks being the case that matters, since a load
-    balancer can't be told to address an instance any other way and failing them takes the deployment out of service.
+    Two things a request says about itself are otherwise wrong behind a load balancer. The connection reaching the
+    app is plain http even though the client's was https, and everything that keys off the scheme gets that wrong -
+    CSRF origin checks, HSTS, absolute URLs, the API's SSL requirement. And some requests reach the app by its network
+    address rather than by one of its domains, so the allowed hosts check rejects them - health checks being the case
+    that matters, since a load balancer can't be told to address an instance any other way and failing them takes the
+    deployment out of service.
 
-    Both corrections are settings-gated, so a deployment with nothing in front of it is left alone. This has to run
-    before anything that reads the scheme or the host, which is why it's first.
+    And a deployment with an internal load balancer as well as a public one can give the app a second port for it,
+    one that only its own network can reach. The internal-only API - everything under /ti/ - is then served on that
+    port and nowhere else, and that port serves nothing else, bar the health-check paths above, since the internal load
+    balancer checks the same way as the public one. A request in the wrong place gets a 404, the same as if the URL
+    didn't exist. The port is the one the app's own socket accepted the connection on, never one a header claims,
+    since a client can put what it likes in a header - which means TCP ports: bound to a unix socket, the WSGI server
+    has no port of its own and fills in what the Host header says, which is the client's to choose.
     """
 
     def __init__(self, get_response=None):
-        if not settings.SECURE_ASSUME_HTTPS and not settings.ALLOWED_HOSTS_EXEMPT_PATHS:
+        if not (settings.SECURE_ASSUME_HTTPS or settings.ALLOWED_HOSTS_EXEMPT_PATHS or settings.INTERNAL_PORT):
             raise MiddlewareNotUsed()
 
         self.get_response = get_response
 
     def __call__(self, request):
+        if settings.INTERNAL_PORT and not self._served_on_port(request):
+            raise Http404()
+
         if settings.SECURE_ASSUME_HTTPS:
             request.META["wsgi.url_scheme"] = "https"
 
@@ -55,6 +66,15 @@ class ProxiedRequestMiddleware:
                 request.META["HTTP_X_FORWARDED_HOST"] = settings.BRAND["domain"]
 
         return self.get_response(request)
+
+    @staticmethod
+    def _served_on_port(request) -> bool:
+        internal = int(request.META["SERVER_PORT"]) == settings.INTERNAL_PORT
+
+        if request.path.startswith("/ti/"):
+            return internal
+
+        return not internal or request.path in settings.ALLOWED_HOSTS_EXEMPT_PATHS
 
 
 class NoStoreMiddleware:
