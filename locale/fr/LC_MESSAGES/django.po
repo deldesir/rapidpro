@@ -13,7 +13,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-27 20:36+0000\n"
+"POT-Creation-Date: 2026-09-15 20:04+0000\n"
 "PO-Revision-Date: 2019-05-13 20:14+0000\n"
 "Language: fr\n"
 "MIME-Version: 1.0\n"
@@ -434,6 +434,9 @@ msgstr "Envoi de message"
 msgid "Message Status"
 msgstr "Statut du message"
 
+msgid "Receive"
+msgstr "Recevoir"
+
 msgid "Message Receive"
 msgstr "Réception de message"
 
@@ -850,9 +853,6 @@ msgstr "L'URL vers laquelle nous allons effectuer une requête POST lors de l'en
 
 msgid "Connect External Service"
 msgstr "Connecter un service externe"
-
-msgid "Receive"
-msgstr "Recevoir"
 
 msgid "Send"
 msgstr "Envoyer"
@@ -2414,6 +2414,9 @@ msgstr "Le nom de champ '%(name)s' est répété."
 msgid "This workspace has reached its limit of fields."
 msgstr "Cet espace de travail a atteint sa limite de champs."
 
+msgid "This workspace has reached its limit of groups."
+msgstr "Cet espace de travail a atteint sa limite de groupes."
+
 msgid "Required."
 msgstr "Obligatoire."
 
@@ -2567,6 +2570,9 @@ msgstr "Choisir la méthode pour votre flux"
 
 msgid "Choose a unique name to describe this flow, e.g. Registration"
 msgstr "Choisissez un nom unique pour décrire ce flux, par ex. Inscription"
+
+msgid "You have reached the per-workspace limit and must delete existing ones before you can create new ones."
+msgstr "Vous avez atteint la limite par espace de travail et vous devez supprimer des éléments existants avant de pouvoir en créer de nouveaux."
 
 msgid "Keywords"
 msgstr "Mots clés"
@@ -2805,6 +2811,69 @@ msgstr "Titre"
 msgid "Body"
 msgstr "Corps"
 
+msgid "Description"
+msgstr "Description"
+
+msgid "The name of your help site, shown in its header."
+msgstr "Le nom de votre site d'aide, affiché dans son en-tête."
+
+msgid "Tagline"
+msgstr "Slogan"
+
+msgid "A welcome shown above the search on the home page."
+msgstr "Un message de bienvenue affiché au-dessus de la recherche sur la page d'accueil."
+
+msgid "Footer"
+msgstr "Pied de page"
+
+msgid "Shown at the bottom of every page."
+msgstr "Affiché en bas de chaque page."
+
+msgid "Primary Color"
+msgstr "Couleur principale"
+
+msgid "Used for links, buttons and highlights."
+msgstr "Utilisée pour les liens, les boutons et les surlignages."
+
+msgid "Header Color"
+msgstr "Couleur de l'en-tête"
+
+msgid "The background of the header on every page."
+msgstr "Le fond de l'en-tête sur chaque page."
+
+msgid "Bubble 1"
+msgstr "Bulle 1"
+
+msgid "None"
+msgstr "Aucun"
+
+msgid "Bubble 2"
+msgstr "Bulle 2"
+
+msgid "Bubble 3"
+msgstr "Bulle 3"
+
+msgid "Not a valid color."
+msgstr "Ce n'est pas une couleur valide."
+
+msgid "Domain"
+msgstr "Domaine"
+
+msgid "A domain of your own to serve your help site on, such as help.example.com."
+msgstr "Un domaine à vous pour servir votre site d'aide, comme help.example.com."
+
+msgid "Whether the site is available to the public on its domain."
+msgstr "Si le site est accessible au public sur son domaine."
+
+msgid "Not a valid domain name."
+msgstr "Ce n'est pas un nom de domaine valide."
+
+msgid "Can't use the default domain."
+msgstr "Impossible d'utiliser le domaine par défaut."
+
+msgid "This domain is already in use by another help site."
+msgstr "Ce domaine est déjà utilisé par un autre site d'aide."
+
 msgid "Shortcuts"
 msgstr "Raccourcis"
 
@@ -2828,6 +2897,15 @@ msgstr "Brouillon"
 
 msgid "Published"
 msgstr "Publié"
+
+msgid "Processing"
+msgstr "En cours"
+
+msgid "Something went wrong. Please try again later."
+msgstr "Une erreur s'est produite. Veuillez réessayer plus tard."
+
+msgid "Not available"
+msgstr "Non disponible"
 
 #, fuzzy
 #| msgid "New Shortcut"
@@ -2869,6 +2947,16 @@ msgstr "Type de fichier non pris en charge"
 msgid "Limit for file uploads is %s MB"
 msgstr "La limite pour les envois de fichiers est de %s Mo"
 
+msgid "New Section"
+msgstr "Nouvelle section"
+
+msgid "Site Settings"
+msgstr "Paramètres du site"
+
+#, python-format
+msgid "Import from %(name)s"
+msgstr "Importer depuis %(name)s"
+
 msgid "New Article"
 msgstr "Nouvel article"
 
@@ -2881,6 +2969,12 @@ msgstr "Ordre non valide."
 #, python-format
 msgid "Limit of %d images reached."
 msgstr "La limite de %d images est atteinte."
+
+msgid "Site Domain"
+msgstr "Domaine du site"
+
+msgid "No domain has been set."
+msgstr "Aucun domaine n'a été défini."
 
 msgid "The name for our alias"
 msgstr "Le nom de notre alias"
@@ -2942,6 +3036,10 @@ msgstr "Impossible d'effectuer une requête sur les URN dans un espace de travai
 
 msgid "This query is too complex. Please simplify it and try again."
 msgstr "Cette requête est trop complexe. Veuillez la simplifier et réessayer."
+
+#, python-format
+msgid "This workspace has reached its limit of %(limit)s contacts."
+msgstr "Cet espace de travail a atteint sa limite de %(limit)s contacts."
 
 msgid "Using a message template may incur additional fees from your channel provider."
 msgstr "L'utilisation d'un modèle de message peut entraîner des frais supplémentaires de la part de votre fournisseur de canal."
@@ -3022,12 +3120,6 @@ msgstr "Diffusions planifiées"
 #, python-format
 msgid "To get started you need to <a href=\"%(link)s\">add a channel</a> to your workspace which will allow you to send messages to your contacts."
 msgstr "Pour commencer, vous devez <a href=\"%(link)s\">ajouter un canal</a> à votre espace de travail qui vous permettra d'envoyer des messages à vos contacts."
-
-msgid "Hi @contact.name!"
-msgstr "Salut @contact.name!"
-
-msgid "Send Message"
-msgstr "Envoyer un message"
 
 msgid "Inbox"
 msgstr "Boîte de Réception"
@@ -3205,9 +3297,6 @@ msgstr "[%(name)s] Invitation à rejoindre l'espace de travail"
 
 msgid "Definitions"
 msgstr "Définitions"
-
-msgid "Processing"
-msgstr "En traitement"
 
 msgid "Start Date"
 msgstr "Date de début"
@@ -3495,6 +3584,9 @@ msgstr "Ce fichier n'est plus valide. Veuillez exporter une nouvelle version et 
 msgid "This file contains flows with a version that is too new."
 msgstr "Ce fichier contient des flux dont la version est trop récente."
 
+msgid "This file contains more flows than this workspace has room for."
+msgstr "Ce fichier contient plus de flux que cet espace de travail ne peut en contenir."
+
 msgid "Import started"
 msgstr "Importation démarrée"
 
@@ -3663,6 +3755,9 @@ msgstr "Suspendu"
 msgid "Verified"
 msgstr "Vérifié"
 
+msgid "Optional: Select groups whose members administer this workspace."
+msgstr "Optionnel : sélectionnez les groupes dont les membres administrent cet espace de travail."
+
 msgid "Edit User"
 msgstr "Modifier l'utilisateur"
 
@@ -3710,6 +3805,15 @@ msgstr "Vos modèles ont été récupérés et actualisés."
 
 msgid "Unable to refresh all templates. See the log for details."
 msgstr "Impossible d'actualiser tous les modèles. Consultez le journal pour plus de détails."
+
+msgid "All topics"
+msgstr "Tous les sujets"
+
+msgid "Members can access tickets of any topic, including topics created later."
+msgstr "Les membres peuvent accéder aux billets de n'importe quel sujet, y compris les sujets créés ultérieurement."
+
+msgid "Select at least one topic or allow access to all topics."
+msgstr "Sélectionnez au moins un sujet ou autorisez l'accès à tous les sujets."
 
 #, python-format
 msgid "Teams can have at most %(limit)d topics."
@@ -3957,6 +4061,9 @@ msgstr "L'identifiant unique pour cet objet"
 
 msgid "and"
 msgstr "et"
+
+msgid "You don't have permission to do that."
+msgstr "Vous n'avez pas la permission de faire cela."
 
 msgid "Confirm Access"
 msgstr "Confirmer l'accès"
@@ -4323,6 +4430,9 @@ msgstr "Cet événement est en cours de planification et ne pourra pas être mod
 msgid "<b>%(count)s</b> scheduled contacts"
 msgstr "<b>%(count)s</b> contacts planifiés"
 
+msgid "Send Message"
+msgstr "Envoyer un message"
+
 #, python-format
 msgid "Translation provided in %(langs)s"
 msgid_plural "Translations provided in %(langs)s"
@@ -4415,7 +4525,10 @@ msgstr "à"
 msgid "Duration"
 msgstr "Durée"
 
-msgid "Last synced"
+msgid "Activated"
+msgstr "Activé"
+
+msgid "Last Synced"
 msgstr "Dernière synchronisation"
 
 #, python-format
@@ -4424,16 +4537,6 @@ msgstr "depuis %(last_sync)s "
 
 msgid "Not synced yet"
 msgstr "Pas encore synchronisé"
-
-msgid "unsent message"
-msgid_plural "unsent messages"
-msgstr[0] "message non envoyé"
-msgstr[1] "messages non envoyés"
-msgstr[2] "messages non envoyés"
-
-#, python-format
-msgid "Activated on %(date)s"
-msgstr "Activé le %(date)s"
 
 msgid "ON"
 msgstr "ON"
@@ -5380,22 +5483,11 @@ msgstr "Oups !"
 msgid "We tried our best, but there was an error processing your request. If this keeps happening, please refresh your browser."
 msgstr "Nous avons fait de notre mieux, mais une erreur s'est produite lors du traitement de votre requête. Si cela se reproduit, veuillez actualiser votre navigateur."
 
-#, python-format
-msgid "Sign In with %(provider)s"
-msgstr "Se connecter avec %(provider)s"
-
 msgid "Use Single Sign-On"
 msgstr "Utiliser l'authentification unique"
 
 msgid "Ok"
 msgstr "OK"
-
-#, python-format
-msgid "Signing in with an email and password is going away for your organization. To keep access to your account, please use <b>Sign In with %(provider)s</b> the next time you sign in."
-msgstr "La connexion par adresse e-mail et mot de passe va être supprimée pour votre organisation. Pour conserver l'accès à votre compte, utilisez <b>Se connecter avec %(provider)s</b> lors de votre prochaine connexion."
-
-msgid "Signing in with an email and password is going away for your organization. To keep access to your account, please use the single sign-on option the next time you sign in."
-msgstr "La connexion par adresse e-mail et mot de passe va être supprimée pour votre organisation. Pour conserver l'accès à votre compte, utilisez l'option d'authentification unique lors de votre prochaine connexion."
 
 msgid "Are you sure you want to continue? This cannot be undone."
 msgstr "Es-tu sur de vouloir continuer? Ça ne peut pas être annulé."
@@ -5482,9 +5574,6 @@ msgstr[2] ""
 "\n"
 "      "
 
-msgid "to a flow node"
-msgstr "vers un nœud de flux"
-
 msgid "Deleted"
 msgstr "Supprimé"
 
@@ -5520,8 +5609,16 @@ msgid "You have reached the limit of %(limit)s articles. You must delete existin
 msgstr "Vous avez atteint la limite de %(limit)s articles. Vous devez supprimer des articles existants avant de pouvoir en créer de nouveaux."
 
 #, python-format
-msgid "You are about to delete the article <b>%(object)s</b> and its screenshots. Any articles beneath it will move up to take its place. There is no way to undo this. Are you sure?"
-msgstr "Vous êtes sur le point de supprimer l'article <b>%(object)s</b> et ses captures d'écran. Les articles situés en dessous remonteront pour prendre sa place. Cette action est irréversible. Voulez-vous continuer ?"
+msgid "The section <b>%(object)s</b> still holds articles. Move or delete them before deleting the section."
+msgstr "La section <b>%(object)s</b> contient encore des articles. Déplacez-les ou supprimez-les avant de supprimer la section."
+
+#, python-format
+msgid "You are about to delete the section <b>%(object)s</b>. There is no way to undo this. Are you sure?"
+msgstr "Vous êtes sur le point de supprimer la section <b>%(object)s</b>. Cette action est irréversible. Voulez-vous continuer ?"
+
+#, python-format
+msgid "You are about to delete the article <b>%(object)s</b> and its screenshots. There is no way to undo this. Are you sure?"
+msgstr "Vous êtes sur le point de supprimer l'article <b>%(object)s</b> et ses captures d'écran. Cette action est irréversible. Voulez-vous continuer ?"
 
 msgid "Delete Article"
 msgstr "Supprimer l'article"
@@ -5531,6 +5628,76 @@ msgstr "Aucun article"
 
 msgid "Help articles written by your workspace. Published articles are searchable by AI agents."
 msgstr "Articles d'aide rédigés par votre espace de travail. Les agents IA peuvent effectuer des recherches dans les articles publiés."
+
+#, python-format
+msgid "The import from %(name)s did not finish."
+msgstr "L'importation depuis %(name)s ne s'est pas terminée."
+
+msgid "Try Again"
+msgstr "Réessayer"
+
+#, python-format
+msgid "Importing from %(name)s"
+msgstr "Importation depuis %(name)s"
+
+msgid "Fetching articles…"
+msgstr "Récupération des articles…"
+
+msgid "Your help site is live on this domain."
+msgstr "Votre site d'aide est en ligne sur ce domaine."
+
+msgid "Verified, but not yet enabled for the public."
+msgstr "Vérifié, mais pas encore activé pour le public."
+
+msgid "Add the DNS records to verify this domain."
+msgstr "Ajoutez les enregistrements DNS pour vérifier ce domaine."
+
+msgid "No domain yet"
+msgstr "Pas encore de domaine"
+
+msgid "Set up a domain of your own to serve your help site to the public."
+msgstr "Configurez un domaine à vous pour servir votre site d'aide au public."
+
+msgid "Set up"
+msgstr "Configurer"
+
+msgid "Not verified"
+msgstr "Non vérifié"
+
+msgid "An import is already in progress. Wait for it to finish before starting another."
+msgstr "Une importation est déjà en cours. Attendez qu'elle se termine avant d'en lancer une autre."
+
+msgid "Add these records to the DNS for"
+msgstr "Ajoutez ces enregistrements au DNS de"
+
+msgid "Verified. Your help site is served on this domain."
+msgstr "Vérifié. Votre site d'aide est servi sur ce domaine."
+
+msgid "Not verified yet. Once the records are in place, check to have your domain verified and served."
+msgstr "Pas encore vérifié. Une fois les enregistrements en place, vérifiez pour que votre domaine soit vérifié et servi."
+
+msgid "Check"
+msgstr "Vérifier"
+
+msgid "Save, and once the records are in place come back to check them."
+msgstr "Enregistrez, puis revenez les vérifier une fois les enregistrements en place."
+
+msgid "Checking..."
+msgstr "Vérification..."
+
+msgid "The TXT record wasn't found yet. DNS changes can take a while to spread, so try again later."
+msgstr "L'enregistrement TXT n'a pas encore été trouvé. Les changements DNS peuvent mettre du temps à se propager, réessayez plus tard."
+
+msgid "The check failed. Please try again."
+msgstr "La vérification a échoué. Veuillez réessayer."
+
+msgid "The background colors articles can give their columns."
+msgstr "Les couleurs de fond que les articles peuvent donner à leurs colonnes."
+
+#, fuzzy, python-format
+#| msgid "You are about to delete the <b>%(object)s</b> team. There is no way to undo this. Are you sure?"
+msgid "You are about to delete the document <b>%(object.name)s</b> and everything indexed from it. There is no way to undo this. Are you sure?"
+msgstr "Vous êtes sur le point de supprimer l'équipe <b>%(object)s</b>. Cette action est irréversible. Voulez-vous continuer ?"
 
 #, fuzzy, python-format
 #| msgid "You are about to delete the <b>%(object)s</b> team. There is no way to undo this. Are you sure?"
@@ -5550,11 +5717,6 @@ msgstr "Aucun raccourci"
 #| msgid "These are canned responses that agents can use to quickly reply to tickets."
 msgid "Canned responses that agents can use to quickly reply to tickets."
 msgstr "Il s'agit de réponses préenregistrées que les agents peuvent utiliser pour répondre rapidement aux billets."
-
-#, fuzzy, python-format
-#| msgid "You are about to delete the <b>%(object)s</b> team. There is no way to undo this. Are you sure?"
-msgid "You are about to delete the document <b>%(object.name)s</b> and everything indexed from it. There is no way to undo this. Are you sure?"
-msgstr "Vous êtes sur le point de supprimer l'équipe <b>%(object)s</b>. Cette action est irréversible. Voulez-vous continuer ?"
 
 #, fuzzy
 #| msgid "Delete Event"
@@ -5588,6 +5750,75 @@ msgstr "Utilisations"
 #| msgid "No models yet"
 msgid "No pages yet"
 msgstr "Pas encore de modèles"
+
+msgid "Page not found"
+msgstr "Page introuvable"
+
+msgid "The page you're looking for isn't here. It may have moved, or been unpublished."
+msgstr "La page que vous cherchez n'est pas ici. Elle a peut-être été déplacée ou dépubliée."
+
+msgid "Back to the home page"
+msgstr "Retour à la page d'accueil"
+
+msgid "Breadcrumb"
+msgstr "Fil d'Ariane"
+
+msgid "Home"
+msgstr "Accueil"
+
+#, python-format
+msgid "Last updated %(date)s"
+msgstr "Dernière mise à jour le %(date)s"
+
+msgid "In this section"
+msgstr "Dans cette section"
+
+msgid "This is a preview of your help site as its readers will see it."
+msgstr "Ceci est un aperçu de votre site d'aide tel que ses lecteurs le verront."
+
+msgid "Site settings"
+msgstr "Paramètres du site"
+
+msgid "Search articles"
+msgstr "Rechercher des articles"
+
+msgid "How can we help?"
+msgstr "Comment pouvons-nous vous aider ?"
+
+msgid "Search for answers"
+msgstr "Rechercher des réponses"
+
+msgid "Sections"
+msgstr "Sections"
+
+#, python-format
+msgid "%(counter)s article"
+msgid_plural "%(counter)s articles"
+msgstr[0] "%(counter)s article"
+msgstr[1] "%(counter)s articles"
+msgstr[2] "%(counter)s articles"
+
+msgid "Nothing has been published here yet."
+msgstr "Rien n'a encore été publié ici."
+
+msgid "Popular articles"
+msgstr "Articles populaires"
+
+#, python-format
+msgid "%(counter)s result for “%(query)s”"
+msgid_plural "%(counter)s results for “%(query)s”"
+msgstr[0] "%(counter)s résultat pour « %(query)s »"
+msgstr[1] "%(counter)s résultats pour « %(query)s »"
+msgstr[2] "%(counter)s résultats pour « %(query)s »"
+
+msgid "No articles matched your search. Try different words, or browse the sections on the home page."
+msgstr "Aucun article ne correspond à votre recherche. Essayez d'autres mots ou parcourez les sections de la page d'accueil."
+
+msgid "This help site isn't available"
+msgstr "Ce site d'aide n'est pas disponible"
+
+msgid "There's nothing published at this address right now."
+msgstr "Rien n'est publié à cette adresse pour le moment."
 
 #, python-format
 msgid "Aliases for %(name)s"
@@ -5660,13 +5891,6 @@ msgstr "Supprimer la diffusion"
 
 msgid "You are about to delete this broadcast. There is no way to undo this. Are you sure?"
 msgstr "Vous êtes sur le point de supprimer cette diffusion. Cette action est irréversible. Voulez-vous continuer ?"
-
-#, python-format
-msgid "<b>%(recipients)s</b> recipient currently at this point in the flow"
-msgid_plural "<b>%(recipients)s</b> recipients currently at this point in the flow"
-msgstr[0] "<b>%(recipients)s</b> récipiendaire actuel à ce stade du flux"
-msgstr[1] "<b>%(recipients)s</b> récipiendaires actuels à ce stade du flux"
-msgstr[2] "<b>%(recipients)s</b> récipiendaires actuels à ce stade du flux"
 
 msgid "No messages"
 msgstr "Pas de messages"
@@ -5752,9 +5976,6 @@ msgstr ""
 msgid "User %(email)s accepted an invitation to join your workspace."
 msgstr "L'utilisateur %(email)s a accepté une invitation à rejoindre votre espace de travail."
 
-msgid "None"
-msgstr "Aucun"
-
 msgid "Previous"
 msgstr "Précédent"
 
@@ -5776,9 +5997,6 @@ msgstr "Certains appels de webhook de vos flux mettent trop de temps à répondr
 
 msgid "Your workspace is suspended and no longer processing messages."
 msgstr "Votre espace de travail est suspendu et ne traite plus les messages."
-
-msgid "You have reached the per-workspace limit and must delete existing ones before you can create new ones."
-msgstr "Vous avez atteint la limite par espace de travail et vous devez supprimer des éléments existants avant de pouvoir en créer de nouveaux."
 
 msgid "can't be deleted as it is still used by the following items:"
 msgstr "ne peut pas être supprimé car il est toujours utilisé par les éléments suivants :"
@@ -6506,6 +6724,10 @@ msgid "Accept Invitation with %(provider)s"
 msgstr "Accepter l'invitation avec %(provider)s"
 
 #, python-format
+msgid "Sign In with %(provider)s"
+msgstr "Se connecter avec %(provider)s"
+
+#, python-format
 msgid "The page you are requesting belongs to a different workspace, <b>%(org)s</b>. To see it, you will need to service their account."
 msgstr "La page que vous demandez appartient à un autre espace de travail, <b>%(org)s</b>. Pour la consulter, vous devrez accéder à leur compte en mode assistance."
 
@@ -6576,6 +6798,9 @@ msgstr "Désolé, l'équipe <b>%(object)s</b> ne peut pas être supprimée tant 
 #, python-format
 msgid "You are about to delete the <b>%(object)s</b> team. There is no way to undo this. Are you sure?"
 msgstr "Vous êtes sur le point de supprimer l'équipe <b>%(object)s</b>. Cette action est irréversible. Voulez-vous continuer ?"
+
+msgid "Ticket search is not currently supported for teams that are restricted to specific topics."
+msgstr "La recherche de billets n'est pas encore prise en charge pour les équipes limitées à des sujets spécifiques."
 
 msgid "Agent users can be organized into teams to restrict which ticket topics they can access."
 msgstr "Les utilisateurs agents peuvent être organisés en équipes afin de restreindre les sujets de billets auxquels ils ont accès."

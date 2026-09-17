@@ -37,7 +37,7 @@ class ArchiveTest(TembaTest):
         def encode_jsonl(records):
             return b"".join([json.dumps(record).encode("utf-8") + b"\n" for record in records])
 
-        # SelectObjectContent is a pro feature in localstack, and there's a bug in botocore that prevents using Stubber
+        # SelectObjectContent isn't supported by the dev S3 server, and there's a bug in botocore that prevents using Stubber
         # (see https://github.com/boto/botocore/issues/1621), so we patch the client method directly
         with patch.object(s3.client(), "select_object_content") as mock_select_object_content:
             mock_select_object_content.return_value = {

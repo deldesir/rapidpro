@@ -27,6 +27,7 @@ from temba.channels.models import Channel, ChannelEvent, ChannelLog
 from temba.contacts.models import URN, Contact, ContactField, ContactGroup, ContactImport
 from temba.flows.models import Flow, FlowRun, FlowSession, FlowStart
 from temba.ivr.models import Call
+from temba.knowledge.models import HelpSite
 from temba.locations.models import AdminBoundary, BoundaryAlias
 from temba.mailroom.events import Event
 from temba.msgs.models import Broadcast, Label, Msg
@@ -44,6 +45,7 @@ from .mailroom import (
     create_broadcast,
     create_contact_locally,
     create_flowstart,
+    derive_msg_folder,
     resolve_destination,
     set_mocks,
     update_field_locally,
@@ -129,6 +131,9 @@ class TembaTest(SmartminTest):
             role.group  # noqa
             role.permissions  # noqa
 
+        # likewise the help site domains that every request is checked against are cached, so warm that cache
+        HelpSite.get_domains()
+
         self.maxDiff = None
 
     def setUpLocations(self):
@@ -204,6 +209,18 @@ class TembaTest(SmartminTest):
         return flow
 
     @classmethod
+    def create_admin_group(cls, name: str, orgs=(), users=()) -> Group:
+        """
+        Creates an auth group which is an admin group of the given orgs, with the given users as members
+        """
+        group = Group.objects.create(name=name)
+        for org in orgs:
+            org.admin_groups.add(group)
+        for user in users:
+            user.groups.add(group)
+        return group
+
+    @classmethod
     def create_user(cls, email, group_names=(), **kwargs):
         user = User.objects.create_user(email=email, password=cls.default_password, **kwargs)
         user.save()
@@ -259,6 +276,13 @@ class TembaTest(SmartminTest):
     def create_label(self, name, *, org=None):
         return Label.create(org or self.org, self.admin, name)
 
+    def add_msg_label(self, msg, label):
+        """
+        Labels a message directly, bypassing the checks mailroom makes on what can be labelled. Tests of labelling
+        itself should go through the mailroom mock instead.
+        """
+        msg.labels.add(label, through_defaults={"msg_uuid": msg.uuid})
+
     def create_field(
         self,
         key,
@@ -294,13 +318,14 @@ class TembaTest(SmartminTest):
         attachments=(),
         status=Msg.STATUS_HANDLED,
         visibility=Msg.VISIBILITY_VISIBLE,
+        archived=False,
         created_on=None,
         external_identifier=None,
         voice=False,
         flow=None,
         logs=None,
     ):
-        return self._create_msg(
+        msg = self._create_msg(
             contact,
             text,
             Msg.DIRECTION_IN,
@@ -315,6 +340,17 @@ class TembaTest(SmartminTest):
             flow=flow,
             logs=logs,
         )
+
+        # archived isn't a state a message is created in - it's a folder a handled visible message is moved to
+        if archived:
+            assert msg.folder in (Msg.FOLDER_INBOX, Msg.FOLDER_HANDLED), (
+                "only inbox or handled messages can be archived"
+            )
+
+            msg.folder = Msg.FOLDER_ARCHIVED
+            msg.save(update_fields=("folder",))
+
+        return msg
 
     def create_incoming_msgs(self, contact, count):
         for m in range(count):
@@ -390,6 +426,7 @@ class TembaTest(SmartminTest):
         assert not channel or channel.org == contact.org, "channel belong to different org than contact"
 
         org = contact.org
+        created_on = created_on or timezone.now()  # uuid is derived from it, so read the clock once
 
         if failed_reason == Msg.FAILED_NO_DESTINATION:
             channel = None
@@ -399,8 +436,8 @@ class TembaTest(SmartminTest):
 
             assert channel and contact_urn, "messages require a channel and contact URN, except for failed_reason=D"
 
-        return Msg.objects.create(
-            uuid=uuid7(created_on or timezone.now()),
+        msg = Msg(
+            uuid=uuid7(created_on),
             org=org,
             direction=direction,
             contact=contact,
@@ -416,7 +453,7 @@ class TembaTest(SmartminTest):
             is_android=bool(channel and channel.is_android),
             external_identifier=external_identifier,
             high_priority=high_priority,
-            created_on=created_on or timezone.now(),
+            created_on=created_on,
             created_by=created_by,
             modified_on=timezone.now(),
             sent_on=sent_on,
@@ -426,6 +463,12 @@ class TembaTest(SmartminTest):
             failed_reason=failed_reason,
             log_uuids=[l.uuid for l in logs or []],
         )
+
+        # mailroom and courier write the folder when they write the message
+        msg.folder = derive_msg_folder(msg)
+        msg.save()
+
+        return msg
 
     def create_broadcast(
         self,
@@ -451,7 +494,6 @@ class TembaTest(SmartminTest):
             contacts=contacts,
             urns=urns,
             query=None,
-            node_uuid=None,
             exclude=exclude,
             template=None,
             template_variables=None,
@@ -601,6 +643,7 @@ class TembaTest(SmartminTest):
             contact_urn=contact.get_urn(),
             text="Hello",
             status=Msg.STATUS_SENT,
+            folder=Msg.FOLDER_SENT,
             msg_type=Msg.TYPE_VOICE,
             is_android=False,
             sent_on=timezone.now(),
@@ -808,6 +851,13 @@ class TembaTest(SmartminTest):
             if toast["level"] == level and toast["text"] == text:
                 return
         self.fail(f"Toast '{text}'@{level} not found: {toasts}")
+
+    def assertPermissionDenied(self, response, msg=None):
+        """
+        Asserts that the response is a 403 with the toast that the UI shows for permission denied.
+        """
+        self.assertEqual(403, response.status_code, msg=msg)
+        self.assertToast(response, "error", "You don't have permission to do that.")
 
     def assertOutbox(self, outbox_index, from_email, subject, body, recipients):
         self.assertEqual(len(mail.outbox), outbox_index + 1)

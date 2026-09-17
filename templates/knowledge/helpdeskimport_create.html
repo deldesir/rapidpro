@@ -1,0 +1,18 @@
+{% extends "includes/modax.html" %}
+{% load i18n smartmin %}
+
+{% comment %}
+  The dialog an import type's own template extends: its intro block says what the import does, its fields block asks
+  for what the type needs. An import already underway replaces the form - there's nothing to fill in until it's done.
+{% endcomment %}
+{% block modal %}
+  {% if blocker == "existing-import" %}
+    {% trans "An import is already in progress. Wait for it to finish before starting another." %}
+  {% else %}
+    {{ block.super }}
+  {% endif %}
+{% endblock modal %}
+{% block pre-form %}
+  {% block intro %}
+  {% endblock intro %}
+{% endblock pre-form %}

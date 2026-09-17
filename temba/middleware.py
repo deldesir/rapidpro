@@ -3,6 +3,7 @@ import traceback
 
 from django.conf import settings
 from django.contrib import messages
+from django.core.exceptions import MiddlewareNotUsed
 from django.http import HttpResponseForbidden
 from django.utils import timezone, translation
 
@@ -21,6 +22,56 @@ class ExceptionMiddleware:
             traceback.print_exc()
 
         return None
+
+
+class ProxiedRequestMiddleware:
+    """
+    Corrects what a request says about how it arrived, for deployments where something always sits in front of the app.
+
+    Two things are otherwise wrong behind a load balancer. The connection reaching the app is plain http even though
+    the client's was https, and everything that keys off the scheme gets that wrong - CSRF origin checks, HSTS,
+    absolute URLs, the API's SSL requirement. And some requests reach the app by its network address rather than by one
+    of its domains, so the allowed hosts check rejects them - health checks being the case that matters, since a load
+    balancer can't be told to address an instance any other way and failing them takes the deployment out of service.
+
+    Both corrections are settings-gated, so a deployment with nothing in front of it is left alone. This has to run
+    before anything that reads the scheme or the host, which is why it's first.
+    """
+
+    def __init__(self, get_response=None):
+        if not settings.SECURE_ASSUME_HTTPS and not settings.ALLOWED_HOSTS_EXEMPT_PATHS:
+            raise MiddlewareNotUsed()
+
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if settings.SECURE_ASSUME_HTTPS:
+            request.META["wsgi.url_scheme"] = "https"
+
+        # only the host these are addressed by is corrected - whatever is served at them still runs as normal
+        if request.path in settings.ALLOWED_HOSTS_EXEMPT_PATHS:
+            request.META["HTTP_HOST"] = settings.BRAND["domain"]
+            if settings.USE_X_FORWARDED_HOST:
+                request.META["HTTP_X_FORWARDED_HOST"] = settings.BRAND["domain"]
+
+        return self.get_response(request)
+
+
+class NoStoreMiddleware:
+    """
+    Marks responses as not to be cached unless the view has said otherwise. Almost everything served is specific to
+    the user and workspace it was requested for, so nothing - not a shared cache, not the browser's back-forward cache -
+    should keep a copy. Static files are exempt since WhiteNoise sits above this and answers those itself.
+    """
+
+    def __init__(self, get_response=None):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if not response.has_header("Cache-Control"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
 
 class OrgMiddleware:
@@ -79,6 +130,10 @@ class OrgMiddleware:
                     membership = org.get_membership(user)
                     if membership:
                         membership.record_seen()
+                        return org, False
+
+                    # members of the org's admin groups can access it as a regular user
+                    elif org.has_group_admin(user):
                         return org, False
 
                     # staff users can access any org from servicing

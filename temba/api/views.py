@@ -7,7 +7,6 @@ from rest_framework.response import Response
 from smartmin.views import SmartCRUDL
 
 from django.db import transaction
-from django.db.models import Prefetch
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
@@ -146,38 +145,32 @@ class ListAPIMixin(mixins.ListModelMixin):
         if sum([(1 if params.get(p) else 0) for p in self.exclusive_params]) > 1:
             raise InvalidQueryError("You may only specify one of the %s parameters" % ", ".join(self.exclusive_params))
 
+    def get_before_after(self) -> tuple:
+        """
+        Returns the parsed before/after params, raising ValueError if either is malformed
+        """
+        before = self.request.query_params.get("before")
+        after = self.request.query_params.get("after")
+
+        return iso8601.parse_date(before) if before else None, iso8601.parse_date(after) if after else None
+
     def filter_before_after(self, queryset, field):
         """
         Filters the queryset by the before/after params if are provided
         """
-        before = self.request.query_params.get("before")
-        if before:
-            try:
-                before = iso8601.parse_date(before)
-                queryset = queryset.filter(**{field + "__lte": before})
-            except ValueError:
-                queryset = queryset.filter(pk=-1)
+        try:
+            before, after = self.get_before_after()
+        except ValueError:
+            return queryset.filter(pk=-1)
 
-        after = self.request.query_params.get("after")
+        if before:
+            queryset = queryset.filter(**{field + "__lte": before})
         if after:
-            try:
-                after = iso8601.parse_date(after)
-                queryset = queryset.filter(**{field + "__gte": after})
-            except ValueError:
-                queryset = queryset.filter(pk=-1)
+            queryset = queryset.filter(**{field + "__gte": after})
 
         return queryset
 
     def paginate_queryset(self, queryset):
-        # Django 6.1 no longer routes custom Prefetch querysets on forward FK/O2O fields to the same database as
-        # the parent queryset (regression from django/django@821619aa87) so route them explicitly
-        queryset._prefetch_related_lookups = tuple(
-            Prefetch(lookup.prefetch_through, queryset=lookup.queryset.using(queryset.db), to_attr=lookup.to_attr)
-            if isinstance(lookup, Prefetch) and lookup.queryset is not None and lookup.queryset._db is None
-            else lookup
-            for lookup in queryset._prefetch_related_lookups
-        )
-
         page = super().paginate_queryset(queryset)
 
         # give views a chance to prepare objects for serialization
@@ -239,6 +232,8 @@ class WriteAPIMixin:
                     output = serializer.save()
                 except mailroom.URNValidationException as e:
                     return Response(serializer.urn_exception(e), status=status.HTTP_400_BAD_REQUEST)
+                except mailroom.ContactLimitReachedException as e:
+                    return Response({"detail": str(e)}, status=status.HTTP_409_CONFLICT)
 
                 self.post_save(output)
                 return self.render_write_response(output, context)

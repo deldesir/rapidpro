@@ -181,6 +181,25 @@ export interface Campaign {
   modified_on: string;
 }
 
+/** A single row in the call CRUDL list (`ivr/call_list.html`). */
+export interface Call {
+  uuid: string;
+  /** `in` for calls the contact made, `out` for calls made to them. */
+  direction: 'in' | 'out';
+  /** Status slug — `pending`, `queued`, `wired`, `in_progress`,
+   * `completed`, `errored` or `failed`. */
+  status: string;
+  /** Why an errored / failed call didn't connect — `provider`, `busy`,
+   * `no_answer`, `machine` or `suspended`; null otherwise. */
+  error_reason: string | null;
+  contact: ObjectReference;
+  /** Call length in seconds, zero if it never connected. */
+  duration: number;
+  /** The channel the call was made on, used to link to its logs. */
+  channel: ObjectReference;
+  created_on: string;
+}
+
 /** A single row in the trigger CRUDL list
  * (`triggers/trigger_list.html`): what starts the flow (type +
  * per-type details), any channel / group filters, and the flow it
@@ -303,10 +322,6 @@ export interface Msg {
   flow?: ObjectReference;
   /** When the message was created. */
   created_on?: string;
-  /** Permission- and retention-gated URL to this message's channel
-   * log. Present on the CRUDL list when the viewer can read logs and
-   * the message is within the retention window; absent otherwise. */
-  logs_url?: string;
   unsendable_reason?:
     | 'no_route'
     | 'contact_blocked'
@@ -336,6 +351,8 @@ export interface Shortcut {
 export interface Article {
   uuid: string;
   title: string;
+  /** a section's - plain text saying what it holds; empty for an article */
+  description?: string;
   status: string;
   parent: string | null;
   depth: number;
@@ -541,6 +558,9 @@ export enum CustomEventType {
   RevisionReverted = 'temba-revision-reverted',
   RevisionsClosed = 'temba-revisions-closed',
   RowClick = 'temba-row-click',
+  /** A helpdesk card's add button was clicked - detail carries the
+   * section the new article should be filed under. */
+  ArticleAddRequested = 'temba-article-add-requested',
   ShortcutEdit = 'temba-shortcut-edit',
   ShortcutDelete = 'temba-shortcut-delete',
   SelectionChange = 'temba-selection-change',

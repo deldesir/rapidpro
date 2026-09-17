@@ -8,11 +8,15 @@
 {% endblock page-header %}
 {% block content %}
   {% comment %}
-    Wider than any of the dialog's named sizes, since an article is read at the width it was
-    written at. No header either - the article's own title stands as one, and a title bar would
-    only cost the editor height.
+    Sized to the article rather than to one of the dialog's named sizes: the editor shows the
+    article as a card of the width the help site gives it (692px) with the same 24px of ground on
+    every side, and the dialog is that plus its own edges - the editor's 1px border and the body's
+    20px of padding - so the ground around the card is even all round rather than wider at the
+    sides. No header either - the article's own title stands as one, and a title bar would only
+    cost the editor height. Nothing is focused on opening: the article is there to be read as
+    much as written, and the caret goes where the author clicks.
   {% endcomment %}
-  <temba-modax id="update-article" width="min(60rem, 92vw)" -temba-submitted="refreshArticles()">
+  <temba-modax id="update-article" width="min(782px, 92vw)" no-autofocus -temba-submitted="refreshArticles()">
     {% if org_perms.knowledge.article_delete %}
       {# rides the dialog's gutter so the editor itself is nothing but the article #}
       <temba-button slot="gutter" name="{% trans "Delete" %}" destructive small onclick="deleteArticle()">
@@ -22,22 +26,148 @@
   {# after the editor, so its confirmation sits on top of it rather than behind #}
   <temba-modax header="{{ _("Delete Article") |escapejs }}" id="delete-article">
   </temba-modax>
-  <temba-article-list id="article-list"
-                      fill-window
-                      list-title="{% trans "Helpdesk" %}"
-                      endpoint="{{ articles_endpoint }}"
-                      content-menu-endpoint="{{ request.path }}"
-                      max-depth="{{ max_depth }}"
-                      {% if sort_url %}sort-endpoint="{{ sort_url }}"{% endif %}
-                      {% if publish_url %}publish-endpoint="{{ publish_url }}"{% endif %}
-                      -temba-selection="handleContentMenuSelected(event)"
-                      empty-message="{% trans "No articles" %}">
+  <temba-helpdesk-cards id="article-list"
+                        fill-window
+                        list-title="{% trans "Helpdesk" %}"
+                        endpoint="{{ articles_endpoint }}"
+                        content-menu-endpoint="{{ request.path }}"
+                        {% if sort_url %}sort-endpoint="{{ sort_url }}"{% endif %}
+                        {% if publish_url %}publish-endpoint="{{ publish_url }}"{% endif %}
+                        {% if create_url %}create-endpoint="{{ create_url }}"{% endif %}
+                        -temba-selection="handleContentMenuSelected(event)"
+                        empty-message="{% trans "No articles" %}">
     <div slot="subtitle">
       {% blocktrans trimmed %}
         Help articles written by your workspace. Published articles are searchable by AI agents.
       {% endblocktrans %}
     </div>
-  </temba-article-list>
+    {% comment %}
+      The site card heads the page. Its domain is the way out to the live site once it's verified and on; until
+      then - or until there's a domain at all - it opens the domain dialog, where setting it up is picked up. Its
+      preview pill opens the site as its readers will see it, in a tab of its own.
+    {% endcomment %}
+    <div slot="banner">
+      {% comment %}
+        An import underway rides above the site card as a bar the page keeps current until it's done, when the
+        cards are refreshed to show what came over. One that failed says why, until the next one is started.
+      {% endcomment %}
+      {% if helpdesk_import %}
+        {% if helpdesk_import.is_finished %}
+          <div class="import-card failed" id="import-card">
+            <temba-icon name="alert_warning" size="1.2" class="import-icon">
+            </temba-icon>
+            <div class="import-text">
+              <div class="import-title">
+              {% blocktrans trimmed with name=import_type_name %}
+                The import from {{ name }} did not finish.
+              {% endblocktrans %}
+            </div>
+              <div class="import-note">{{ helpdesk_import.error }}</div>
+            </div>
+            {% if import_url %}
+              {# the same dialog as the menu's - the key isn't kept, so trying again means giving it again #}
+              <temba-button lined small name="{% trans "Try Again" %}" onclick="showImportDialog()">
+              </temba-button>
+            {% endif %}
+          </div>
+        {% else %}
+          <div class="import-card" id="import-card">
+            <temba-icon name="import" size="1.2" class="import-icon">
+            </temba-icon>
+            <div class="import-text">
+              <div class="import-header">
+                <div class="import-title">
+                  {% blocktrans trimmed with name=import_type_name %}
+                    Importing from {{ name }}
+                  {% endblocktrans %}
+                </div>
+                {# what the import is at, beside the title rather than in the bar, which has room only for its meter #}
+                <div class="import-status" id="import-status">
+                  {% if not helpdesk_import.num_items %}
+                    {% trans "Fetching articles…" %}
+                  {% endif %}
+                </div>
+              </div>
+              <temba-progress id="import-progress"
+                              total="{{ helpdesk_import.num_items }}"
+                              current="{{ helpdesk_import.num_imported }}">
+              </temba-progress>
+            </div>
+          </div>
+        {% endif %}
+      {% endif %}
+      {% if site and site.is_available %}
+        <a class="domain-card"
+           id="site-domain-card"
+           href="https://{{ site.domain }}/"
+           target="_blank"
+           rel="noopener">
+          <temba-icon name="website" size="1.2" class="domain-icon">
+          </temba-icon>
+          <div class="domain-text">
+            <div class="domain-name">{{ site.domain }}</div>
+            <div class="domain-note">{% trans "Your help site is live on this domain." %}</div>
+          </div>
+          <span class="domain-badge verified">
+            <temba-icon name="check">
+            </temba-icon>
+          {% trans "Verified" %}</span>
+          <span class="domain-pill"
+                role="button"
+                tabindex="0"
+                onclick="previewHelpSite(event)"
+                onkeydown="if (event.key === 'Enter' || event.key === ' ') { previewHelpSite(event); }">
+            <temba-icon name="show">
+            </temba-icon>
+          {% trans "Preview" %}</span>
+          <temba-icon name="link" class="domain-arrow">
+          </temba-icon>
+        </a>
+      {% else %}
+        <div class="domain-card{% if domain_url %} clickable{% endif %}"
+             id="site-domain-card"
+             {% if domain_url %}role="button" tabindex="0" onclick="showSiteDomain()" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); showSiteDomain(); }"{% endif %}>
+          <temba-icon name="website" size="1.2" class="domain-icon">
+          </temba-icon>
+          <div class="domain-text">
+            {% if site %}
+              <div class="domain-name">{{ site.domain }}</div>
+              <div class="domain-note">
+                {% if site.is_domain_verified %}
+                  {% trans "Verified, but not yet enabled for the public." %}
+                {% else %}
+                  {% trans "Add the DNS records to verify this domain." %}
+                {% endif %}
+              </div>
+            {% else %}
+              <div class="domain-name">{% trans "No domain yet" %}</div>
+              <div class="domain-note">{% trans "Set up a domain of your own to serve your help site to the public." %}</div>
+            {% endif %}
+          </div>
+          {% if not site %}
+            {% if domain_url %}
+              <span class="domain-badge setup">{% trans "Set up" %}</span>
+            {% endif %}
+          {% elif site.is_domain_verified %}
+            <span class="domain-badge verified">
+              <temba-icon name="check">
+              </temba-icon>
+            {% trans "Verified" %}</span>
+          {% else %}
+            <span class="domain-badge unverified">{% trans "Not verified" %}</span>
+          {% endif %}
+          <span class="domain-pill"
+                role="button"
+                tabindex="0"
+                onclick="previewHelpSite(event)"
+                onkeydown="if (event.key === 'Enter' || event.key === ' ') { previewHelpSite(event); }">
+            <temba-icon name="show">
+            </temba-icon>
+          {% trans "Preview" %}</span>
+        </div>
+      {% endif %}
+    </div>
+  </temba-helpdesk-cards>
 {% endblock content %}
 {% block extra-script %}
   {{ block.super }}
@@ -61,14 +191,84 @@
       document.querySelector('#article-list').refresh();
     }
 
+    function previewHelpSite(event) {
+      // the site as its readers will see it, in a tab of its own - and not also whatever the card around the pill
+      // does when clicked
+      event.preventDefault();
+      event.stopPropagation();
+      window.open("{{ preview_url }}", "_blank");
+    }
+
+    function refreshHelpdesk() {
+      // the domain card reflects what the domain dialog just did, or an import just started shows its bar
+      spaGet(window.location.pathname);
+    }
+
+    {% if import_url %}
+    function showImportDialog() {
+      showModax('{{ import_title|escapejs }}', '{{ import_url }}', {
+        id: 'import-{{ helpdesk_import.import_type }}',
+        onSubmit: 'refreshHelpdesk()'
+      });
+    }
+    {% endif %}
+
+    {% if helpdesk_import and not helpdesk_import.is_finished %}
+    function pollHelpdeskImport(refreshes) {
+      // the bar follows the import along, more patiently the longer it goes, and the page is reloaded to show the
+      // result once it's over
+      fetchAjax("{{ import_status_url }}").then(function(response) {
+        return response.json();
+      }).then(function(data) {
+        var imp = data.results[0];
+        var bar = document.querySelector('#import-progress');
+        if (!imp || !bar) {
+          return;
+        }
+
+        if (imp.status === "Complete" || imp.status === "Failed") {
+          refreshHelpdesk();
+          return;
+        }
+
+        if (imp.progress.total) {
+          bar.total = imp.progress.total;
+          bar.current = imp.progress.current;
+          document.querySelector('#import-status').textContent = '';
+        }
+
+        setTimeout(function() {
+          pollHelpdeskImport(refreshes + 1);
+        }, Math.min(1000 * (refreshes + 1), 10000));
+      });
+    }
+    {% endif %}
+
+    {% if domain_url %}
+    function showSiteDomain() {
+      showModax('{{ _("Site Domain") |escapejs }}', '{{ domain_url }}', {
+        id: 'site-domain',
+        onSubmit: 'refreshHelpdesk()'
+      });
+    }
+    {% endif %}
+
     onSpload(function() {
       var list = document.querySelector('#article-list');
 
-      // the list asks to navigate to the row that was clicked, but articles are read and written in the dialog here,
-      // so the request stops at the list rather than reaching the SPA's handler on the document
-      list.addEventListener('temba-redirected', function(event) {
-        event.stopPropagation();
+      {% if helpdesk_import and not helpdesk_import.is_finished %}
+      pollHelpdeskImport(1);
+      {% endif %}
+
+      {% if create_url %}
+      // each card offers to add an article to its section - the same create dialog the menu opens for a section,
+      // told which section the article goes in
+      list.addEventListener('temba-article-add-requested', function(event) {
+        showModax('{{ _("New Article") |escapejs }}', '{{ create_url }}?section=' + event.detail.section.uuid, {
+          id: 'new-article'
+        });
       });
+      {% endif %}
 
       {% if org_perms.knowledge.article_update %}
       list.addEventListener('temba-row-click', function(event) {
@@ -86,11 +286,214 @@
 {% block extra-style %}
   {{ block.super }}
   <style type="text/css">
-    /* The list component fills its container edge to edge and brings
-       its own surface, so drop the SPA content padding (and the grey
-       page background it would otherwise reveal around the list). */
+    /* The cards component carries its own insets, so drop the SPA
+       content padding - the cards float on the page background the way
+       the contact page's do. */
     .spa-content {
       padding: 0 !important;
+    }
+
+    /* the import card - the same surface as the domain card, with the bar of the import filling the line */
+    .import-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-sm);
+      box-shadow: var(--shadow-2);
+      color: var(--text-1);
+    }
+
+    .import-card.failed {
+      background: var(--warning-bg);
+      border-color: var(--warning-border);
+    }
+
+    .import-icon {
+      flex: none;
+      --icon-color: var(--accent-500);
+    }
+
+    .import-card.failed .import-icon {
+      --icon-color: var(--warning);
+    }
+
+    .import-text {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    /* the retry button - a quiet one, the card's tint carrying the warning, centered on the card's two lines */
+    .import-card temba-button {
+      flex: none;
+      display: flex;
+      align-self: center;
+    }
+
+    .import-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .import-title {
+      font-weight: var(--w-semibold);
+      font-size: 14px;
+    }
+
+    .import-status {
+      font-size: 12px;
+      color: var(--text-3);
+      white-space: nowrap;
+    }
+
+    .import-note {
+      font-size: 12px;
+      color: var(--text-3);
+      margin-top: 1px;
+    }
+
+    #import-progress {
+      display: block;
+      margin-top: 6px;
+      --progress-padding: 0;
+    }
+
+    /* the domain card - the same surface as the section cards below it, in a single line */
+    .domain-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-sm);
+      box-shadow: var(--shadow-2);
+      color: var(--text-1);
+      text-decoration: none;
+      transition: box-shadow 150ms ease, border-color 150ms ease;
+    }
+
+    a.domain-card,
+    .domain-card.clickable {
+      cursor: pointer;
+    }
+
+    a.domain-card:hover,
+    .domain-card.clickable:hover {
+      border-color: var(--accent-300);
+      box-shadow: var(--shadow-3);
+    }
+
+    .domain-card:focus-visible {
+      outline: 2px solid var(--accent-400);
+      outline-offset: 1px;
+    }
+
+    .domain-icon {
+      flex: none;
+      --icon-color: var(--accent-500);
+    }
+
+    .domain-text {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .domain-name {
+      font-weight: var(--w-semibold);
+      font-size: 14px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .domain-note {
+      font-size: 12px;
+      color: var(--text-3);
+      margin-top: 1px;
+    }
+
+    .domain-badge {
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: var(--w-semibold);
+      line-height: 1.3;
+      white-space: nowrap;
+    }
+
+    .domain-badge temba-icon {
+      --icon-color: currentColor;
+    }
+
+    .domain-badge.verified {
+      background: var(--success-bg);
+      border: 1px solid var(--success-border);
+      color: var(--success);
+    }
+
+    .domain-badge.unverified {
+      background: var(--warning-bg);
+      border: 1px solid var(--warning-border);
+      color: var(--warning);
+    }
+
+    .domain-badge.setup {
+      background: var(--accent-100);
+      border: 1px solid var(--accent-200);
+      color: var(--accent-700);
+    }
+
+    .domain-arrow {
+      flex: none;
+      --icon-color: var(--text-4);
+    }
+
+    a.domain-card:hover .domain-arrow {
+      --icon-color: var(--accent-500);
+    }
+
+    /* the preview pill - a button in its own right, riding the card */
+    .domain-pill {
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px 4px 8px;
+      border-radius: 999px;
+      background: var(--sunken);
+      border: 1px solid var(--border-strong);
+      color: var(--text-2);
+      font-size: 11px;
+      font-weight: var(--w-semibold);
+      line-height: 1.3;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+    }
+
+    .domain-pill temba-icon {
+      --icon-color: currentColor;
+    }
+
+    .domain-pill:hover {
+      background: var(--accent-400);
+      border-color: var(--accent-400);
+      color: #fff;
+    }
+
+    .domain-pill:focus-visible {
+      outline: 2px solid var(--accent-400);
+      outline-offset: 1px;
     }
   </style>
 {% endblock extra-style %}

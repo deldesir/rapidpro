@@ -17,7 +17,7 @@ from temba.channels.models import SyncEvent
 from temba.contacts.models import ContactExport, ContactField, ContactFire, ContactImport, ContactImportBatch
 from temba.flows.models import FlowLabel, FlowRun, FlowSession, FlowStart, FlowStartCount, ResultsExport
 from temba.globals.models import Global
-from temba.knowledge.models import Article, ArticleImage, Knowledge, KnowledgeChunk, KnowledgeItem
+from temba.knowledge.models import Article, ArticleImage, KnowledgeChunk, KnowledgeItem, KnowledgeSource
 from temba.locations.models import AdminBoundary
 from temba.msgs.models import MessageExport, Msg
 from temba.notifications.incidents.builtin import ChannelDisconnectedIncidentType
@@ -50,7 +50,7 @@ class OrgTest(TembaTest):
         # initialize gave it both system knowledge sources
         self.assertEqual(
             {("Shortcuts", "shortcuts"), ("Helpdesk", "helpdesk")},
-            set(new_org.knowledge.filter(is_system=True).values_list("name", "knowledge_type")),
+            set(new_org.sources.filter(is_system=True).values_list("name", "source_type")),
         )
 
         # as well as system fields, system groups and the sample flows
@@ -286,13 +286,8 @@ class OrgTest(TembaTest):
 
         expected_message = "Sorry, your workspace is currently flagged. To re-enable starting flows and sending messages, please contact support."
 
-        # while we are flagged, we can't send broadcasts
-        send_url = reverse("msgs.broadcast_to_node") + "?node=123&count=3"
-        response = self.client.get(send_url)
-        self.assertContains(response, expected_message)
-
+        # while we are flagged, we can't start flows
         start_url = f"{reverse('flows.flow_start', args=[])}?flow={flow.id}"
-        # we also can't start flows
         self.assertRaises(
             AssertionError,
             self.client.post,
@@ -311,9 +306,6 @@ class OrgTest(TembaTest):
         self.org.suspend()
 
         expected_message = "Sorry, your workspace is currently suspended. To re-enable starting flows and sending messages, please contact support."
-
-        response = self.client.get(send_url)
-        self.assertContains(response, expected_message)
 
         # we also can't start flows
         self.assertRaises(
@@ -409,13 +401,17 @@ class OrgTest(TembaTest):
         self.assertEqual(self.org.get_limit(Org.LIMIT_FIELDS), 250)
         self.assertEqual(self.org.get_limit(Org.LIMIT_GROUPS), 250)
         self.assertEqual(self.org.get_limit(Org.LIMIT_GLOBALS), 250)
+        self.assertEqual(self.org.get_limit(Org.LIMIT_CONTACTS), 10_000_000)
+        self.assertEqual(self.org.get_limit(Org.LIMIT_FLOWS), 10_000)
 
-        self.org.limits = dict(fields=500, groups=500)
+        self.org.limits = dict(fields=500, groups=500, contacts=100_000)
         self.org.save()
 
         self.assertEqual(self.org.get_limit(Org.LIMIT_FIELDS), 500)
         self.assertEqual(self.org.get_limit(Org.LIMIT_GROUPS), 500)
         self.assertEqual(self.org.get_limit(Org.LIMIT_GLOBALS), 250)
+        self.assertEqual(self.org.get_limit(Org.LIMIT_CONTACTS), 100_000)
+        self.assertEqual(self.org.get_limit(Org.LIMIT_FLOWS), 10_000)
 
     def test_org_api_rates(self):
         self.assertEqual(self.org.api_rates, {})
@@ -706,24 +702,24 @@ class OrgDeleteTest(TembaTest):
         add(Shortcut.create(org, user, "Interested", "We're interested"))
 
         # a website source with a crawled page (url set, no stored file)
-        website = add(Knowledge.create_website(org, user, "Nyaruka", "https://nyaruka.com"))
+        website = add(KnowledgeSource.create_website(org, user, "Nyaruka", "https://nyaruka.com"))
         page = add(
             KnowledgeItem.objects.create(
-                knowledge=website, name="Home", url="https://nyaruka.com/", content_type="text/html", size=1024
+                source=website, name="Home", url="https://nyaruka.com/", content_type="text/html", size=1024
             )
         )
         add(
             KnowledgeChunk.objects.create(
-                knowledge=website, item_key=page.uuid, item_name=page.name, text="welcome", embedding=[0.0] * 384
+                source=website, item_key=page.uuid, item_name=page.name, text="welcome", embedding=[0.0] * 384
             )
         )
 
         # a document set with an uploaded file (path set, no url) - the path is a key that never existed since
         # deleting a missing key is a no-op
-        docs = add(Knowledge.create_documents(org, user, "Guides"))
+        docs = add(KnowledgeSource.create_documents(org, user, "Guides"))
         doc = add(
             KnowledgeItem.objects.create(
-                knowledge=docs,
+                source=docs,
                 name="guide.txt",
                 path=f"orgs/{org.id}/knowledge/{docs.uuid}/guide.txt",
                 content_type="text/plain",
@@ -733,18 +729,18 @@ class OrgDeleteTest(TembaTest):
         )
         add(
             KnowledgeChunk.objects.create(
-                knowledge=docs, item_key=doc.uuid, item_name=doc.name, text="hello", embedding=[0.0] * 384
+                source=docs, item_key=doc.uuid, item_name=doc.name, text="hello", embedding=[0.0] * 384
             )
         )
 
         # a nested article with an image on the org's system helpdesk source
-        helpdesk = org.knowledge.get(knowledge_type=Knowledge.TYPE_HELPDESK)
+        helpdesk = org.sources.get(source_type=KnowledgeSource.TYPE_HELPDESK)
         article = add(
-            Article.objects.create(knowledge=helpdesk, title="Flows", slug="flows", created_by=user, modified_by=user)
+            Article.objects.create(source=helpdesk, title="Flows", slug="flows", created_by=user, modified_by=user)
         )
         add(
             Article.objects.create(
-                knowledge=helpdesk, parent=article, title="Nodes", slug="nodes", created_by=user, modified_by=user
+                source=helpdesk, parent=article, title="Nodes", slug="nodes", created_by=user, modified_by=user
             )
         )
         add(
@@ -855,6 +851,11 @@ class OrgDeleteTest(TembaTest):
         # add editor to second org as agent
         self.org2.add_user(self.editor, OrgRole.AGENT)
 
+        # add a user as an explicit member of first org only but who is also a group admin of second org
+        group_admin = self.create_user("gad@textit.com")
+        self.org.add_user(group_admin, OrgRole.ADMINISTRATOR)
+        self.create_admin_group("Global Admins", orgs=[self.org2], users=[group_admin])
+
         # can't delete an org that wasn't previously released
         with self.assertRaises(AssertionError):
             self.org.delete()
@@ -875,6 +876,7 @@ class OrgDeleteTest(TembaTest):
         self.assertUserReleased(self.agent)
         self.assertUserReleased(self.admin)
         self.assertUserActive(self.admin2)
+        self.assertUserActive(group_admin)  # because they still have access to org #2
 
         delete_released_orgs()
 

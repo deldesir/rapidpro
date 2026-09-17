@@ -1,0 +1,39 @@
+{% extends "knowledge/site/base.html" %}
+{% load i18n %}
+
+{% block title %}
+  {{ article.title }} | {{ site.title }}
+{% endblock title %}
+{% block description %}
+  {{ article.excerpt }}
+{% endblock description %}
+{% block content %}
+  <nav class="breadcrumbs" aria-label="{% trans "Breadcrumb" %}">
+    <a href="{{ prefix }}/">{% trans "Home" %}</a>
+    <a href="{{ prefix }}/{{ section.slug }}/">{{ section.title }}</a>
+    <span>{{ article.title }}</span>
+  </nav>
+  <div class="article-layout">
+    <article class="article">
+      <h1>{{ article.title }}</h1>
+      <div class="doc">{{ html|safe }}</div>
+      <footer class="article-footer">
+        {% blocktrans trimmed with date=article.modified_on|date:"j F Y" %}
+          Last updated {{ date }}
+        {% endblocktrans %}
+      </footer>
+    </article>
+    <aside class="sidebar" aria-label="{% trans "In this section" %}">
+      <h2>
+        <a href="{{ prefix }}/{{ section.slug }}/">{{ section.title }}</a>
+      </h2>
+      <ul>
+        {% for sibling in siblings %}
+          <li {% if sibling.id == article.id %}class="current" aria-current="page"{% endif %}>
+            <a href="{{ prefix }}/{{ section.slug }}/{{ sibling.slug }}/">{{ sibling.title }}</a>
+          </li>
+        {% endfor %}
+      </ul>
+    </aside>
+  </div>
+{% endblock content %}

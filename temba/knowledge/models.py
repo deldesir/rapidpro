@@ -1,12 +1,17 @@
 import colorsys
+import hashlib
+import logging
 import mimetypes
 import os
 import re
 from collections import defaultdict
+from datetime import timedelta
 from pathlib import Path
 from urllib.parse import parse_qs
 from xml.etree.ElementTree import Element, SubElement
 
+import dns.exception
+import dns.resolver
 import markdown
 import nh3
 from markdown.extensions import Extension
@@ -14,19 +19,31 @@ from markdown.treeprocessors import Treeprocessor
 from pgvector.django import HnswIndex, VectorField
 
 from django.conf import settings
+from django.contrib.postgres.indexes import OpClass
+from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
+from django.core.cache import cache
 from django.core.files.storage import default_storage
 from django.db import models, transaction
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.db.models.functions import Lower
+from django.http.request import split_domain_port
 from django.utils import timezone
+from django.utils.html import escape
+from django.utils.safestring import mark_safe
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
+from temba import mailroom
+from temba.mailroom.client.exceptions import RequestException
 from temba.orgs.models import Org
 from temba.utils import on_transaction_commit
 from temba.utils.models import TembaModel, delete_in_batches
+from temba.utils.models.counts import BaseDailyCount
 from temba.utils.s3 import public_file_storage
+from temba.utils.text import generate_secret
 from temba.utils.uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 
 class EscapeRawHTML(Extension):
@@ -49,11 +66,29 @@ IMAGE_LAYOUTS = ("block", "inline")
 IMAGE_CLASSES = {f"size-{s}" for s in IMAGE_SIZES} | {f"layout-{layout}" for layout in IMAGE_LAYOUTS}
 
 
+# An uploaded image is referenced by its key in public storage - orgs/1/knowledge/.../shot.png - rather than by the
+# address storage is served from, so an article holds nothing that storage moving would break. The address is put
+# back only as the article is rendered.
+RELATIVE_IMAGE = re.compile(r"^(?![a-z][a-z0-9+.-]*:)(?![/#])", re.IGNORECASE)
+
+
+def resolve_image(reference: str) -> str:
+    """
+    The address an image reference is served from, when it's a storage key; anything with an address of its own is
+    left alone. A size fragment rides along.
+    """
+    if not RELATIVE_IMAGE.match(reference):
+        return reference
+    key, hash_, fragment = reference.partition("#")
+    return public_file_storage.url(key) + hash_ + fragment
+
+
 class AnnotateImages(Extension):
     """
     Surfaces the size/layout fragment of each image's URL as classes on its <img> - size-small, layout-inline etc -
-    for CSS to act on. The src is left intact, fragment and all; a fragment on an <img> is harmless, and stripping it
-    would make the served HTML lie about the markdown it came from.
+    for CSS to act on - and resolves a reference to an uploaded image to where storage serves it from. The fragment
+    is left on the src; a fragment on an <img> is harmless, and stripping it would make the served HTML lie about the
+    markdown it came from.
     """
 
     def extendMarkdown(self, md):
@@ -63,6 +98,7 @@ class AnnotateImages(Extension):
 class AnnotateImagesProcessor(Treeprocessor):
     def run(self, root):
         for img in root.iter("img"):
+            img.set("src", resolve_image(img.get("src", "")))
             params = parse_qs(img.get("src", "").partition("#")[2])
 
             classes = []
@@ -284,6 +320,45 @@ class ColumnStylesProcessor(Treeprocessor):
                     del td.attrib["style"]
 
 
+# How one article links to another: [text](article:<uuid>), the target's uuid rather than its address - so the link
+# holds through any retitling or refiling of either article, and is resolved to the target's current address only as
+# the page is served. Riding in the markdown itself, it survives any renderer; the editor shows it as it is.
+ARTICLE_LINK_SCHEME = "article:"
+ARTICLE_LINK = re.compile(r"^article:([0-9a-f-]{36})$", re.IGNORECASE)
+
+
+class ArticleLinks(Extension):
+    """
+    Resolves article: links against the given map of uuid to address. A link to an article that isn't in the map -
+    unpublished, deleted, or never there - is left as its text, since there's nowhere for it to go.
+    """
+
+    def __init__(self, links: dict = None):
+        super().__init__()
+        self.links = links or {}
+
+    def extendMarkdown(self, md):
+        md.treeprocessors.register(ArticleLinksProcessor(md, self.links), "article_links", 4)
+
+
+class ArticleLinksProcessor(Treeprocessor):
+    def __init__(self, md, links: dict):
+        super().__init__(md)
+        self.links = links
+
+    def run(self, root):
+        for anchor in root.iter("a"):
+            match = ARTICLE_LINK.match(anchor.get("href") or "")
+            if not match:
+                continue
+            target = self.links.get(match[1].lower())
+            if target:
+                anchor.set("href", target)
+            else:
+                anchor.tag = "span"
+                del anchor.attrib["href"]
+
+
 # markdown extensions we render article bodies with. Deliberately conservative - no extension that would make markdown
 # itself more expressive than what the editor can round-trip.
 MARKDOWN_EXTENSIONS = ("fenced_code", "tables", "sane_lists")
@@ -330,25 +405,96 @@ def _sanitize_attribute(element: str, attribute: str, value: str) -> str | None:
     return value
 
 
-def render_markdown(body: str, colors: dict = None) -> str:
+def render_markdown(body: str, colors: dict = None, links: dict = None) -> str:
     """
-    Renders authored markdown for display, resolving column backgrounds against the org's palette. Raw HTML is
-    escaped rather than passed through, so that a reader sees what the author saw - the editor renders client side
-    and escapes it too, and text that merely looks like a tag (the `<url>` of our own quick reply syntax, say)
-    survives instead of being quietly swallowed. Sanitizing stays as defense in depth, and still deals with the
-    javascript: URLs markdown will happily make a link out of.
+    Renders authored markdown for display, resolving column backgrounds against the org's palette and article: links
+    against the given map of article uuid to address. Raw HTML is escaped rather than passed through, so that a
+    reader sees what the author saw - the editor renders client side and escapes it too, and text that merely looks
+    like a tag (the `<url>` of our own quick reply syntax, say) survives instead of being quietly swallowed.
+    Sanitizing stays as defense in depth, and still deals with the javascript: URLs markdown will happily make a
+    link out of.
     """
     return nh3.clean(
         markdown.markdown(
             body,
-            extensions=[*MARKDOWN_EXTENSIONS, EscapeRawHTML(), AnnotateImages(), CellBreaks(), ColumnStyles(colors)],
+            extensions=[
+                *MARKDOWN_EXTENSIONS,
+                EscapeRawHTML(),
+                AnnotateImages(),
+                CellBreaks(),
+                ColumnStyles(colors),
+                ArticleLinks(links),
+            ],
         ),
         attributes=SANITIZE_ATTRIBUTES,
         attribute_filter=_sanitize_attribute,
     )
 
 
-class Knowledge(TembaModel):
+# what to strip from markdown to read an article as plain text - for excerpts and search snippets, where the markup
+# would only get in the way. Order matters: images before links, since an image is a link with a bang in front.
+PLAIN_TEXT_RULES = (
+    (re.compile(r"```.*?```", re.DOTALL), " "),  # fenced code
+    (re.compile(r"!\[[^\]]*\]\([^)]*\)"), " "),  # images
+    (re.compile(r"\[([^\]]*)\]\([^)]*\)"), r"\1"),  # links keep their text
+    (re.compile(r"^\s{0,3}#{1,6}\s+", re.MULTILINE), ""),  # heading markers
+    (re.compile(r"^\s{0,3}>\s?", re.MULTILINE), ""),  # blockquote markers
+    (re.compile(r"^\s*([-*+]|\d+\.)\s+", re.MULTILINE), ""),  # list markers
+    (re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$", re.MULTILINE), " "),  # table separators
+    (re.compile(r"\b(width|background|padding|border)\s*:\s*[^|;\n]*;?", re.IGNORECASE), " "),  # column styles
+    (re.compile(r"<br\s*/?>", re.IGNORECASE), " "),  # cell line breaks
+    (re.compile(r"[*_`~]"), ""),  # emphasis and code markers
+    (re.compile(r"\|"), " "),  # table pipes
+    (re.compile(r"\s+"), " "),
+)
+
+
+def to_plain_text(body: str) -> str:
+    """
+    Reads authored markdown as plain text - what an excerpt or a search snippet shows of an article.
+    """
+    text = body
+    for pattern, replacement in PLAIN_TEXT_RULES:
+        text = pattern.sub(replacement, text)
+    return text.strip()
+
+
+def make_snippet(text: str, terms: list, *, length: int = 200) -> str:
+    """
+    A window of plain text around the first of the given terms it contains - or its start, when it contains none -
+    with the terms marked up. Returned as HTML that's safe to render: the text is escaped and only our own <mark>s are
+    markup.
+    """
+    lowered = text.lower()
+    terms = [t.lower() for t in terms if t]
+    hits = [lowered.find(t) for t in terms]
+    hits = [h for h in hits if h >= 0]
+
+    start = 0
+    if hits:
+        # lead in with a little context, and start on a word boundary
+        start = max(0, min(hits) - length // 4)
+        if start > 0:
+            space = text.rfind(" ", 0, start)
+            start = space + 1 if space >= 0 else start
+
+    window = text[start : start + length]
+    if start + length < len(text):
+        space = window.rfind(" ")
+        if space > length // 2:
+            window = window[:space]
+        window += "\u2026"
+    if start > 0:
+        window = "\u2026" + window
+
+    html = escape(window)
+    if terms:
+        pattern = re.compile("|".join(re.escape(t) for t in sorted(terms, key=len, reverse=True)), re.IGNORECASE)
+        html = pattern.sub(lambda m: f"<mark>{m[0]}</mark>", html)
+    return mark_safe(html)
+
+
+class KnowledgeSource(TembaModel):
     """
     A source of knowledge that AI agents can search semantically.
 
@@ -407,10 +553,9 @@ class Knowledge(TembaModel):
     DEFAULT_MAX_PAGES = 500
     MAX_MAX_PAGES = 5_000
     MAX_URL_LEN = 2048
-    MAX_COLORS = 24
 
-    org = models.ForeignKey(Org, on_delete=models.PROTECT, related_name="knowledge")
-    knowledge_type = models.CharField(max_length=16, choices=TYPE_CHOICES)
+    org = models.ForeignKey(Org, on_delete=models.PROTECT, related_name="sources")
+    source_type = models.CharField(max_length=16, choices=TYPE_CHOICES)
 
     # type specific settings, e.g. for website: url, max_depth, max_pages, refresh. Empty for other types.
     config = models.JSONField(default=dict)
@@ -429,14 +574,12 @@ class Knowledge(TembaModel):
         """
         Creates the org's two system sources - its shortcut list and its helpdesk.
         """
-        assert not org.knowledge.filter(knowledge_type__in=cls.SYSTEM_TYPES).exists(), (
-            "org already has system knowledge"
-        )
+        assert not org.sources.filter(source_type__in=cls.SYSTEM_TYPES).exists(), "org already has system knowledge"
 
         return [
-            org.knowledge.create(
+            org.sources.create(
                 name=cls.SYSTEM_NAMES[t],
-                knowledge_type=t,
+                source_type=t,
                 is_system=True,
                 created_by=org.created_by,
                 modified_by=org.modified_by,
@@ -447,11 +590,11 @@ class Knowledge(TembaModel):
     @classmethod
     def create_website(cls, org, user, name: str, url: str, *, max_depth=None, max_pages=None, refresh=None):
         assert cls.is_valid_name(name), f"'{name}' is not a valid knowledge name"
-        assert not org.knowledge.filter(name__iexact=name, is_active=True).exists()
+        assert not org.sources.filter(name__iexact=name, is_active=True).exists()
 
-        return org.knowledge.create(
+        return org.sources.create(
             name=name,
-            knowledge_type=cls.TYPE_WEBSITE,
+            source_type=cls.TYPE_WEBSITE,
             config={
                 cls.CONFIG_URL: url,
                 cls.CONFIG_MAX_DEPTH: max_depth or cls.DEFAULT_MAX_DEPTH,
@@ -465,12 +608,12 @@ class Knowledge(TembaModel):
     @classmethod
     def create_documents(cls, org, user, name: str):
         assert cls.is_valid_name(name), f"'{name}' is not a valid knowledge name"
-        assert not org.knowledge.filter(name__iexact=name, is_active=True).exists()
+        assert not org.sources.filter(name__iexact=name, is_active=True).exists()
 
         # nothing to index until files are uploaded
-        return org.knowledge.create(
+        return org.sources.create(
             name=name,
-            knowledge_type=cls.TYPE_DOCUMENTS,
+            source_type=cls.TYPE_DOCUMENTS,
             status=cls.STATUS_READY,
             created_by=user,
             modified_by=user,
@@ -526,11 +669,16 @@ class Knowledge(TembaModel):
         """
         # collect storage keys before the rows that name them disappear - two different buckets
         item_paths = list(self.items.exclude(path=None).values_list("path", flat=True))
-        image_paths = list(ArticleImage.objects.filter(article__knowledge=self).values_list("path", flat=True))
+        image_paths = list(ArticleImage.objects.filter(article__source=self).values_list("path", flat=True))
 
         delete_in_batches(self.chunks.all())
         delete_in_batches(self.items.all())
-        delete_in_batches(ArticleImage.objects.filter(article__knowledge=self))
+        delete_in_batches(ArticleImage.objects.filter(article__source=self))
+        delete_in_batches(ArticleCount.objects.filter(article__source=self))
+
+        # the helpdesk's public site goes with its articles
+        for site in HelpSite.objects.filter(source=self):
+            site.delete()
 
         # parent is PROTECT so flatten the article tree before deleting it
         self.articles.exclude(parent=None).update(parent=None)
@@ -548,10 +696,10 @@ class Knowledge(TembaModel):
             public_file_storage.delete(path)
 
     class Meta:
-        constraints = [models.UniqueConstraint("org", Lower("name"), name="unique_knowledge_names")]
+        constraints = [models.UniqueConstraint("org", Lower("name"), name="unique_knowledgesource_names")]
         indexes = [
             # mailroom's indexing sweep's worklist
-            models.Index(name="knowledge_pending", fields=("id",), condition=Q(is_active=True, status="P")),
+            models.Index(name="knowledgesource_pending", fields=("id",), condition=Q(is_active=True, status="P")),
         ]
 
 
@@ -572,11 +720,12 @@ class Article(models.Model):
     MAX_TITLE_LEN = 255
     MAX_SLUG_LEN = 255
     MAX_BODY_LEN = 100_000  # bodies are chunked and embedded, so this bounds what one article can cost to index
+    MAX_DESCRIPTION_LEN = 500  # a section says what it holds in a line or two, not an article
     MAX_DEPTH = 2  # total levels - a root and its children, no grandchildren; enforced by the reorder view
     MAX_ARTICLES = 1000  # per helpdesk
 
     uuid = models.UUIDField(unique=True, default=uuid4)
-    knowledge = models.ForeignKey(Knowledge, on_delete=models.PROTECT, related_name="articles")
+    source = models.ForeignKey(KnowledgeSource, on_delete=models.PROTECT, related_name="articles")
 
     # the tree - a plain self-FK, not mptt (that dep exists only for locations and buys nothing at help-centre depth).
     # Depth is capped at MAX_DEPTH and cycles are rejected server-side.
@@ -585,7 +734,10 @@ class Article(models.Model):
 
     title = models.CharField(max_length=MAX_TITLE_LEN)
     slug = models.SlugField(max_length=MAX_SLUG_LEN)
+    # a root of the tree is a section: a heading over the articles filed under it, described in plain text rather
+    # than written as an article. So a section has a description and no body, and an article the reverse.
     body = models.TextField(default="")  # markdown source
+    description = models.TextField(default="")
 
     # ISO-639-3, so a helpdesk can hold articles in several languages. Translations aren't linked to each other yet -
     # retrieval doesn't need them, as multilingual-e5 embeds cross-lingually, and linking is a question for the
@@ -599,34 +751,37 @@ class Article(models.Model):
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
     created_on = models.DateTimeField(default=timezone.now)
     modified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
-    # auto_now is load-bearing: mailroom's staleness sweep is MAX(modified_on) > knowledge.last_indexed_on, so an
+    # auto_now is load-bearing: mailroom's staleness sweep is MAX(modified_on) > source.last_indexed_on, so an
     # unpublish or a soft-delete has to bump it for the removal to be noticed
     modified_on = models.DateTimeField(auto_now=True)
 
     @classmethod
-    def create(cls, knowledge, user, title: str, *, body: str = "", parent=None, language: str = None):
-        assert knowledge.knowledge_type == Knowledge.TYPE_HELPDESK, "articles can only belong to a helpdesk"
-        assert parent is None or parent.knowledge_id == knowledge.id, "parent must be in the same helpdesk"
+    def create(
+        cls, source, user, title: str, *, body: str = "", description: str = "", parent=None, language: str = None
+    ):
+        assert source.source_type == KnowledgeSource.TYPE_HELPDESK, "articles can only belong to a helpdesk"
+        assert parent is None or parent.source_id == source.id, "parent must be in the same helpdesk"
 
         # new articles go to the end of their level so creating one never reshuffles the tree
-        last = cls.objects.filter(knowledge=knowledge, parent=parent, is_active=True).order_by("-sort_order").first()
+        last = cls.objects.filter(source=source, parent=parent, is_active=True).order_by("-sort_order").first()
 
         return cls.objects.create(
-            knowledge=knowledge,
+            source=source,
             parent=parent,
             sort_order=(last.sort_order + 1) if last else 0,
             title=title,
-            slug=cls.get_unique_slug(knowledge, title),
+            slug=cls.get_unique_slug(source, title),
             body=body,
-            language=language or knowledge.org.flow_languages[0],
+            description=description,
+            language=language or source.org.flow_languages[0],
             created_by=user,
             modified_by=user,
         )
 
     @classmethod
-    def get_unique_slug(cls, knowledge, title: str, ignore=None) -> str:
+    def get_unique_slug(cls, source, title: str, ignore=None) -> str:
         base = slugify(title)[: cls.MAX_SLUG_LEN] or "article"
-        qs = cls.objects.filter(knowledge=knowledge, is_active=True)
+        qs = cls.objects.filter(source=source, is_active=True)
         if ignore:
             qs = qs.exclude(id=ignore.id)
 
@@ -639,7 +794,7 @@ class Article(models.Model):
         return slug
 
     @classmethod
-    def get_tree(cls, knowledge) -> list:
+    def get_tree(cls, source) -> list:
         """
         Returns the helpdesk's active articles in display order - depth first, siblings by (sort_order, title) - with
         each one's depth and the uuid of the article it's shown under attached.
@@ -649,7 +804,7 @@ class Article(models.Model):
         stored deeper than MAX_DEPTH allows - data can predate the cap - render flattened rather than hidden: as
         siblings following their parent, under the deepest ancestor the cap does allow.
         """
-        active = list(knowledge.articles.filter(is_active=True).order_by("sort_order", "title"))
+        active = list(source.articles.filter(is_active=True).order_by("sort_order", "title"))
         active_ids = {a.id for a in active}
 
         by_parent = defaultdict(list)
@@ -676,13 +831,13 @@ class Article(models.Model):
         return ordered
 
     @classmethod
-    def apply_sort(cls, knowledge, order: list):
+    def apply_sort(cls, source, order: list):
         """
         Applies a new tree ordering given as (uuid, parent uuid or None, sort order) tuples, which need only describe
         what moved. The client's tree is never trusted - the resulting forest is re-derived here and rejected if it
         names an article that isn't in this helpdesk, introduces a cycle, or nests deeper than MAX_DEPTH.
         """
-        articles = {str(a.uuid): a for a in knowledge.articles.filter(is_active=True)}
+        articles = {str(a.uuid): a for a in source.articles.filter(is_active=True)}
         uuids_by_id = {a.id: uuid for uuid, a in articles.items()}
 
         # start from the tree as it stands so unmentioned articles keep their place
@@ -695,6 +850,12 @@ class Article(models.Model):
                 raise ValueError(f"no such article: {uuid}")
             if parent_uuid is not None and parent_uuid not in articles:
                 raise ValueError(f"no such article: {parent_uuid}")
+
+            # a section is described and an article written, and which one is which is where it sits in the
+            # tree - so a move can put a section elsewhere among the sections, or an article in another section,
+            # but can't turn one into the other
+            if (parent_uuid is None) != (article.parent_id is None):
+                raise ValueError("a section can't become an article, nor an article a section")
 
             parents[uuid] = parent_uuid
             article.parent_id = articles[parent_uuid].id if parent_uuid else None
@@ -718,10 +879,31 @@ class Article(models.Model):
 
     @property
     def org(self):
-        return self.knowledge.org
+        return self.source.org
 
-    def as_html(self) -> str:
-        return render_markdown(self.body, self.knowledge.colors)
+    @property
+    def is_section(self) -> bool:
+        return self.parent_id is None
+
+    def as_html(self, links: dict = None) -> str:
+        """
+        The article rendered for reading, with its links to other articles resolved against the given map of uuid to
+        address - see HelpSite.get_link_targets. Without one, they render as plain text.
+        """
+        return render_markdown(self.body, self.source.colors, links)
+
+    def as_plain_text(self) -> str:
+        return to_plain_text(self.body)
+
+    def excerpt(self, length: int = 160) -> str:
+        """
+        The article's opening, as plain text, for listing it by - a section describes itself, an article is read.
+        """
+        text = self.as_plain_text()
+        if len(text) <= length:
+            return text
+        cut = text.rfind(" ", 0, length)
+        return text[: cut if cut > length // 2 else length].rstrip() + "\u2026"
 
     def publish(self, user):
         self.status = self.STATUS_PUBLISHED
@@ -740,13 +922,17 @@ class Article(models.Model):
 
     def release(self, user):
         """
-        Soft delete - a tombstone, so mailroom's delta sweep notices and drops our chunks. Children are reparented to
-        our parent so the tree stays connected, and our images go for good since nothing will render this body again.
+        Soft delete - a tombstone, so mailroom's delta sweep notices and drops our chunks. A section goes only once
+        it's empty, since its articles would otherwise be left as sections themselves; the images go for good, since
+        nothing will render this body again.
         """
+        assert not (self.is_section and self.children.filter(is_active=True).exists()), (
+            "a section with articles in it can't be released"
+        )
+
         image_paths = list(self.images.values_list("path", flat=True))
 
         with transaction.atomic():
-            self.children.update(parent=self.parent)
             self.images.all().delete()
 
             self.is_active = False
@@ -764,13 +950,13 @@ class Article(models.Model):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint("knowledge", "slug", condition=Q(is_active=True), name="unique_article_slugs")
+            models.UniqueConstraint("source", "slug", condition=Q(is_active=True), name="unique_article_slugs")
         ]
         indexes = [
             # the tree, in display order
-            models.Index(name="article_by_tree", fields=("knowledge", "parent", "sort_order")),
+            models.Index(name="article_by_tree", fields=("source", "parent", "sort_order")),
             # mailroom's staleness + delta sweep
-            models.Index(name="article_by_modified", fields=("knowledge", "modified_on")),
+            models.Index(name="article_by_modified", fields=("source", "modified_on")),
         ]
 
 
@@ -782,8 +968,7 @@ def get_article_image_path(article, image_uuid, content_type: str) -> str:
     extension = mimetypes.guess_extension(content_type) or ".bin"
 
     return (
-        f"orgs/{article.knowledge.org_id}/knowledge/{article.knowledge.uuid}/"
-        f"articles/{article.uuid}/{image_uuid}{extension}"
+        f"orgs/{article.source.org_id}/knowledge/{article.source.uuid}/articles/{article.uuid}/{image_uuid}{extension}"
     )
 
 
@@ -846,8 +1031,646 @@ class ArticleImage(models.Model):
         on_transaction_commit(lambda: public_file_storage.delete(path))
 
 
-def get_knowledge_item_path(knowledge, item_uuid, filename: str) -> str:
-    return f"orgs/{knowledge.org_id}/knowledge/{knowledge.uuid}/{item_uuid}{Path(filename).suffix.lower()}"
+class ArticleCount(BaseDailyCount):
+    """
+    Daily counts of article activity on the help site - for now just views, which are what the site ranks its popular
+    articles by. Written as deltas by the site as it serves pages and squashed periodically.
+    """
+
+    squash_over = ("article_id", "day", "scope")
+
+    SCOPE_VIEWS = "views"
+
+    article = models.ForeignKey(Article, on_delete=models.PROTECT, related_name="counts", db_index=False)
+
+    @classmethod
+    def record_view(cls, article):
+        cls.objects.create(article=article, day=timezone.now().date(), scope=cls.SCOPE_VIEWS, count=1)
+
+    class Meta:
+        indexes = [
+            models.Index(
+                "article", "day", OpClass("scope", name="varchar_pattern_ops"), name="articlecount_article_scope"
+            ),
+            # for squashing task
+            models.Index(
+                name="articlecount_unsquashed", fields=("article", "day", "scope"), condition=Q(is_squashed=False)
+            ),
+        ]
+
+
+def lookup_txt(name: str) -> list | None:
+    """
+    The TXT records at a DNS name, as strings - an empty list if the name doesn't resolve or has none, and None if
+    the lookup itself failed, which says nothing about what's there.
+    """
+    try:
+        resolver = dns.resolver.Resolver()
+        resolver.lifetime = 5
+        answer = resolver.resolve(name, "TXT")
+    except dns.resolver.NXDOMAIN, dns.resolver.NoAnswer:
+        return []
+    except dns.exception.DNSException, OSError, ValueError:
+        return None
+
+    return [b"".join(record.strings).decode("utf-8", errors="replace") for record in answer]
+
+
+def is_dark_color(color: str) -> bool:
+    """
+    Whether a #rrggbb color is dark enough to want light text on it, by its relative luminance.
+    """
+    r, g, b = (int(color[i : i + 2], 16) / 255 for i in (1, 3, 5))
+
+    def linear(c):
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b) < 0.4
+
+
+def generate_domain_token() -> str:
+    return generate_secret(32)
+
+
+class HelpSite(models.Model):
+    """
+    The public face of an org's helpdesk: the site its published articles are read on. Previewed from inside the app,
+    and served to the world on a domain of the org's own - one they point at us by CNAME and prove is theirs with a
+    TXT record, checked whenever they ask and required before the domain is served. There's one site per helpdesk,
+    made the first time anyone opens its settings.
+    """
+
+    MAX_TITLE_LEN = 128
+    MAX_TAGLINE_LEN = 255
+    MAX_FOOTER_LEN = 255
+    MAX_DOMAIN_LEN = 128
+
+    # where the TXT record that proves a domain is the org's goes - _helpsite-verification.<domain> - and what it holds
+    VERIFICATION_RECORD = "_helpsite-verification"
+
+    # config keys
+    CONFIG_PRIMARY_COLOR = "primary_color"  # links, buttons, accents
+    CONFIG_HEADER_COLOR = "header_color"  # the header's background
+
+    DEFAULT_PRIMARY_COLOR = "#2f6fed"
+    DEFAULT_HEADER_COLOR = "#ffffff"
+
+    # The bubble colors - the backgrounds an author can give a column in an article, chosen here so every article
+    # draws on the same few. They're the helpdesk's palette, keyed by these indexes, which is what articles embed.
+    BUBBLE_KEYS = ("1", "2", "3")
+
+    DOMAINS_CACHE_KEY = "helpsite_domains"
+    DOMAINS_CACHE_TTL = 60 * 60  # a safety net - the entry is dropped whenever a site changes
+
+    POPULAR_DAYS = 30  # how far back views count towards being popular
+    POPULAR_LIMIT = 6
+    SEARCH_LIMIT = 20
+    SEARCH_CACHE_KEY = "helpsite_search:%d:%s"
+    SEARCH_CACHE_TTL = 60 * 5
+
+    uuid = models.UUIDField(unique=True, default=uuid4)
+    source = models.OneToOneField(KnowledgeSource, on_delete=models.PROTECT, related_name="site")
+
+    title = models.CharField(max_length=MAX_TITLE_LEN)
+    tagline = models.CharField(max_length=MAX_TAGLINE_LEN, default="")
+    footer = models.CharField(max_length=MAX_FOOTER_LEN, default="")
+
+    # the org's own domain for the site, e.g. help.example.com, which they point at us by CNAME. Served only once
+    # it's verified - a request is matched to a site by nothing but its host, so a verified domain is one site's
+    # alone, while an unverified one can't keep its real owner from claiming it.
+    domain = models.CharField(max_length=MAX_DOMAIN_LEN, null=True)
+    domain_token = models.CharField(max_length=32, default=generate_domain_token)  # what the TXT record must hold
+    domain_verified_on = models.DateTimeField(null=True)
+
+    # whether the site is served publicly - the domain can stay configured while the site is taken down
+    is_enabled = models.BooleanField(default=False)
+
+    config = models.JSONField(default=dict)
+
+    # the addresses of the site the org moved from, by path, to the uuid of the article or section each is now -
+    # written by whatever brought the articles over, and only ever consulted for an address the site doesn't have
+    redirects = models.JSONField(default=dict)
+
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    created_on = models.DateTimeField(default=timezone.now)
+    modified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    modified_on = models.DateTimeField(auto_now=True)
+
+    @classmethod
+    def get_or_create(cls, source, user):
+        assert source.source_type == KnowledgeSource.TYPE_HELPDESK, "only a helpdesk has a site"
+
+        site, _ = cls.objects.get_or_create(
+            source=source,
+            defaults={"title": source.org.name, "created_by": user, "modified_by": user},
+        )
+        return site
+
+    @classmethod
+    def get_domains(cls) -> dict:
+        """
+        Every configured domain and the id of its site. Every request to the app has to be checked against this, so
+        it's held in the cache - there are few enough domains to hold them all - and dropped whenever a site changes.
+        """
+        domains = cache.get(cls.DOMAINS_CACHE_KEY)
+        if domains is None:
+            domains = dict(
+                cls.objects.exclude(domain=None).exclude(domain_verified_on=None).values_list("domain", "id")
+            )
+            cache.set(cls.DOMAINS_CACHE_KEY, domains, timeout=cls.DOMAINS_CACHE_TTL)
+        return domains
+
+    @classmethod
+    def get_for_host(cls, host: str):
+        """
+        The site served on the given host, if any. Costs nothing but a cache lookup unless the host is a site's.
+        """
+        domain, _ = split_domain_port(host)
+        domain = domain.lower().removeprefix("www.")
+        site_id = cls.get_domains().get(domain) if domain else None
+        if not site_id:
+            return None
+
+        return cls.objects.filter(id=site_id).select_related("source__org").first()
+
+    @classmethod
+    def clean_domain(cls, value: str) -> str | None:
+        return (value or "").strip().lower().removeprefix("www.") or None
+
+    @property
+    def is_domain_verified(self) -> bool:
+        return bool(self.domain and self.domain_verified_on)
+
+    @property
+    def verification_record(self) -> str:
+        """
+        The name of the TXT record that proves the domain is the org's.
+        """
+        return f"{self.VERIFICATION_RECORD}.{self.domain}" if self.domain else ""
+
+    def set_domain(self, user, domain: str | None):
+        """
+        Points the site at a domain of the org's own - which then has to be verified before it's served. Setting the
+        same domain again changes nothing, so a verified domain stays verified.
+        """
+        domain = self.clean_domain(domain)
+        if domain == self.domain:
+            return
+
+        self.domain = domain
+        self.domain_verified_on = None
+        self.modified_by = user
+        self.save(update_fields=("domain", "domain_verified_on", "modified_by", "modified_on"))
+
+    def verify_domain(self) -> bool:
+        """
+        Looks for the TXT record that proves the domain is the org's, and marks the domain verified - and so served -
+        when it's there. Asked for on demand: DNS takes its time, and there's nothing to poll for otherwise.
+        """
+        if not self.domain:
+            return False
+
+        if self.domain_token not in (lookup_txt(self.verification_record) or []):
+            return False
+
+        if not self.domain_verified_on:
+            self.domain_verified_on = timezone.now()
+            self.save(update_fields=("domain_verified_on", "modified_on"))
+        return True
+
+    @classmethod
+    def check_verified_domains(cls) -> dict:
+        """
+        Looks again for every verified domain's record, so a domain an org has let go of - and may not own any more -
+        stops being served and can be verified by whoever has it now. A lookup that fails outright proves nothing
+        either way and is left for next time.
+        """
+        num_checked, num_lapsed = 0, 0
+
+        for site in cls.objects.exclude(domain_verified_on=None).exclude(domain=None):
+            num_checked += 1
+            records = lookup_txt(site.verification_record)
+            if records is not None and site.domain_token not in records:
+                site.domain_verified_on = None
+                site.save(update_fields=("domain_verified_on", "modified_on"))
+                num_lapsed += 1
+
+        return {"checked": num_checked, "lapsed": num_lapsed}
+
+    @property
+    def org(self):
+        return self.source.org
+
+    @property
+    def is_available(self) -> bool:
+        """
+        Whether the site can be served publicly - enabled, and belonging to a live helpdesk of an org that still has
+        the feature.
+        """
+        return (
+            self.is_enabled
+            and self.is_domain_verified
+            and self.source.is_active
+            and self.org.is_active
+            and Org.FEATURE_AGENTS in self.org.features
+        )
+
+    @property
+    def primary_color(self) -> str:
+        return self.config.get(self.CONFIG_PRIMARY_COLOR) or self.DEFAULT_PRIMARY_COLOR
+
+    @property
+    def header_color(self) -> str:
+        return self.config.get(self.CONFIG_HEADER_COLOR) or self.DEFAULT_HEADER_COLOR
+
+    @property
+    def header_text_color(self) -> str:
+        """
+        What's legible on the header - the page's own dark text on a light header, white on a dark one.
+        """
+        return "#ffffff" if is_dark_color(self.header_color) else "#1f2430"
+
+    @property
+    def bubbles(self) -> dict:
+        """
+        The bubble colors that are set, by their palette key.
+        """
+        colors = self.source.colors
+        return {key: colors[key] for key in self.BUBBLE_KEYS if colors.get(key)}
+
+    def set_bubbles(self, colors: dict):
+        """
+        Sets the helpdesk's palette to the given bubble colors - only those keys, so a bubble cleared here stops being
+        offered, and any column that embedded it paints nothing until it's set again.
+        """
+        self.source.set_colors({key: colors[key].lower() for key in self.BUBBLE_KEYS if colors.get(key)})
+
+    def set_config(self, user, **values):
+        self.config = {**self.config, **values}
+        self.modified_by = user
+        self.save(update_fields=("config", "modified_by", "modified_on"))
+
+    def _published(self):
+        return self.source.articles.filter(is_active=True, status=Article.STATUS_PUBLISHED)
+
+    def get_sections(self) -> list:
+        """
+        The published sections, in display order, each with the number of published articles under it. Sections with
+        nothing published in them aren't listed - there'd be nothing to read there.
+        """
+        counts = dict(
+            self._published()
+            .filter(parent__in=self._published().filter(parent=None))
+            .values_list("parent_id")
+            .annotate(num=models.Count("id"))
+        )
+        sections = []
+        for section in self._published().filter(parent=None).defer("body").order_by("sort_order", "title"):
+            section.num_articles = counts.get(section.id, 0)
+            if section.num_articles:
+                sections.append(section)
+        return sections
+
+    def get_section(self, slug: str):
+        return self._published().filter(parent=None, slug=slug).first()
+
+    def get_articles(self, section) -> list:
+        """
+        The published articles in a section, in display order.
+        """
+        return list(self._published().filter(parent=section).order_by("sort_order", "title"))
+
+    def get_article(self, section, slug: str):
+        return self._published().filter(parent=section, slug=slug).first()
+
+    def get_link_targets(self, prefix: str = "") -> dict:
+        """
+        Where every readable article and section on the site currently lives, by uuid - what article: links in a
+        body resolve against. Articles link by uuid rather than by address, so a retitled or refiled article keeps
+        every link to it; this is the address as of now.
+        """
+        sections = {
+            str(uuid): f"{prefix}/{slug}/"
+            for uuid, slug in self._published().filter(parent=None).values_list("uuid", "slug")
+        }
+        articles = self._published().filter(parent__uuid__in=sections.keys())
+
+        targets, listed = {}, set()
+        for uuid, slug, parent_uuid in articles.values_list("uuid", "slug", "parent__uuid"):
+            targets[str(uuid)] = f"{sections[str(parent_uuid)]}{slug}/"
+            listed.add(str(parent_uuid))
+
+        # only a section with something published in it is a page
+        targets.update({uuid: address for uuid, address in sections.items() if uuid in listed})
+        return targets
+
+    @staticmethod
+    def normalize_path(path: str) -> str:
+        """
+        The form an old address is kept and looked up in - lowercased, without any query or fragment, and with a
+        leading slash but no trailing one, so the same page reached slightly differently is still the same page.
+        """
+        path = path.strip().split("?")[0].split("#")[0].lower()
+        return "/" + path.strip("/")
+
+    def get_redirect(self, path: str, prefix: str = "") -> str | None:
+        """
+        Where an address of the site the org moved from leads now, if the mapping has it and it's a page.
+        """
+        uuid = self.redirects.get(self.normalize_path(path))
+        return self.get_link_targets(prefix).get(uuid) if uuid else None
+
+    def get_popular(self, limit: int = POPULAR_LIMIT) -> list:
+        """
+        The most viewed published articles over the last POPULAR_DAYS, most viewed first. Only articles that are
+        currently reachable - published, in a published section - count.
+        """
+        since = timezone.now().date() - timedelta(days=self.POPULAR_DAYS)
+        totals = (
+            ArticleCount.objects.filter(
+                article__source=self.source,
+                article__is_active=True,
+                article__status=Article.STATUS_PUBLISHED,
+                article__parent__is_active=True,
+                article__parent__status=Article.STATUS_PUBLISHED,
+                scope=ArticleCount.SCOPE_VIEWS,
+                day__gte=since,
+            )
+            .values_list("article_id")
+            .annotate(total=Sum("count"))
+            .order_by("-total", "article_id")[:limit]
+        )
+        by_id = {a.id: a for a in self._published().filter(id__in=[t[0] for t in totals]).select_related("parent")}
+        return [by_id[t[0]] for t in totals if t[0] in by_id]
+
+    def search(self, query: str, limit: int = SEARCH_LIMIT) -> list:
+        """
+        Searches the site's articles, returning (article, snippet) pairs, best first. Semantic search through mailroom
+        leads when the helpdesk has been indexed, and text search over titles and bodies fills in behind it - so a
+        search works before the first index, and still finds an exact phrase the embeddings rank low.
+        """
+        query = query.strip()
+        if not query:
+            return []
+
+        readable = self._published().filter(parent__in=self._published().filter(parent=None))
+
+        # the site is public, and a search costs an embedding and a scan of every body - so the same question asked
+        # again within a few minutes is answered from the last time, less anything unpublished since
+        cache_key = self.SEARCH_CACHE_KEY % (self.id, hashlib.md5(f"{query.lower()}|{limit}".encode()).hexdigest())
+        cached = cache.get(cache_key)
+        if cached is not None:
+            by_id = {a.id: a for a in readable.filter(id__in=[i for i, _ in cached]).select_related("parent")}
+            return [(by_id[i], snippet) for i, snippet in cached if i in by_id]
+
+        terms = [t for t in re.split(r"\W+", query) if len(t) > 2]  # worth marking in a snippet
+
+        ordered, snippets = [], {}
+
+        if self.source.last_indexed_on:
+            try:
+                # the org's sources are searched together, so ask for more than we need and keep what's ours
+                results = mailroom.get_client().knowledge_search(self.org, query, limit=limit * 3)
+            except RequestException as e:
+                logger.error(f"error searching knowledge: {e}", exc_info=True)
+                results = []
+
+            keys = []
+            for r in results:
+                if r["knowledge_uuid"] == str(self.source.uuid) and r["item_key"] not in keys:
+                    keys.append(r["item_key"])
+                    snippets[r["item_key"]] = make_snippet(to_plain_text(r["text"]), terms)
+
+            by_uuid = {str(a.uuid): a for a in readable.filter(uuid__in=keys).select_related("parent")}
+            ordered.extend(by_uuid[k] for k in keys if k in by_uuid)
+
+        if len(ordered) < limit:
+            # simple rather than a language config, since a helpdesk can hold articles in any language
+            vector = SearchVector("title", weight="A", config="simple") + SearchVector(
+                "body", weight="B", config="simple"
+            )
+            search = SearchQuery(query, search_type="websearch", config="simple")
+            matches = (
+                readable.exclude(id__in=[a.id for a in ordered])
+                .annotate(rank=SearchRank(vector, search))
+                .filter(rank__gt=0)
+                .order_by("-rank", "title")
+                .select_related("parent")[: limit - len(ordered)]
+            )
+            ordered.extend(matches)
+
+        results = [(a, snippets.get(str(a.uuid)) or make_snippet(a.as_plain_text(), terms)) for a in ordered[:limit]]
+        cache.set(cache_key, [(a.id, snippet) for a, snippet in results], self.SEARCH_CACHE_TTL)
+        return results
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+
+        cache.delete(self.DOMAINS_CACHE_KEY)
+
+    def delete(self):
+        super().delete()
+
+        cache.delete(self.DOMAINS_CACHE_KEY)
+
+    def __str__(self):
+        return self.title
+
+    class Meta:
+        constraints = [
+            # a verified domain is one site's alone; an unverified claim on it blocks nobody
+            models.UniqueConstraint(
+                "domain", condition=Q(domain_verified_on__isnull=False), name="unique_verified_helpsite_domains"
+            )
+        ]
+
+
+class HelpdeskImportError(Exception):
+    """
+    An import that couldn't go on, with what a user can do about it.
+    """
+
+    pass
+
+
+class HelpdeskImportType:
+    """
+    Base type for the help sites a helpdesk can be brought over from. A type asks for what it needs in its form,
+    does the import in a worker, and is registered by class name in settings.HELPDESK_IMPORT_TYPES.
+    """
+
+    slug = None
+    name = None
+
+    # the form asking for what the import needs - a HelpdeskImportForm, whose cleaned data becomes the config
+    form_class = None
+
+    # config keys dropped once the import is over - what was lent for it rather than kept
+    secret_config_keys = ()
+
+    @property
+    def template_name(self) -> str:
+        """
+        The dialog's template, which extends knowledge/helpdeskimport_create.html with the type's fields.
+        """
+        return f"knowledge/imports/{self.slug}/create.html"
+
+    def is_available_to(self, org, user) -> bool:
+        """
+        Determines whether this import type is offered to the given user.
+        """
+        return True
+
+    def perform(self, imp):  # pragma: no cover
+        """
+        Brings the site over into the import's helpdesk, advancing the import as it goes. Raises HelpdeskImportError
+        for anything the user can do something about.
+        """
+        raise NotImplementedError()
+
+
+class HelpdeskImport(models.Model):
+    """
+    A help site brought over into the helpdesk from somewhere else, done in the background once the workspace has
+    handed over what its type needs to get in. The page shows its progress as it goes, and what went wrong if it
+    didn't finish.
+    """
+
+    STATUS_PENDING = "P"
+    STATUS_PROCESSING = "O"
+    STATUS_COMPLETE = "C"
+    STATUS_FAILED = "F"
+    STATUS_CHOICES = (
+        (STATUS_PENDING, _("Pending")),
+        (STATUS_PROCESSING, _("Processing")),
+        (STATUS_COMPLETE, _("Complete")),
+        (STATUS_FAILED, _("Failed")),
+    )
+
+    # an import that never finished in this long is taken to have died with its worker rather than to be running
+    UNFINISHED_WINDOW = timedelta(hours=4)
+
+    uuid = models.UUIDField(unique=True, default=uuid4)
+    org = models.ForeignKey(Org, on_delete=models.PROTECT, related_name="helpdesk_imports")
+    source = models.ForeignKey(KnowledgeSource, on_delete=models.PROTECT, related_name="imports")
+    import_type = models.CharField(max_length=16)  # the slug of a registered HelpdeskImportType
+
+    # what the type needs to get in and bring the site over - its secrets are dropped once the import is over
+    config = models.JSONField(default=dict)
+
+    status = models.CharField(max_length=1, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    num_items = models.IntegerField(default=0)  # sections and articles to bring over, known once listed
+    num_imported = models.IntegerField(default=0)
+    error = models.CharField(max_length=255, null=True)
+
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    created_on = models.DateTimeField(default=timezone.now)
+    modified_on = models.DateTimeField(auto_now=True)
+    started_on = models.DateTimeField(null=True)
+    finished_on = models.DateTimeField(null=True)
+
+    @classmethod
+    def get_types(cls):
+        from .imports import TYPES
+
+        return TYPES.values()
+
+    @classmethod
+    def get_type(cls, slug: str):
+        from .imports import TYPES
+
+        return TYPES.get(slug)
+
+    @classmethod
+    def create(cls, source, user, import_type: HelpdeskImportType, config: dict):
+        assert source.source_type == KnowledgeSource.TYPE_HELPDESK, "only a helpdesk can be imported into"
+
+        return cls.objects.create(
+            org=source.org, source=source, import_type=import_type.slug, config=config, created_by=user
+        )
+
+    @classmethod
+    def get_unfinished(cls, source):
+        """
+        The import that's running for the helpdesk, if one is - another can't be started while it is.
+        """
+        return cls.objects.filter(
+            source=source,
+            status__in=(cls.STATUS_PENDING, cls.STATUS_PROCESSING),
+            created_on__gt=timezone.now() - cls.UNFINISHED_WINDOW,
+        ).first()
+
+    @classmethod
+    def get_latest(cls, source):
+        return cls.objects.filter(source=source).order_by("-created_on").first()
+
+    @property
+    def type(self) -> HelpdeskImportType | None:
+        return self.get_type(self.import_type)
+
+    @property
+    def is_finished(self) -> bool:
+        return self.status in (self.STATUS_COMPLETE, self.STATUS_FAILED)
+
+    def start_async(self):
+        from .tasks import import_helpdesk_task
+
+        on_transaction_commit(lambda: import_helpdesk_task.delay(self.id))
+
+    def perform(self):
+        """
+        Does the import, in a worker. Whatever the outcome, what was lent for it is dropped.
+        """
+        assert self.status == self.STATUS_PENDING, "can only perform a pending import"
+
+        imp_type = self.type
+
+        self.status = self.STATUS_PROCESSING
+        self.started_on = timezone.now()
+        self.save(update_fields=("status", "started_on", "modified_on"))
+
+        try:
+            imp_type.perform(self)
+        except HelpdeskImportError as e:
+            self.status = self.STATUS_FAILED
+            self.error = str(e)[:255]
+        except Exception:  # pragma: no cover
+            logger.exception("helpdesk import failed", extra={"import_id": self.id})
+            self.status = self.STATUS_FAILED
+            self.error = _("Something went wrong. Please try again later.")
+        else:
+            self.status = self.STATUS_COMPLETE
+            self.source.mark_pending()
+
+        secrets = imp_type.secret_config_keys if imp_type else ()
+        self.config = {k: v for k, v in self.config.items() if k not in secrets}
+        self.finished_on = timezone.now()
+        self.save(update_fields=("status", "error", "config", "finished_on", "modified_on"))
+
+    def set_total(self, total: int):
+        self.num_items = total
+        self.save(update_fields=("num_items", "modified_on"))
+
+    def advance(self):
+        self.num_imported += 1
+        self.save(update_fields=("num_imported", "modified_on"))
+
+    def as_json(self) -> dict:
+        return {
+            "id": self.id,
+            "status": self.get_status_display(),
+            "created_on": self.created_on.isoformat(),
+            "modified_on": self.modified_on.isoformat(),
+            "progress": {"total": self.num_items, "current": self.num_imported},
+            "error": self.error,
+        }
+
+    class Meta:
+        indexes = [models.Index(name="helpdeskimport_by_created", fields=("source", "-created_on"))]
+
+
+def get_knowledge_item_path(source, item_uuid, filename: str) -> str:
+    return f"orgs/{source.org_id}/knowledge/{source.uuid}/{item_uuid}{Path(filename).suffix.lower()}"
 
 
 class KnowledgeItem(models.Model):
@@ -882,7 +1705,7 @@ class KnowledgeItem(models.Model):
     )
 
     uuid = models.UUIDField(unique=True, default=uuid4)
-    knowledge = models.ForeignKey(Knowledge, on_delete=models.PROTECT, related_name="items")
+    source = models.ForeignKey(KnowledgeSource, on_delete=models.PROTECT, related_name="items")
     name = models.CharField(max_length=255)  # page title, or the cleaned original filename
 
     # null for uploads; the normalised page URL for crawled pages, and their identity within the source
@@ -915,16 +1738,16 @@ class KnowledgeItem(models.Model):
         return base_name + extension[:50]
 
     @classmethod
-    def from_upload(cls, knowledge, user, file):
-        assert knowledge.knowledge_type == Knowledge.TYPE_DOCUMENTS, "can only upload to documents knowledge"
+    def from_upload(cls, source, user, file):
+        assert source.source_type == KnowledgeSource.TYPE_DOCUMENTS, "can only upload to documents knowledge"
         assert cls.is_allowed_type(file.content_type), "unsupported content type"
 
         uuid = uuid4()
-        path = default_storage.save(get_knowledge_item_path(knowledge, uuid, file.name), file)
+        path = default_storage.save(get_knowledge_item_path(source, uuid, file.name), file)
 
         obj = cls.objects.create(
             uuid=uuid,
-            knowledge=knowledge,
+            source=source,
             name=cls.clean_name(file.name),
             url=None,  # explicit: this is what makes it a document rather than a page
             path=path,
@@ -933,21 +1756,21 @@ class KnowledgeItem(models.Model):
             created_by=user,
         )
 
-        knowledge.mark_pending()
+        source.mark_pending()
         return obj
 
     @property
     def org(self):
-        return self.knowledge.org
+        return self.source.org
 
     def delete(self):
         path = self.path
 
         with transaction.atomic():
             # this item's chunks are no longer valid - mailroom will recompute the source's counters
-            delete_in_batches(self.knowledge.chunks.filter(item_key=self.uuid))
+            delete_in_batches(self.source.chunks.filter(item_key=self.uuid))
             super().delete()
-            self.knowledge.mark_pending()
+            self.source.mark_pending()
 
         # only remove the storage object once the deletion has committed - with ATOMIC_REQUESTS the atomic block above
         # is just a savepoint, so this has to wait for the request's transaction
@@ -959,7 +1782,7 @@ class KnowledgeItem(models.Model):
             # a page's identity within its source. Postgres treats NULLs as distinct in a unique index, so uploaded
             # documents (url null) are exempt automatically - no partial-index condition needed, and any number of
             # documents can coexist in one source.
-            models.UniqueConstraint("knowledge", "url", name="unique_knowledge_item_urls"),
+            models.UniqueConstraint("source", "url", name="unique_knowledge_item_urls"),
         ]
 
 
@@ -971,7 +1794,7 @@ class KnowledgeChunk(models.Model):
 
     EMBEDDING_DIMENSIONS = 384  # intfloat/multilingual-e5-small
 
-    knowledge = models.ForeignKey(Knowledge, on_delete=models.PROTECT, related_name="chunks")
+    source = models.ForeignKey(KnowledgeSource, on_delete=models.PROTECT, related_name="chunks")
 
     # the owning item's uuid. Not an FK, because the item lives in a different table per source type: KnowledgeItem
     # for pages/documents, Shortcut for shortcuts, Article for helpdesk. One mechanism spanning all four beats an FK
@@ -995,5 +1818,5 @@ class KnowledgeChunk(models.Model):
                 opclasses=("vector_cosine_ops",),
             ),
             # lets mailroom replace one item's chunks on reindex, and lets us delete one item's chunks
-            models.Index(name="knowledgechunk_by_item", fields=("knowledge", "item_key")),
+            models.Index(name="knowledgechunk_by_item", fields=("source", "item_key")),
         ]

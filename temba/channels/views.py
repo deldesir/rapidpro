@@ -479,10 +479,10 @@ class ChannelCRUDL(SmartCRUDL):
             if obj.type.config_ui:
                 menu.add_link(_("Configuration"), reverse("channels.channel_configuration", args=[obj.uuid]))
 
-            if obj.type.has_logs:
+            if obj.type.has_logs and self.has_org_perm("channels.channel_logs"):
                 menu.add_link(_("Logs"), reverse("channels.channel_logs_list", args=[obj.uuid]))
 
-            if obj.type.template_type:
+            if obj.type.template_type and self.has_org_perm("request_logs.httplog_list"):
                 menu.add_link(_("Template Logs"), reverse("request_logs.httplog_channel", args=[obj.uuid]))
 
             if self.has_org_perm("channels.channel_update"):
@@ -517,12 +517,6 @@ class ChannelCRUDL(SmartCRUDL):
                 # if the last sync event was more than an hour ago, we have a problem
                 if channel.last_sync and (timezone.now() - channel.last_sync.created_on).total_seconds() > 3600:
                     context["delayed_sync_event"] = True
-
-                # unsent messages
-                unsent_msgs = channel.get_delayed_outgoing_messages()
-
-                if unsent_msgs:
-                    context["unsent_msgs_count"] = unsent_msgs.count()
 
             context["monthly_counts"] = self.get_monthly_counts()
             return context

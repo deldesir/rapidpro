@@ -124,6 +124,19 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
             form_errors={"phone": "Invalid phone number."},
         )
 
+        # simulate creation failing because workspace has reached its contact limit
+        with patch("temba.contacts.models.Contact.create") as mock_create:
+            mock_create.side_effect = mailroom.ContactLimitReachedException(
+                "workspace has reached its limit of 100 contacts", 100
+            )
+
+            self.assertCreateSubmit(
+                create_url,
+                self.admin,
+                {"name": "Joe", "phone": "+250782222222"},
+                form_errors={"__all__": "This workspace has reached its limit of 100 contacts."},
+            )
+
         # try valid number
         self.assertCreateSubmit(
             create_url,
@@ -420,9 +433,9 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
         response = self.requestView(reverse("contacts.contact_group", args=["21343253"]), self.admin)
         self.assertEqual(404, response.status_code)
 
-        # if a user tries to access a group in another org, send them to the login page
+        # if a user tries to access a group in another org, they get a 403
         response = self.requestView(group3_url, self.admin)
-        self.assertLoginRedirect(response)
+        self.assertPermissionDenied(response)
 
         # if the user has access to that org, we redirect to the switch page
         self.org2.add_user(self.admin, OrgRole.ADMINISTRATOR)
@@ -1790,7 +1803,7 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
         # can't interrupt contact in other org
         other_contact_interrupt = reverse("contacts.contact_interrupt", args=[other_org_contact.uuid])
         response = self.client.post(other_contact_interrupt)
-        self.assertLoginRedirect(response)
+        self.assertPermissionDenied(response)
 
         # contact should be unchanged
         other_org_contact.refresh_from_db()
@@ -1811,7 +1824,7 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
 
         # can't delete if just agent
         response = self.client.post(delete_url, {"uuid": contact.uuid})
-        self.assertLoginRedirect(response)
+        self.assertPermissionDenied(response)
 
         self.login(self.admin)
 

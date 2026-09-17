@@ -30,6 +30,7 @@
                       history-state-key="triggers"
                       list-title="{{ title }}"
                       {% if list_subtitle %}subtitle="{{ list_subtitle }}"{% endif %}
+                      {% if list_searchable %}searchable{% endif %}
                       endpoint="{{ list_url }}"
                       action-endpoint="{{ request.path }}"
                       content-menu-endpoint="{{ request.path }}?{{ request.GET.urlencode }}"

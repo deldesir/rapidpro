@@ -1,0 +1,64 @@
+{% load i18n %}
+
+{% get_current_language as LANGUAGE_CODE %}
+<!DOCTYPE html>
+<html lang="{{ LANGUAGE_CODE }}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>
+      {% block title %}
+        {{ site.title }}
+      {% endblock title %}
+    </title>
+    <meta name="description" content="{% block description %}{% if site.tagline %}{{ site.tagline }}{% else %}{{ site.title }}{% endif %}{% endblock description %}">
+    {% if is_preview %}<meta name="robots" content="noindex">{% endif %}
+    <link rel="stylesheet" href="{{ STATIC_URL }}css/helpsite.css">
+    <style>
+      :root {
+        --primary: {{ site.primary_color }};
+        --header-bg: {{ site.header_color }};
+        --header-text: {{ site.header_text_color }};
+      }
+    </style>
+  </head>
+  <body>
+    {% if is_preview %}
+      <div class="preview-bar">
+        <span>
+          {% blocktrans trimmed %}
+            This is a preview of your help site as its readers will see it.
+          {% endblocktrans %}
+        </span>
+        <a href="{{ settings_url }}">{% trans "Site settings" %}</a>
+      </div>
+    {% endif %}
+    <header class="site-header">
+      <div class="container">
+        <a class="brand" href="{{ prefix }}/">{{ site.title }}</a>
+        {% block header-search %}
+          <form class="search header-search" action="{{ prefix }}/search/" method="get" role="search">
+            <input type="search"
+                   name="q"
+                   value="{{ query|default:'' }}"
+                   placeholder="{% trans "Search articles" %}"
+                   aria-label="{% trans "Search articles" %}">
+          </form>
+        {% endblock header-search %}
+      </div>
+    </header>
+    <main class="container">
+      {% block content %}
+      {% endblock content %}
+    </main>
+    <footer class="site-footer">
+      <div class="container">
+        {% if site.footer %}
+          <span>{{ site.footer }}</span>
+        {% else %}
+          <span>{{ site.title }}</span>
+        {% endif %}
+      </div>
+    </footer>
+  </body>
+</html>

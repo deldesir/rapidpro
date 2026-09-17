@@ -10,10 +10,11 @@ from temba.api.internal.serializers import ModelAsJsonSerializer
 from temba.api.internal.views import BaseEndpoint
 from temba.api.support import (
     CreatedOnCursorPagination,
+    LabelMsgUUIDCursorPagination,
     ListPagination,
     SearchCountMixin,
     SearchLengthMixin,
-    SentOnCursorPagination,
+    UUIDCursorPagination,
 )
 from temba.api.views import ListAPIMixin
 from temba.utils.uuid import is_uuid
@@ -96,13 +97,11 @@ class MessagesEndpoint(SearchLengthMixin, ListAPIMixin, BaseEndpoint):
 
     class Pagination(SearchCountMixin, CreatedOnCursorPagination):
         """
-        Folders are ordered by `-created_on, -id`, and the sent folder by `-sent_on, -id`. Those are the orderings
-        the partial folder indexes are built on (`msgs_inbox`, `msgs_flows`, `msgs_archived`,
-        `msgs_outbox_and_failed`, `msgs_sent` — see Msg.Meta.indexes), so a page is an index-ordered read rather
-        than a sort. Ordering by `-uuid` instead would be time-ordered too (msg.uuid is uuid7) but uuid isn't part
-        of any folder index, leaving the database to either sort the whole folder or walk the global uuid index
-        filtering by folder. The response always carries a `count` so the list UI can show a total: a search
-        count via SearchCountMixin, otherwise the folder/label's cheap pre-calculated count (see
+        Folders are paged by `-uuid`, which is what the folder index (`msgs_by_folder`, see Msg.Meta.indexes) is
+        keyed on and time ordered as message uuids are v7, so a page is an index-ordered read rather than a sort.
+        Labels are likewise paged by the message uuid carried on each labelling, which is what the labellings index
+        is keyed on (see Label.get_queryset). The response always carries a `count` so the list UI can show a total:
+        a search count via SearchCountMixin, otherwise the folder/label's cheap pre-calculated count (see
         `get_total_count`) — never a COUNT(*) on the messages table.
         """
 
@@ -114,8 +113,10 @@ class MessagesEndpoint(SearchLengthMixin, ListAPIMixin, BaseEndpoint):
         max_page_size = 500
 
         def get_ordering(self, request, queryset, view=None):
-            if request.query_params.get("folder", "").lower() == "sent":
-                return SentOnCursorPagination.ordering
+            if view.folder:
+                return UUIDCursorPagination.ordering
+            if view.label:
+                return LabelMsgUUIDCursorPagination.ordering
             return self.ordering
 
         def paginate_queryset(self, queryset, request, view=None):
@@ -156,49 +157,56 @@ class MessagesEndpoint(SearchLengthMixin, ListAPIMixin, BaseEndpoint):
             return None
         return self.request.org.msgs_labels.filter(uuid=label_uuid).first()
 
+    @cached_property
+    def folder(self):
+        """
+        The folder selected by the `folder` param (defaulting to inbox), or None if a label is selected instead or
+        the folder isn't valid.
+        """
+        if self.request.query_params.get("label"):
+            return None
+        return self.FOLDERS.get(self.request.query_params.get("folder", "inbox").lower())
+
     def get_total_count(self) -> int:
         # Cheap pre-calculated total for the active folder/label (squashed count tables) — used as the list's total
         # when there's no search, avoiding a COUNT(*) on the messages table.
         org = self.request.org
         if self.request.query_params.get("label"):
-            return self.label.get_visible_count() if self.label else 0
+            return self.label.get_message_count() if self.label else 0
 
-        folder = self.FOLDERS.get(self.request.query_params.get("folder", "inbox").lower())
-        if not folder:
-            return 0
-        return MsgFolder.get_counts(org).get(folder, 0)
+        return MsgFolder.get_counts(org).get(self.folder, 0) if self.folder else 0
 
     def derive_queryset(self):
-        # `label` takes precedence — the filter view passes a label UUID rather than a folder name, and the visible
-        # messages for that label aren't a MsgFolder slice.
-        # `org` and `channel` are select_related because Msg.as_json reads self.org (for contact display) and
-        # self.channel.is_active/uuid (for the channel-log link gated on the channels.channel_logs perm).
+        # `label` takes precedence — the filter view passes a label UUID rather than a folder name, and a label's
+        # messages aren't a MsgFolder slice: they're listed whatever folder they're in (archived included), which is
+        # why the filter view offers no folder-dependent bulk actions.
+        # a search's window is passed to the folder or label as a uuid bound so that it's a condition on its index
+        # rather than something checked on every row the search then has to scan - filter_queryset makes it exact
         if self.request.query_params.get("label"):
-            label = self.label
-            if not label:
+            if not self.label:
                 return Msg.objects.none()
-            return (
-                Msg.objects.filter(org=self.request.org, labels=label, visibility=Msg.VISIBILITY_VISIBLE)
-                .select_related("contact", "channel", "flow", "org")
-                .prefetch_related("labels")
-            )
-
-        folder = self.FOLDERS.get(self.request.query_params.get("folder", "inbox").lower())
-        if not folder:
+            qs = self.label.get_queryset(after=self.search_since)
+        elif self.folder:
+            qs = self.folder.get_queryset(self.request.org, after=self.search_since)
+        else:
             return Msg.objects.none()
 
-        return (
-            folder.get_queryset(self.request.org)
-            .select_related("contact", "channel", "flow", "org")
-            .prefetch_related("labels")
-        )
+        # `org` and `channel` are select_related because Msg.as_json reads self.org (for contact display) and the
+        # channel's uuid and name
+        return qs.select_related("contact", "channel", "flow", "org").prefetch_related("labels")
+
+    @cached_property
+    def search_since(self):
+        """
+        The start of the search window if this request is a search, or None if it isn't
+        """
+        return timezone.now() - self.SEARCH_WINDOW if self.request.query_params.get("search") else None
 
     def filter_queryset(self, queryset):
         search = self.request.query_params.get("search")
         if search:
             queryset = queryset.filter(
-                Q(created_on__gte=timezone.now() - self.SEARCH_WINDOW)
-                & (Q(text__icontains=search) | Q(contact__name__icontains=search))
+                Q(created_on__gte=self.search_since) & (Q(text__icontains=search) | Q(contact__name__icontains=search))
             )
 
         return queryset

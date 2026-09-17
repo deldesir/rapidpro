@@ -29,6 +29,9 @@ class ConfigTest(TembaTest):
                 (collected / "temba-components.js").write_text("//bundle")
                 self.assertFalse(config(None)["COMPONENTS_DEV"])
 
+                # and until there's watcher output, there's no build to cache-bust the dev bundle's url with
+                self.assertEqual(0, config(None)["COMPONENTS_DEV_BUILD"])
+
                 # watcher output always wins, even with both packaged bundles present
                 (dist / "temba-components.js").write_text("//bundle")
                 dev_dist = Path(components_dir, "dev-dist")
@@ -36,6 +39,12 @@ class ConfigTest(TembaTest):
                 (dev_dist / "temba-modules.js").write_text("//modules")
                 self.assertTrue(config(None)["COMPONENTS_DEV"])
 
+                # and its build time is what tells a browser one build from the next
+                self.assertEqual(
+                    int((dev_dist / "temba-modules.js").stat().st_mtime), config(None)["COMPONENTS_DEV_BUILD"]
+                )
+
             # never outside of development
             with override_settings(DEBUG=False, COMPONENTS_DIR=components_dir, COMPRESS_ROOT=compress_root):
                 self.assertFalse(config(None)["COMPONENTS_DEV"])
+                self.assertEqual(0, config(None)["COMPONENTS_DEV_BUILD"])

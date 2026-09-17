@@ -49,12 +49,12 @@ class BroadcastTest(TembaTest):
         msg_in3 = self.create_incoming_msg(self.joe, "red!", flow=flow)
         self.create_outgoing_msg(self.joe, "red is cool")
 
-        # mark all outgoing messages as sent except broadcast #2 to Joe
-        Msg.objects.filter(direction="O").update(status="S")
-        broadcast2.msgs.filter(contact=self.joe).update(status="F")
+        # mark all outgoing messages as sent except broadcast #2 to Joe, with the folder as mailroom and courier do
+        Msg.objects.filter(direction="O").update(status="S", folder=Msg.FOLDER_SENT)
+        broadcast2.msgs.filter(contact=self.joe).update(status="F", folder=Msg.FOLDER_FAILED)
 
         # label one of our messages
-        msg_in1.labels.add(label)
+        self.add_msg_label(msg_in1, label)
         self.assertEqual(LabelCount.get_totals([label])[label], 1)
 
         msg_counts = MsgFolder.get_counts(self.org)

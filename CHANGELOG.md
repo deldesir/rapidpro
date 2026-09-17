@@ -1,3 +1,189 @@
+v26.3.100 (2026-09-16)
+-------------------------
+ * Keep loggers that exist before Django configures logging
+ * Fix double slash in sample import link on welcome page
+
+v26.3.99 (2026-09-16)
+-------------------------
+ * Edit help articles as the help site renders them
+
+v26.3.98 (2026-09-16)
+-------------------------
+ * Correct the scheme and host of requests arriving through a load balancer
+
+v26.3.97 (2026-09-16)
+-------------------------
+ * Add a setting to treat every request as https instead of trusting a forwarded header
+ * Drop the plain index on message labellings by label
+
+v26.3.96 (2026-09-16)
+-------------------------
+ * Page a label's messages by the uuid carried on each labelling
+
+v26.3.95 (2026-09-15)
+-------------------------
+ * Set the security, caching and compression response headers from the app rather than relying on a proxy
+ * Backfill, require and index msg_uuid on message labellings
+ * Rename Knowledge to KnowledgeSource
+
+v26.3.94 (2026-09-15)
+-------------------------
+ * Fix renaming the unique constraint on the message labels table on databases created before Django hashed constraint names
+
+v26.3.93 (2026-09-15)
+-------------------------
+ * Replace the auto-generated through table for Msg.labels with a model that carries the message's uuid
+ * Label and unlabel messages via mailroom and remove label_name param from message actions endpoint
+ * Replace the helpdesk article table with section cards, dimming drafts and unpublished sections
+ * Add a public help site for the helpdesk
+ * Add a registry of helpdesk import types, with the import's status, retries and re-imports shown on its card
+
+v26.3.92 (2026-09-15)
+-------------------------
+ * Render the calls list like other component list pages
+ * Page the calls list by uuid on a new calls_by_org index
+ * Make list search opt-in and drop it from outgoing message folders
+ * Make shared Dynamo and UUIDv7 state safe to use from multiple threads
+
+v26.3.91 (2026-09-14)
+-------------------------
+ * Index messages awaiting a retry by next_attempt rather than status
+ * Serve static files with WhiteNoise so no web server is needed in front
+
+v26.3.90 (2026-09-14)
+-------------------------
+ * Index old Android messages by folder rather than status
+ * Stop recording label filtering on messages endpoint as deprecated usage
+ * Remove unused flows_flowrun_contacts_at_node index
+ * Stop bucketing label counts by archived state
+
+v26.3.89 (2026-09-14)
+-------------------------
+ * Include archived messages in label lists, counts and exports
+ * Remove archived as a message visibility now that the folder is the only record of it
+ * Remove unused node_uuid field from broadcasts
+
+v26.3.88 (2026-09-14)
+-------------------------
+ * Add migration to clear archived visibility from existing messages
+ * Remove unused broadcast to flow node feature
+
+v26.3.87 (2026-09-10)
+-------------------------
+ * Fail contact import preview cleanly when a new group is requested at the group limit
+
+v26.3.86 (2026-09-10)
+-------------------------
+ * Read message status tags written either as a single overwritten tag or as a tag per status value
+ * Let an errored status tag win over wired or sent when it's the most recent
+ * Update repository URLs after rename to nyaruka/temba
+
+v26.3.85 (2026-09-10)
+-------------------------
+ * Let agent users see ticket analytics scoped to their team
+ * Add dedicated permission for raw ticket analytics export
+
+v26.3.84 (2026-09-09)
+-------------------------
+ * Lower the default workspace contact limit to 10 million
+
+v26.3.83 (2026-09-09)
+-------------------------
+ * Don't fail releasing an Android channel if it can't be synced
+
+v26.3.82 (2026-09-09)
+-------------------------
+ * Add handling for mailroom contact limit errors and fail loudly on unhandled error domains
+ * Make staff user list filters an overridable table like the org list
+ * Add ADMIN_GROUPS setting for the groups staff can attach to workspaces
+
+v26.3.81 (2026-09-08)
+-------------------------
+ * Remove the Granters permission group
+
+v26.3.80 (2026-09-08)
+-------------------------
+ * Use a single design-system shadow token for cards, list tables and the shadow utility
+
+v26.3.79 (2026-09-08)
+-------------------------
+ * Stop cards being squashed when they are direct children of the scrolling page container
+ * Add admin groups to workspaces whose members are implicit administrators
+ * Use the shared shadow utility on dashboard and ticket analytics boxes to match the channel read page
+
+v26.3.78 (2026-09-08)
+-------------------------
+ * Show channel type, address and activation in a details card on the channel read page
+ * Return 403 with a toast when an authenticated user lacks permission instead of redirecting to login
+ * Update Django to 6.1.1 and remove prefetch routing workarounds
+ * Only show channel logs menu items to users with permission to view them
+
+v26.3.77 (2026-09-04)
+-------------------------
+ * Add icon for United Way channel type
+ * Remove mention of deprecated contact filter from runs endpoint docs
+ * Update dependencies
+
+v26.3.76 (2026-09-04)
+-------------------------
+ * Record deprecated usage of label filter on messages endpoint
+
+v26.3.75 (2026-09-04)
+-------------------------
+ * Add per-workspace limits on numbers of contacts and flows
+ * Stop reading Msg.visibility to tell whether a message is archived
+ * Remove Dashboard auth group as its permission is already part of the Administrators role
+ * Make Firebase Cloud Messaging channel type only available to staff users for creating new channels
+
+v26.3.74 (2026-09-02)
+-------------------------
+ * Make Msg.folder non-null
+ * Derive message folder counts from Msg.folder rather than re-deriving the folder from state
+
+v26.3.73 (2026-09-02)
+-------------------------
+ * Drop the per-folder message indexes superseded by msgs_by_folder
+ * Remove the unsent messages warning from the channel read page
+
+v26.3.72 (2026-09-01)
+-------------------------
+ * Read message folders from Msg.folder, paging by uuid
+
+v26.3.71 (2026-09-01)
+-------------------------
+ * Make SSO login warning message configurable per domain
+ * Let teams be explicitly unrestricted by topic and require at least one topic otherwise
+ * Warn that topic-restricted teams can't use ticket search
+ * Add msgs_by_folder index ahead of message folders reading from Msg.folder
+
+v26.3.70 (2026-09-01)
+-------------------------
+ * Make cross-ticket search work from any page in the tickets section
+
+v26.3.69 (2026-08-31)
+-------------------------
+ * Add display label for new consolidated receive channel log type
+ * Correct stale folders in Msg.folder backfill migration as well as missing ones
+
+v26.3.68 (2026-08-31)
+-------------------------
+ * Reduce batch size of Msg.folder backfill migration
+ * Set Msg.folder on messages created in tests, like mailroom and courier do
+ * Remove undocumented message archiving actions from contact bulk actions endpoint
+
+v26.3.67 (2026-08-31)
+-------------------------
+ * Add migration to backfill Msg.folder
+
+v26.3.66 (2026-08-31)
+-------------------------
+ * Remove Android relayer sync handling
+ * Make deprecated API feature recording test order-independent
+
+v26.3.65 (2026-08-31)
+-------------------------
+ * Fix flow editor crash reclassifying nodes in a frozen definition
+
 v26.3.64 (2026-08-27)
 -------------------------
  * Remove node_modules from STATICFILES_DIRS

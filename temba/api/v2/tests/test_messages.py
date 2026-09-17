@@ -1,10 +1,11 @@
-from unittest.mock import call
+from unittest.mock import call, patch
 
 from django.conf import settings
 from django.urls import reverse
 from django.utils import timezone
 
 from temba.api.v2.serializers import format_datetime
+from temba.api.v2.views import MessagesEndpoint
 from temba.msgs.models import Msg
 from temba.tests import mock_mailroom
 
@@ -36,7 +37,7 @@ class MessagesEndpointTest(APITest):
         joe_msg3 = self.create_incoming_msg(
             joe, "Good", flow=flow, attachments=["image/jpeg:https://example.com/test.jpg"]
         )
-        frank_msg3 = self.create_incoming_msg(frank, "Bien", channel=facebook, visibility="A")
+        frank_msg3 = self.create_incoming_msg(frank, "Bien", channel=facebook, archived=True)
         frank_msg4 = self.create_outgoing_msg(frank, "Ça va?", status="F")
 
         # add a failed message with no URN or channel
@@ -134,6 +135,24 @@ class MessagesEndpointTest(APITest):
         # filter by invalid label
         self.assertGet(endpoint_url + "?label=invalid", [self.admin], results=[])
 
+        # a label's messages are paged by the message uuid carried on each labelling
+        with patch.object(MessagesEndpoint.Pagination, "page_size", 2):
+            response = self.assertGet(endpoint_url + "?label=Spam", [self.admin], results=[frank_msg3, joe_msg3])
+            self.assertGet(response.json()["next"], [self.admin], results=[frank_msg1])
+
+        # filter by before/after within a label, which pages by uuid and so applies them as uuid bounds as well
+        self.assertGet(
+            endpoint_url + f"?label=Spam&before={format_datetime(joe_msg3.created_on)}",
+            [self.editor],
+            results=[joe_msg3, frank_msg1],
+        )
+        self.assertGet(
+            endpoint_url + f"?label=Spam&after={format_datetime(joe_msg3.created_on)}",
+            [self.editor],
+            results=[frank_msg3, joe_msg3],
+        )
+        self.assertGet(endpoint_url + "?label=Spam&before=nope", [self.editor], results=[])
+
         # filter by before (inclusive)
         self.assertGet(
             endpoint_url + f"?contact={joe.uuid}&before={format_datetime(joe_msg3.created_on)}",
@@ -147,6 +166,25 @@ class MessagesEndpointTest(APITest):
             [self.editor],
             results=[joe_msg4, joe_msg3, joe_msg2],
         )
+
+        # filter by before/after within a folder, which pages by uuid and so applies them as uuid bounds as well
+        self.assertGet(
+            endpoint_url + f"?folder=flows&before={format_datetime(joe_msg1.created_on)}",
+            [self.editor],
+            results=[joe_msg1],
+        )
+        self.assertGet(
+            endpoint_url + f"?folder=flows&after={format_datetime(joe_msg3.created_on)}",
+            [self.editor],
+            results=[joe_msg3],
+        )
+        self.assertGet(
+            endpoint_url
+            + f"?folder=flows&after={format_datetime(joe_msg1.created_on)}&before={format_datetime(joe_msg3.created_on)}",
+            [self.editor],
+            results=[joe_msg3, joe_msg1],
+        )
+        self.assertGet(endpoint_url + "?folder=flows&before=nope", [self.editor], results=[])
 
         # filter by broadcast (deprecated, so recorded)
         broadcast = self.create_broadcast(
