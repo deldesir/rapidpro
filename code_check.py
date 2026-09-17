@@ -147,20 +147,13 @@ if __name__ == "__main__":
         # in CI, where the checkout isn't a safe directory for the user running the checks
         cmd(f"cp -a {locale_dir}/. {backup_dir}")
 
-        # run without django settings so makemessages only sees locale directories under the current directory -
-        # with settings configured, LOCALE_PATHS could pull other projects' catalogs into scope
+        # this is our own makemessages rather than django's - see temba/utils/management/commands/makemessages.py -
+        # and it's run with the manage.py beside this script as the project being checked needn't have its own
+        manage_py = os.path.join(os.path.dirname(os.path.abspath(__file__)), "manage.py")
         cmd(
-            f"cd '{msg_dir}' && "
-            f"DJANGO_SETTINGS_MODULE= django-admin makemessages -a -e haml,html,txt,py --no-location --no-wrap "
-            f"{ignores} 2>&1"
+            f"python '{manage_py}' makemessages --cwd '{msg_dir}' -a -e haml,html,txt,py --no-location --no-wrap "
+            f"--no-obsolete {ignores} 2>&1"
         )
-        cmd(f"for f in {locale_dir}/*/LC_MESSAGES/django.po; do msgattrib --no-obsolete --no-wrap -o $f $f; done")
-
-        # makemessages stamps every catalog with the time it ran, so any two branches that regenerate them would
-        # conflict on that line even when their messages don't. nothing reads it, so it's dropped
-        for po in pathlib.Path(locale_dir).glob("*/LC_MESSAGES/django.po"):
-            lines = po.read_text().splitlines(keepends=True)
-            po.write_text("".join(ln for ln in lines if not ln.startswith('"POT-Creation-Date:')))
 
         # if this fails then the regenerated files are left in place, ready to be committed
         cmd(f"diff -ur {backup_dir} {locale_dir}")
