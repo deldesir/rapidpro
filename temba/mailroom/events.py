@@ -287,15 +287,29 @@ class Event:
             qs = qs.order_by("-created_on", "-id")
         qs = qs[:limit]
 
-        status_map = {
-            "P": "pending", "H": "handled", "I": "initializing",
-            "Q": "queued", "W": "wired", "S": "sent",
-            "D": "delivered", "R": "read", "E": "errored", "F": "failed",
+        # only the statuses the history UI knows about - like the DynamoDB path, a message has no status tag until
+        # it has at least been wired
+        status_map = {"W": "wired", "S": "sent", "D": "delivered", "R": "read", "E": "errored", "F": "failed"}
+        reason_map = {
+            Msg.FAILED_ERROR_LIMIT: "error_limit",
+            Msg.FAILED_TOO_OLD: "too_old",
+            Msg.FAILED_CHANNEL_REMOVED: "channel_removed",
         }
 
         events = []
         for msg in qs:
             evt_type = cls.TYPE_MSG_RECEIVED if msg.direction == Msg.DIRECTION_IN else cls.TYPE_MSG_CREATED
+
+            # same shape as a status tag: {"status": ..., "created_on": ..., "reason": ...}
+            status = None
+            if msg.direction == Msg.DIRECTION_OUT and msg.status in status_map:
+                status = {
+                    "status": status_map[msg.status],
+                    "created_on": (msg.sent_on or msg.modified_on or msg.created_on).isoformat(),
+                }
+                if msg.failed_reason in reason_map:
+                    status["reason"] = reason_map[msg.failed_reason]
+
             events.append({
                 "uuid": str(msg.uuid),
                 "type": evt_type,
@@ -306,7 +320,7 @@ class Event:
                     "text": msg.text,
                     "attachments": msg.attachments or [],
                 },
-                "_status": status_map.get(msg.status, "pending"),
+                "_status": status,
                 "_user": {"uuid": str(msg.created_by.uuid)} if msg.created_by else None,
                 "_sort_key": msg.created_on,
                 "_sort_id": msg.id,
