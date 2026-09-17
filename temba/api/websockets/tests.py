@@ -1,7 +1,7 @@
 from django_valkey import get_valkey_connection
 
 from django.test import override_settings
-from django.urls import resolve, reverse
+from django.urls import reverse
 from django.utils import timezone
 
 from temba.api.checks import websockets_auth_secret
@@ -715,16 +715,4 @@ class EndpointsTest(APITestMixin, TembaTest):
         self.assertEqual("/ti/websockets/connect", reverse("api.websockets.connect"))
         self.assertEqual("/ti/websockets/sub_refresh", reverse("api.websockets.sub_refresh"))
 
-        # but the path they were at before is still served, until every caller has moved
-        for name in ("connect", "refresh", "subscribe", "sub_refresh"):
-            self.assertIs(
-                resolve(f"/api/websockets/{name}").func.view_class, resolve(f"/ti/websockets/{name}").func.view_class
-            )
-
         self.assertEqual(200, self.post("api.websockets.connect").status_code)
-        self.assertEqual(
-            200,
-            self.client.post(
-                "/api/websockets/connect", {}, content_type="application/json", HTTP_X_WEBSOCKETS_SECRET=SECRET
-            ).status_code,
-        )
