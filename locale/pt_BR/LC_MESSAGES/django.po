@@ -2836,6 +2836,12 @@ msgstr "Rodapé"
 msgid "Shown at the bottom of every page."
 msgstr "Exibido no final de cada página."
 
+msgid "Chat"
+msgstr "Chat"
+
+msgid "A WebChat channel to let readers chat with you from every page."
+msgstr "Um canal WebChat para que os leitores conversem com você em todas as páginas."
+
 msgid "Primary Color"
 msgstr "Cor principal"
 
@@ -5162,8 +5168,8 @@ msgstr "O widget incorporado usa este UUID para identificar este canal ao se con
 msgid "Embed"
 msgstr "Incorporar"
 
-msgid "Add a snippet like the following to your website to embed the chat widget (coming soon)."
-msgstr "Adicione um trecho como o seguinte ao seu site para incorporar o widget de chat (em breve)."
+msgid "Add the following to your website to embed the chat widget. The script only needs to be included once per page."
+msgstr "Adicione o seguinte ao seu site para incorporar o widget de chat. O script só precisa ser incluído uma vez por página."
 
 msgid "Only websites on the following domains can embed this channel's chat widget. This can be changed in the channel settings."
 msgstr "Apenas os sites nos seguintes domínios podem incorporar o widget de chat deste canal. Isso pode ser alterado nas configurações do canal."
@@ -5231,9 +5237,6 @@ msgstr "Deletar Todos os Contatos"
 
 msgid "Are you sure you want to delete all archived contacts? This cannot be undone."
 msgstr "Você tem certeza que quer deletar todos os contatos arquivados? Isso não pode ser desfeito."
-
-msgid "Chat"
-msgstr "Chat"
 
 msgid "Details"
 msgstr "Detalhes"
