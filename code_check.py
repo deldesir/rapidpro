@@ -156,9 +156,14 @@ if __name__ == "__main__":
         )
         cmd(f"for f in {locale_dir}/*/LC_MESSAGES/django.po; do msgattrib --no-obsolete --no-wrap -o $f $f; done")
 
-        # POT-Creation-Date can change without any actual message changes so ignore it. if this fails then the
-        # regenerated files are left in place, ready to be committed
-        cmd(f"diff -ur -I '^\"POT-Creation-Date:' {backup_dir} {locale_dir}")
+        # makemessages stamps every catalog with the time it ran, so any two branches that regenerate them would
+        # conflict on that line even when their messages don't. nothing reads it, so it's dropped
+        for po in pathlib.Path(locale_dir).glob("*/LC_MESSAGES/django.po"):
+            lines = po.read_text().splitlines(keepends=True)
+            po.write_text("".join(ln for ln in lines if not ln.startswith('"POT-Creation-Date:')))
+
+        # if this fails then the regenerated files are left in place, ready to be committed
+        cmd(f"diff -ur {backup_dir} {locale_dir}")
 
         # nothing to do, so restore the originals rather than leaving a dirty working tree behind
         cmd(f"cp -a {backup_dir}/. {locale_dir}")
