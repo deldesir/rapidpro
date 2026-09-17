@@ -1,3 +1,9 @@
+v26.3.103 (2026-09-17)
+-------------------------
+ * Add a setting for serving the internal-only API on its own port
+ * Revive the webchat client for the realtime chat implementation
+ * Share the article card with the blog and let the editor take a subtitle and cover image
+
 v26.3.102 (2026-09-17)
 -------------------------
  * Validate contact import URNs via mailroom instead of normalizing them locally
