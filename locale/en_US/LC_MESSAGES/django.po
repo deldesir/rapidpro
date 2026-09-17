@@ -5607,6 +5607,9 @@ msgstr ""
 msgid "Not verified"
 msgstr ""
 
+msgid "Subtitle"
+msgstr ""
+
 msgid "An import is already in progress. Wait for it to finish before starting another."
 msgstr ""
 
