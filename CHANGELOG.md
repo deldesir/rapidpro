@@ -1,3 +1,7 @@
+v26.3.104 (2026-09-17)
+-------------------------
+ * Refuse requests on the wrong port with a bare 404 rather than the 404 page
+
 v26.3.103 (2026-09-17)
 -------------------------
  * Add a setting for serving the internal-only API on its own port
