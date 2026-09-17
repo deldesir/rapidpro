@@ -13,7 +13,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-17 14:13+0000\n"
+"POT-Creation-Date: 2026-09-17 14:49+0000\n"
 "PO-Revision-Date: 2019-05-13 20:14+0000\n"
 "Language: es\n"
 "MIME-Version: 1.0\n"
@@ -2249,6 +2249,10 @@ msgstr "El archivo de importación contiene un encabezado vacío."
 #, python-format
 msgid "Import file contains duplicated contact UUID '%(uuid)s' on row %(row)s."
 msgstr "El archivo de importación contiene el UUID de contacto duplicado '%(uuid)s' en la fila %(row)s."
+
+#, python-format
+msgid "Import file contains invalid phone number '%(number)s' on row %(row)s. Ensure phone numbers include a country code."
+msgstr "El archivo de importación contiene el número de teléfono inválido '%(number)s' en la fila %(row)s. Asegúrese de que los números de teléfono incluyan el código de país."
 
 #, python-format
 msgid "Import file contains duplicated contact URN '%(urn)s' on row %(row)s."
