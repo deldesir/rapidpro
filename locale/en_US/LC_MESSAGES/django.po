@@ -4847,7 +4847,7 @@ msgstr ""
 msgid "To start creating a LINE bot, go to <a href=\"https://developers.line.biz/en/docs/messaging-api/getting-started/\">Getting started with the Messaging API</a>."
 msgstr ""
 
-msgid "Access the <a href=\"https://developers.line.biz/console/\">LINE Developers Console</a> page. </li>"
+msgid "Access the <a href=\"https://developers.line.biz/console/\">LINE Developers Console</a> page."
 msgstr ""
 
 msgid "Create a Line account using the application on your smartphone"

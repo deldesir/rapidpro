@@ -4868,8 +4868,8 @@ msgstr "Vous pouvez connecter un <a href=\"https://developers.line.biz/en/docs/m
 msgid "To start creating a LINE bot, go to <a href=\"https://developers.line.biz/en/docs/messaging-api/getting-started/\">Getting started with the Messaging API</a>."
 msgstr "Pour commencer à créer un bot LINE, consultez <a href=\"https://developers.line.biz/en/docs/messaging-api/getting-started/\">Getting started with the Messaging API</a>."
 
-msgid "Access the <a href=\"https://developers.line.biz/console/\">LINE Developers Console</a> page. </li>"
-msgstr "Accédez à la page de la <a href=\"https://developers.line.biz/console/\">LINE Developers Console</a>. </li>"
+msgid "Access the <a href=\"https://developers.line.biz/console/\">LINE Developers Console</a> page."
+msgstr "Accédez à la page de la <a href=\"https://developers.line.biz/console/\">LINE Developers Console</a>."
 
 msgid "Create a Line account using the application on your smartphone"
 msgstr "Créez un compte Line en utilisant l'application sur votre smartphone"
