@@ -1,3 +1,7 @@
+v26.3.106 (2026-09-18)
+-------------------------
+ * Gate the internal-only API on a shared token in the middleware
+
 v26.3.105 (2026-09-18)
 -------------------------
  * Default to serving on an internet port and an internal port
