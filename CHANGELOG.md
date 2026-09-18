@@ -1,3 +1,7 @@
+v26.3.105 (2026-09-18)
+-------------------------
+ * Default to serving on an internet port and an internal port
+
 v26.3.104 (2026-09-17)
 -------------------------
  * Refuse requests on the wrong port with a bare 404 rather than the 404 page
