@@ -28,6 +28,7 @@ dependencies = [
     "markdown ~= 3.10.3",
     "nh3 ~= 0.3.0",
     "python-magic ~= 0.4.27",
+    "regex ~= 2026.9.10",
     "xlsxlite ~= 1.1.1",
     "colorama ~= 0.4.6",
     "gunicorn>=26.1.0,<27.0.0",
