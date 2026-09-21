@@ -3436,7 +3436,7 @@ msgstr ""
 msgid "Tickets"
 msgstr ""
 
-msgid "Knowledge"
+msgid "Knowledge Base"
 msgstr ""
 
 msgid "Notifications"
