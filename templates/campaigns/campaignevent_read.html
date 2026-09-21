@@ -68,7 +68,11 @@
       {% endif %}
       {% if translations_summary %}
         <div class="mt-3 text-sm text-gray-500">
-          {% blocktrans count counter=translation_count with langs=translations_summary %}Translation provided in {{ langs }}{% plural %}Translations provided in {{ langs }}{% endblocktrans %}
+          {% blocktrans trimmed count counter=translation_count with langs=translations_summary %}
+            Translation provided in {{ langs }}
+          {% plural %}
+            Translations provided in {{ langs }}
+          {% endblocktrans %}
         </div>
       {% endif %}
     {% else %}
