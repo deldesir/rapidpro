@@ -174,6 +174,8 @@ export enum Icon {
   runs = 'rows-03',
   schedule = 'calendar',
   search = 'search-refraction',
+  /** a helpdesk section - what its card is picked up by, in place of the usual grip */
+  section = 'folder',
   select_open = 'chevron-down',
   select_clear = 'x',
   send = 'send-03',
