@@ -19,13 +19,13 @@
   {{ block.super }}
   <style>
     .spa-content {
-      padding-left: 0px !important;
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      min-height: 0;
       padding-right: 0px !important;
       padding-bottom: 0px !important;
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-      min-height: 0;
+      padding-left: 0px !important;
     }
 
     .no-menu {
@@ -38,10 +38,10 @@
 
     temba-flow-editor {
       display: flex;
-      flex-direction: column;
       flex: 1;
-      min-height: 0;
+      flex-direction: column;
       width: 100%;
+      min-height: 0;
       border-top: 1px solid #e7e7e7;
     }
 

@@ -5,21 +5,20 @@
   {{ block.super }}
   <style>
     .icon-arrow-down {
+      display: inline;
+      margin-bottom: -1px;
       -ms-transform: rotate(180deg);
       -moz-transform: rotate(180deg);
       -webkit-transform: rotate(180deg);
       -o-transform: rotate(180deg);
-
       font-size: 12px;
       cursor: pointer;
-      display: inline;
-      margin-bottom: -1px;
     }
 
     temba-textinput[name='new_path'] {
       --temba-textinput-padding: 10px;
+      width: 345px;
       margin-top: 21px;
-      width: 345px
     }
 
     .control-group:hover temba-icon.order-helper {
@@ -28,11 +27,11 @@
 
     .control-group temba-icon.order-helper {
       --icon-color: #ccc;
-      cursor: pointer;
       visibility: hidden;
       position: absolute;
+      margin-top: 1px;
       margin-left: -14px;
-      margin-top: 1px
+      cursor: pointer;
     }
   </style>
 {% endblock modal-extra-style %}
