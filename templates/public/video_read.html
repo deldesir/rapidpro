@@ -2,9 +2,8 @@
 {% load i18n %}
 
 {% block page-title %}
-  {% blocktrans with video_name=video.name %}
+  {% blocktrans trimmed with video_name=video.name %}
     Learn - {{ video_name }}
-
   {% endblocktrans %}
 {% endblock page-title %}
 {% block page-description %}
