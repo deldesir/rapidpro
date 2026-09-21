@@ -32,7 +32,7 @@
           <li {% if sibling.id == article.id %}class="current" aria-current="page"{% endif %}>
             <a href="{{ prefix }}/{{ section.slug }}/{{ sibling.slug }}/">{{ sibling.title }}</a>
             {% if sibling.id == article.id and headings %}
-              <ul class="headings" aria-label='{% trans "In this article" %}'>
+              <ul class="headings" aria-label="{% trans 'In this article' %}">
                 {% for heading in headings %}
                   <li>
                     <a href="#{{ heading.id }}">{{ heading.text }}</a>
