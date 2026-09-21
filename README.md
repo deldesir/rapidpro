@@ -1,4 +1,4 @@
-# Temba
+![Temba](.github/banner.svg)
 
 [![Build Status](https://github.com/nyaruka/temba/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nyaruka/temba/actions?query=workflow%3ACI)
 
