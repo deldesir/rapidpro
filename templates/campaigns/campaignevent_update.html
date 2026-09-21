@@ -152,8 +152,7 @@
   </div>
   <div id="flow-section">
     {% render_field 'flow_to_start' %}
-    <div class="{% if form.initial.flow_to_start.flow_type == 'B' %}hide{% endif %}"
-         id="event-flow-start-mode">
+    <div class="{% if form.initial.flow_to_start.flow_type == 'B' %}hide{% endif %}" id="event-flow-start-mode">
       <div class="start-mode-help">{% trans "If the contact is already active in a flow" %}</div>
       {% render_field 'flow_start_mode' %}
     </div>

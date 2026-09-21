@@ -19,14 +19,16 @@
   </style>
 {% endblock extra-style %}
 {% block content %}
-  <temba-call-list id="call-list"
-                   fill-window
-                   history-state-key="calls"
-                   list-title="{{ title }}"
-                   {% if list_logs_after %}show-logs-after="{{ list_logs_after }}"{% endif %}
-                   endpoint="{{ list_url }}"
-                   content-menu-endpoint="{{ request.path }}?{{ request.GET.urlencode }}"
-                   empty-message="{% trans "No calls" %}">
+  <temba-call-list
+    id="call-list"
+    fill-window
+    history-state-key="calls"
+    list-title="{{ title }}"
+    {% if list_logs_after %}show-logs-after="{{ list_logs_after }}"{% endif %}
+    endpoint="{{ list_url }}"
+    content-menu-endpoint="{{ request.path }}?{{ request.GET.urlencode }}"
+    empty-message='{% trans "No calls" %}'
+  >
   </temba-call-list>
 {% endblock content %}
 {% block extra-script %}

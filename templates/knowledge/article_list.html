@@ -19,23 +19,23 @@
   <temba-modax id="update-article" width="min(782px, 92vw)" no-autofocus -temba-submitted="refreshArticles()">
     {% if org_perms.knowledge.article_delete %}
       {# rides the dialog's gutter so the editor itself is nothing but the article #}
-      <temba-button slot="gutter" name="{% trans "Delete" %}" destructive small onclick="deleteArticle()">
-      </temba-button>
+      <temba-button slot="gutter" name='{% trans "Delete" %}' destructive small onclick="deleteArticle()"> </temba-button>
     {% endif %}
   </temba-modax>
   {# after the editor, so its confirmation sits on top of it rather than behind #}
-  <temba-modax header="{{ _("Delete Article") |escapejs }}" id="delete-article">
-  </temba-modax>
-  <temba-helpdesk-cards id="article-list"
-                        fill-window
-                        list-title="{% trans "Helpdesk" %}"
-                        endpoint="{{ articles_endpoint }}"
-                        content-menu-endpoint="{{ request.path }}"
-                        {% if sort_url %}sort-endpoint="{{ sort_url }}"{% endif %}
-                        {% if publish_url %}publish-endpoint="{{ publish_url }}"{% endif %}
-                        {% if create_url %}create-endpoint="{{ create_url }}"{% endif %}
-                        -temba-selection="handleContentMenuSelected(event)"
-                        empty-message="{% trans "No articles" %}">
+  <temba-modax header='{{ _("Delete Article") |escapejs }}' id="delete-article"> </temba-modax>
+  <temba-helpdesk-cards
+    id="article-list"
+    fill-window
+    list-title='{% trans "Helpdesk" %}'
+    endpoint="{{ articles_endpoint }}"
+    content-menu-endpoint="{{ request.path }}"
+    {% if sort_url %}sort-endpoint="{{ sort_url }}"{% endif %}
+    {% if publish_url %}publish-endpoint="{{ publish_url }}"{% endif %}
+    {% if create_url %}create-endpoint="{{ create_url }}"{% endif %}
+    -temba-selection="handleContentMenuSelected(event)"
+    empty-message='{% trans "No articles" %}'
+  >
     <div slot="subtitle">
       {% blocktrans trimmed %}
         Help articles written by your workspace. Published articles are searchable by AI agents.
@@ -54,8 +54,7 @@
       {% if helpdesk_import %}
         {% if helpdesk_import.is_finished %}
           <div class="import-card failed" id="import-card">
-            <temba-icon name="alert_warning" size="1.2" class="import-icon">
-            </temba-icon>
+            <temba-icon name="alert_warning" size="1.2" class="import-icon"> </temba-icon>
             <div class="import-text">
               <div class="import-title">
                 {% blocktrans trimmed with name=import_type_name %}
@@ -66,14 +65,12 @@
             </div>
             {% if import_url %}
               {# the same dialog as the menu's - the key isn't kept, so trying again means giving it again #}
-              <temba-button lined small name="{% trans "Try Again" %}" onclick="showImportDialog()">
-              </temba-button>
+              <temba-button lined small name='{% trans "Try Again" %}' onclick="showImportDialog()"> </temba-button>
             {% endif %}
           </div>
         {% else %}
           <div class="import-card" id="import-card">
-            <temba-icon name="import" size="1.2" class="import-icon">
-            </temba-icon>
+            <temba-icon name="import" size="1.2" class="import-icon"> </temba-icon>
             <div class="import-text">
               <div class="import-header">
                 <div class="import-title">
@@ -88,47 +85,33 @@
                   {% endif %}
                 </div>
               </div>
-              <temba-progress id="import-progress"
-                              total="{{ helpdesk_import.num_items }}"
-                              current="{{ helpdesk_import.num_imported }}">
-              </temba-progress>
+              <temba-progress id="import-progress" total="{{ helpdesk_import.num_items }}" current="{{ helpdesk_import.num_imported }}"> </temba-progress>
             </div>
           </div>
         {% endif %}
       {% endif %}
       {% if site and site.is_available %}
-        <a class="domain-card"
-           id="site-domain-card"
-           href="https://{{ site.domain }}/"
-           target="_blank"
-           rel="noopener">
-          <temba-icon name="website" size="1.2" class="domain-icon">
-          </temba-icon>
+        <a class="domain-card" id="site-domain-card" href="https://{{ site.domain }}/" target="_blank" rel="noopener">
+          <temba-icon name="website" size="1.2" class="domain-icon"> </temba-icon>
           <div class="domain-text">
             <div class="domain-name">{{ site.domain }}</div>
             <div class="domain-note">{% trans "Your help site is live on this domain." %}</div>
           </div>
           <span class="domain-badge verified">
-            <temba-icon name="check">
-            </temba-icon>
-          {% trans "Verified" %}</span>
-          <span class="domain-pill"
-                role="button"
-                tabindex="0"
-                onclick="previewHelpSite(event)"
-                onkeydown="if (event.key === 'Enter' || event.key === ' ') { previewHelpSite(event); }">
-            <temba-icon name="show">
-            </temba-icon>
-          {% trans "Preview" %}</span>
-          <temba-icon name="link" class="domain-arrow">
-          </temba-icon>
+            <temba-icon name="check"> </temba-icon>
+            {% trans "Verified" %}</span>
+          <span class="domain-pill" role="button" tabindex="0" onclick="previewHelpSite(event)" onkeydown="if (event.key === 'Enter' || event.key === ' ') { previewHelpSite(event); }">
+            <temba-icon name="show"> </temba-icon>
+            {% trans "Preview" %}</span>
+          <temba-icon name="link" class="domain-arrow"> </temba-icon>
         </a>
       {% else %}
-        <div class="domain-card{% if domain_url %} clickable{% endif %}"
-             id="site-domain-card"
-             {% if domain_url %}role="button" tabindex="0" onclick="showSiteDomain()" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); showSiteDomain(); }"{% endif %}>
-          <temba-icon name="website" size="1.2" class="domain-icon">
-          </temba-icon>
+        <div
+          class="domain-card{% if domain_url %} clickable{% endif %}"
+          id="site-domain-card"
+          {% if domain_url %}role="button" tabindex="0" onclick="showSiteDomain()" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); showSiteDomain(); }"{% endif %}
+        >
+          <temba-icon name="website" size="1.2" class="domain-icon"> </temba-icon>
           <div class="domain-text">
             {% if site %}
               <div class="domain-name">{{ site.domain }}</div>
@@ -150,20 +133,14 @@
             {% endif %}
           {% elif site.is_domain_verified %}
             <span class="domain-badge verified">
-              <temba-icon name="check">
-              </temba-icon>
-            {% trans "Verified" %}</span>
+              <temba-icon name="check"> </temba-icon>
+              {% trans "Verified" %}</span>
           {% else %}
             <span class="domain-badge unverified">{% trans "Not verified" %}</span>
           {% endif %}
-          <span class="domain-pill"
-                role="button"
-                tabindex="0"
-                onclick="previewHelpSite(event)"
-                onkeydown="if (event.key === 'Enter' || event.key === ' ') { previewHelpSite(event); }">
-            <temba-icon name="show">
-            </temba-icon>
-          {% trans "Preview" %}</span>
+          <span class="domain-pill" role="button" tabindex="0" onclick="previewHelpSite(event)" onkeydown="if (event.key === 'Enter' || event.key === ' ') { previewHelpSite(event); }">
+            <temba-icon name="show"> </temba-icon>
+            {% trans "Preview" %}</span>
         </div>
       {% endif %}
     </div>

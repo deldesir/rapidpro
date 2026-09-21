@@ -14,7 +14,7 @@
       {% blocktrans trimmed with org=invite.org.name %}
         Enter your password to accept your invitation to the <b>{{ org }}</b> workspace.
       {% endblocktrans %}
-      <input class="mt-4" style="color:#999;" type="text" disabled value="{{ invite.email }}" />
+      <input class="mt-4" style="color: #999" type="text" disabled value="{{ invite.email }}">
     {% endelement %}
   {% else %}
     {% element h1 %}

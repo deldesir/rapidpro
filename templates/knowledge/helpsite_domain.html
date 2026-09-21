@@ -7,10 +7,7 @@
     The records to add for the domain being typed, kept current by updateHelpSiteRecords as it's typed - only the
     check on them waits for the domain to be saved, so it applies to the saved domain and no other.
   {% endcomment %}
-  <div class="records"
-       id="domain-records"
-       data-saved="{{ object.domain|default:'' }}"
-       {% if not object.domain %}hidden{% endif %}>
+  <div class="records" id="domain-records" data-saved="{{ object.domain|default:'' }}" {% if not object.domain %}hidden{% endif %}>
     <div class="records-title">
       {% trans "Add these records to the DNS for" %} <b class="domain-name">{{ object.domain }}</b>
     </div>
@@ -37,13 +34,11 @@
     </table>
     <div class="records-status" id="domain-status-row">
       {% if object.is_domain_verified %}
-        <temba-icon name="check" class="verified">
-        </temba-icon>
+        <temba-icon name="check" class="verified"> </temba-icon>
         <span>{% trans "Verified. Your help site is served on this domain." %}</span>
       {% else %}
         <span id="domain-status">{% trans "Not verified yet. Once the records are in place, check to have your domain verified and served." %}</span>
-        <temba-button small name="{% trans "Check" %}" onclick="checkHelpSiteDomain(this)">
-        </temba-button>
+        <temba-button small name='{% trans "Check" %}' onclick="checkHelpSiteDomain(this)"> </temba-button>
       {% endif %}
     </div>
     <div class="records-status" id="domain-unsaved" hidden>

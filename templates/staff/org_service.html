@@ -29,7 +29,7 @@
           {% render_field field %}
         {% endfor %}
         {% csrf_token %}
-        <input type="submit" value="{% trans "Service Account" %}" class="button button-primary">
+        <input type="submit" value='{% trans "Service Account" %}' class="button button-primary">
       </form>
     </div>
   {% else %}
