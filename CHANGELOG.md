@@ -1,3 +1,21 @@
+v26.3.106 (2026-09-18)
+-------------------------
+ * Gate the internal-only API on a shared token in the middleware
+
+v26.3.105 (2026-09-18)
+-------------------------
+ * Default to serving on an internet port and an internal port
+
+v26.3.104 (2026-09-17)
+-------------------------
+ * Refuse requests on the wrong port with a bare 404 rather than the 404 page
+
+v26.3.103 (2026-09-17)
+-------------------------
+ * Add a setting for serving the internal-only API on its own port
+ * Revive the webchat client for the realtime chat implementation
+ * Share the article card with the blog and let the editor take a subtitle and cover image
+
 v26.3.102 (2026-09-17)
 -------------------------
  * Validate contact import URNs via mailroom instead of normalizing them locally

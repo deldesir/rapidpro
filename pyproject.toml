@@ -1,6 +1,6 @@
 [project]
 name = "temba"
-version = "26.3.102"
+version = "26.3.106"
 description = "Hosted service for visually building interactive messaging applications"
 authors = [
     {"name" = "Nyaruka", "email" = "code@nyaruka.com"}
@@ -63,12 +63,13 @@ dev = [
     "coverage[toml]>=7.5.4",
     "responses>=0.25.3",
     "ruff>=0.15.6",
-    "djlint>=1.34.1",
+    "djlint>=1.46.1",
     "tblib>=3.0",
 ]
 
 [tool.code_check]
 packages = ["temba"]
+templates = ["templates"]
 locale = "locale"
 translated = ["es", "fr", "pt_BR"]
 migrations = true

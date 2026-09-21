@@ -123,7 +123,7 @@
 {% endblock content %}
 {% block extra-script %}
   {{ block.super }}
-  <script type="text/javascript">
+  <script>
     function handleToggle(event) {
       event.currentTarget.parentElement.classList.toggle("expanded");
     }
@@ -176,7 +176,7 @@
 {% endblock extra-script %}
 {% block extra-style %}
   {{ block.super }}
-  <style type="text/css">
+  <style>
     .main-logo {
       margin: 1.5em;
     }
@@ -216,33 +216,33 @@
     }
 
     .method-get {
-      background-color: #058C40;
-      color: #fff;
-      padding: 3px;
-      text-align: center;
-      width: 60px;
       display: inline-block;
+      width: 60px;
       margin-right: 15px;
+      padding: 3px;
+      background-color: #058c40;
+      color: #fff;
+      text-align: center;
     }
 
     .method-delete {
+      display: inline-block;
+      width: 60px;
+      margin-right: 15px;
+      padding: 3px;
       background-color: #952624;
       color: #fff;
-      padding: 3px;
       text-align: center;
-      width: 60px;
-      display: inline-block;
-      margin-right: 15px;
     }
 
     .method-post {
+      display: inline-block;
+      width: 60px;
+      margin-right: 15px;
+      padding: 3px;
       background-color: #1793cd;
       color: #fff;
-      width: 60px;
       text-align: center;
-      padding: 3px;
-      display: inline-block;
-      margin-right: 15px;
     }
 
     table.list tr td:first-child {
@@ -258,18 +258,18 @@
     }
 
     .request-query {
-      font-family: monospace;
-      min-height: 30px;
-      max-width: 700px;
       width: 100%;
+      max-width: 700px;
+      min-height: 30px;
+      font-family: monospace;
     }
 
     .request-body {
-      font-family: monospace;
-      max-width: 700px;
       width: 100%;
-      min-height: 100px;
+      max-width: 700px;
       height: 110px;
+      min-height: 100px;
+      font-family: monospace;
     }
   </style>
 {% endblock extra-style %}

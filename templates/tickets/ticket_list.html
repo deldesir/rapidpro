@@ -12,7 +12,7 @@
 {% endblock page-header %}
 {% block extra-style %}
   {{ block.super }}
-  <style type="text/css">
+  <style>
     /* preview pages render without the frame footer */
     .spa-footer {
       display: none;
@@ -32,10 +32,10 @@
 
     .ticket-ui {
       position: relative;
+      flex-grow: 1;
+      height: 100%;
       margin: 0;
       padding: 0;
-      height: 100%;
-      flex-grow: 1;
       /* paint the header band (surface + rule) across the full width so
          the gap between the two column header strips reads as one
          continuous control */
@@ -45,8 +45,8 @@
     }
 
     .mobile .ticket-ui {
-      overflow: hidden;
       display: inline-flex;
+      overflow: hidden;
     }
 
     .mobile .ticket-ui temba-resizer {
@@ -71,9 +71,9 @@
     }
 
     .mobile .ticket-ui .chat-pane {
+      margin-left: 0;
       padding-right: 0.75em;
       padding-left: 0.75em;
-      margin-left: 0;
     }
 
     /* the pane already insets both sides — drop the extra right padding
@@ -100,26 +100,26 @@
          positioned flex child the empty state's static position is the
          top of the pane, which would print it over the page header */
       top: 53px;
-      opacity: 0;
       padding: 3px 40px;
+      opacity: 0;
       pointer-events: none;
     }
 
     .empty h2 {
-      font-size: 36px;
       margin-top: 16px;
+      font-size: 36px;
     }
 
     .popper {
-      font-size: 48px;
       display: inline;
+      font-size: 48px;
     }
 
     /* the same 8px rhythm the card layout uses — the column's header strip
        runs full-bleed, the list body below carries the inset */
     .ticket-list {
-      height: 100%;
       width: 100%;
+      height: 100%;
     }
 
     .list-body {
@@ -137,11 +137,11 @@
     }
 
     .chat-pane {
+      /* anchor the empty state's top offset to this pane */
+      position: relative;
       /* the gap to the ticket list — the resizer's drag handle strip
          (sized to match) rides in this space */
       margin-left: 8px;
-      /* anchor the empty state's top offset to this pane */
-      position: relative;
     }
 
     temba-menu {
@@ -165,37 +165,37 @@
     }
 
     .spa-content {
-      padding-left: 0;
-      padding-right: 0;
       padding-top: 0;
+      padding-right: 0;
       padding-bottom: 0em;
+      padding-left: 0;
     }
 
     /* the folder label matches the page-header title beside it, with a
        little extra optical inset for the bare text */
     #folder-title {
-      font-size: 15.5px;
-      font-weight: var(--w-semibold);
-      color: var(--text-1);
       overflow: hidden;
+      color: var(--text-1);
+      font-weight: var(--w-semibold);
+      font-size: 15.5px;
       line-height: 1.25;
       -webkit-box-orient: vertical;
       -webkit-line-clamp: 1;
-      text-overflow: ellipsis;
       display: -webkit-box;
       margin: auto;
       margin-left: 8px;
+      text-overflow: ellipsis;
     }
 
     @container (max-width: 540px) {
       .ticket-list {
-        flex-basis: 1em;
         flex-shrink: 1;
+        flex-basis: 1em;
         max-width: inherit;
-        margin-bottom: 0.75em;
-        padding-bottom: 1em;
         margin-right: -2em;
+        margin-bottom: 0.75em;
         padding-right: 2em;
+        padding-bottom: 1em;
       }
 
       .ticket-ui {
@@ -211,9 +211,9 @@
       }
 
       .chat-pane {
-        margin-left: 0;
         flex-grow: 2;
         height: 100%;
+        margin-left: 0;
       }
 
       .menu-flex {
@@ -229,7 +229,7 @@
 {% block extra-script %}
   {{ block.super }}
   {% include "includes/page_header_menu.html" %}
-  <script type="text/javascript">
+  <script>
     // current state
     var folder = '{{folder}}';
     var ticketUUID = '{{uuid}}';
