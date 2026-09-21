@@ -2,8 +2,7 @@
 {% load smartmin temba channels i18n tz %}
 
 {% block title %}
-  <temba-icon name="{{ object.type.icon }}" class="mr-2">
-  </temba-icon>
+  <temba-icon name="{{ object.type.icon }}" class="mr-2"> </temba-icon>
   <div class="flex items-start flex-col">
     <div class="name" id="title-text">{{ object.name }}</div>
   </div>
@@ -54,8 +53,7 @@
   </div>
   <div class="shadow flex px-4 rounded-lg mb-6 bg-white">
     <div class="flex-grow"></div>
-    <temba-range-picker min="{{ object.created_on|date:"Y-m-d" }}">
-    </temba-range-picker>
+    <temba-range-picker min='{{ object.created_on|date:"Y-m-d" }}'> </temba-range-picker>
   </div>
   {% block charts-zone %}
     {% if object.is_android %}
@@ -103,15 +101,7 @@
         </div>
       {% endif %}
     {% endif %}
-    <temba-chart class="shadow mb-6"
-                 url="{% url 'channels.channel_chart' object.uuid %}"
-                 dataname="Messages"
-                 legend
-                 showall
-                 requireWindow
-                 xtype="time"
-                 palette="qualitative-paired"
-                 colorIndex="0">
+    <temba-chart class="shadow mb-6" url="{% url 'channels.channel_chart' object.uuid %}" dataname="Messages" legend showall requireWindow xtype="time" palette="qualitative-paired" colorIndex="0">
     </temba-chart>
     <table class="list lined">
       <thead>

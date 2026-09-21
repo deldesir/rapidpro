@@ -25,27 +25,31 @@
   </style>
 {% endblock extra-style %}
 {% block content %}
-  <temba-msg-list id="msg-list"
-                  fill-window
-                  history-state-key="msgs"
-                  column-width-settings="{{ list_column_settings }}"
-                  settings-endpoint="{% url 'users.user_settings' %}"
-                  list-title="{{ title }}"
-                  {% if list_subtitle %}subtitle="{{ list_subtitle }}"{% endif %}
-                  {% if list_searchable %}searchable{% endif %}
-                  {% if list_logs_after %}show-logs-after="{{ list_logs_after }}"{% endif %}
-                  endpoint="{{ list_url }}"
-                  action-endpoint="{{ request.path }}"
-                  content-menu-endpoint="{{ request.path }}?{{ request.GET.urlencode }}"
-                  empty-message="{% trans "No messages" %}">
+  <temba-msg-list
+    id="msg-list"
+    fill-window
+    history-state-key="msgs"
+    column-width-settings="{{ list_column_settings }}"
+    settings-endpoint="{% url 'users.user_settings' %}"
+    list-title="{{ title }}"
+    {% if list_subtitle %}subtitle="{{ list_subtitle }}"{% endif %}
+    {% if list_searchable %}searchable{% endif %}
+    {% if list_logs_after %}show-logs-after="{{ list_logs_after }}"{% endif %}
+    endpoint="{{ list_url }}"
+    action-endpoint="{{ request.path }}"
+    content-menu-endpoint="{{ request.path }}?{{ request.GET.urlencode }}"
+    empty-message='{% trans "No messages" %}'
+  >
   </temba-msg-list>
   {{ list_bulk_actions|json_script:"list-bulk-actions" }}
   {% if org_perms.msgs.label_create %}
-    <temba-modax header="{% trans "New Label" %}"
-                 endpoint="{% url 'msgs.label_create' %}"
-                 -temba-loaded="handleCreateLabelModalLoaded"
-                 -temba-submitted="handleCreateLabelModalSubmitted"
-                 id="create-label-modal">
+    <temba-modax
+      header='{% trans "New Label" %}'
+      endpoint="{% url 'msgs.label_create' %}"
+      -temba-loaded="handleCreateLabelModalLoaded"
+      -temba-submitted="handleCreateLabelModalSubmitted"
+      id="create-label-modal"
+    >
     </temba-modax>
   {% endif %}
 {% endblock content %}

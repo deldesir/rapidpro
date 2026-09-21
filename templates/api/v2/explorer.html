@@ -12,7 +12,7 @@
     <div class="flex mb-4">
       <div class="flex-grow page-title">{% trans "API Explorer" %}</div>
       <div>
-        <a class="button-light ml-4" href="{% url "api.v2.root" %}">{% trans "Documentation" %}</a>
+        <a class="button-light ml-4" href='{% url "api.v2.root" %}'>{% trans "Documentation" %}</a>
       </div>
     </div>
     <div class="mb-4">
@@ -24,10 +24,7 @@
     </div>
     {% for endpoint in endpoints %}
       <div class="card hover-box">
-        <div onclick="handleToggle(event)"
-             data-slug="{{ endpoint.slug }}"
-             data-method="{{ endpoint.method }}"
-             class="cursor-pointer endpoint-title">
+        <div onclick="handleToggle(event)" data-slug="{{ endpoint.slug }}" data-method="{{ endpoint.method }}" class="cursor-pointer endpoint-title">
           <div class="md:hidden endpoint-description my-2">{{ endpoint.title }}</div>
           <div class="flex items-center">
             <div class="method-{{ endpoint.method|lower }} endpoint-method font-mono rounded-lg">{{ endpoint.method }}</div>
@@ -81,7 +78,7 @@
               <b class="font-bold">{{ endpoint.method }}</b>
               <div class="md:text-base md:inline whitespace-nowrap text-sm">
                 https://{{ branding.domain }}{{ endpoint.url }}.json<span class="query-display"></span>
-                <br />
+                <br>
               </div>
               <b class="font-bold">Authorization:</b>
               <div class="md:text-base md:inline whitespace-nowrap text-sm">
@@ -92,10 +89,7 @@
               <div class="md:flex form-group items-center">
                 <label class="md:text-right control-label self-start pt-4 w-56 pr-6">{% trans "Query String" %}</label>
                 <div class="flex-grow">
-                  <textarea oninput="handleQueryInput(event)"
-                            rows="1"
-                            class="textinput p-2 rounded request-query"
-                            id="request-query-{{ endpoint.slug }}">{{ endpoint.example.query }}</textarea>
+                  <textarea oninput="handleQueryInput(event)" rows="1" class="textinput p-2 rounded request-query" id="request-query-{{ endpoint.slug }}">{{ endpoint.example.query }}</textarea>
                 </div>
               </div>
             {% endif %}
@@ -112,10 +106,9 @@
             <div class="pull-left">
               <a href="{{ endpoint.url }}">{% trans "View Full Documentation" %}</a>
             </div>
-            <div onclick="javascript:handleRequest('{{ endpoint.slug }}', '{{ endpoint.method }}', '{{ endpoint.url }}.json')"
-                 class="button-primary">{{ endpoint.method|upper }}</div>
+            <div onclick="javascript:handleRequest('{{ endpoint.slug }}', '{{ endpoint.method }}', '{{ endpoint.url }}.json')" class="button-primary">{{ endpoint.method|upper }}</div>
           </div>
-          <pre style="margin-bottom:0;" class="prettyprint result mb-0 mt-4 p-4" id="result-{{ endpoint.slug }}"></pre>
+          <pre style="margin-bottom: 0" class="prettyprint result mb-0 mt-4 p-4" id="result-{{ endpoint.slug }}"></pre>
         </div>
       </div>
     {% endfor %}

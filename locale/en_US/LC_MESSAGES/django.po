@@ -4603,7 +4603,7 @@ msgid "Enter Claim Code"
 msgstr ""
 
 #, python-format
-msgid "When you first open %(brand)s, the app will register your device with Google and our servers.  Once that is complete, it will display a claim code.  Enter that claim code in the form to the left and click \"Add Phone\" to connect your device."
+msgid "When you first open %(brand)s, the app will register your device with Google and our servers. Once that is complete, it will display a claim code. Enter that claim code in the form to the left and click \"Add Phone\" to connect your device."
 msgstr ""
 
 msgid "To connect a <a href=\"https://clickatell.com\">Clickatell</a> number, first create an HTTP integration for a two way number, then enter the number and API key below."
@@ -5920,7 +5920,7 @@ msgid "There is no way to undo this. Are you sure?"
 msgstr ""
 
 #, python-format
-msgid "Please verify your email for %(brand)s <br /> To verify the login account email, <a href='https://%(domain)s/user/verify_email/%(secret)s/'>click here</a>."
+msgid "Please verify your email for %(brand)s <br> To verify the login account email, <a href=\"https://%(domain)s/user/verify_email/%(secret)s/\">click here</a>."
 msgstr ""
 
 #, python-format
@@ -6094,7 +6094,7 @@ msgstr ""
 msgid "Emails sent from flows will be sent from <b>%(from_email)s</b>."
 msgstr ""
 
-msgid "If you no longer want to use these SMTP settings to send emails from flows, <a onclick='confirmSMTPRemove()'>click here</a>."
+msgid "If you no longer want to use these SMTP settings to send emails from flows, <a onclick=\"confirmSMTPRemove()\">click here</a>."
 msgstr ""
 
 msgid "You can add your own SMTP settings for emails sent from flows."

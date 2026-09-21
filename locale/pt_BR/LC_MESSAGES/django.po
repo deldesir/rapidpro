@@ -4623,7 +4623,7 @@ msgid "Enter Claim Code"
 msgstr "Insira o seu código de requisição"
 
 #, python-format
-msgid "When you first open %(brand)s, the app will register your device with Google and our servers.  Once that is complete, it will display a claim code.  Enter that claim code in the form to the left and click \"Add Phone\" to connect your device."
+msgid "When you first open %(brand)s, the app will register your device with Google and our servers. Once that is complete, it will display a claim code. Enter that claim code in the form to the left and click \"Add Phone\" to connect your device."
 msgstr "Quando você abre %(brand)s pela primeira vez, o aplicativo vai registrar seu dispositivo com o Google e nossos servidores. Estando essa etapa completa, um código de requisição será exibido. Coloque esse código de requisição no formulário à esquerda e clique \"Adicionar telefone\" para conectar seu dispositivo."
 
 msgid "To connect a <a href=\"https://clickatell.com\">Clickatell</a> number, first create an HTTP integration for a two way number, then enter the number and API key below."
@@ -5957,8 +5957,8 @@ msgid "There is no way to undo this. Are you sure?"
 msgstr "Não é possível reverter isso. Você tem certeza?"
 
 #, python-format
-msgid "Please verify your email for %(brand)s <br /> To verify the login account email, <a href='https://%(domain)s/user/verify_email/%(secret)s/'>click here</a>."
-msgstr "Por favor verifique o seu e-mail para o %(brand)s <br /> Para verificar o e-mail da conta de acesso, <a href='https://%(domain)s/user/verify_email/%(secret)s/'>clique aqui</a>."
+msgid "Please verify your email for %(brand)s <br> To verify the login account email, <a href=\"https://%(domain)s/user/verify_email/%(secret)s/\">click here</a>."
+msgstr "Por favor verifique o seu e-mail para o %(brand)s <br> Para verificar o e-mail da conta de acesso, <a href=\"https://%(domain)s/user/verify_email/%(secret)s/\">clique aqui</a>."
 
 #, python-format
 msgid "Please verify your email for %(brand)s"
@@ -6131,8 +6131,8 @@ msgstr "Selecionar Tudo"
 msgid "Emails sent from flows will be sent from <b>%(from_email)s</b>."
 msgstr "Os e-mails enviados a partir dos fluxos serão enviados de <b>%(from_email)s</b>."
 
-msgid "If you no longer want to use these SMTP settings to send emails from flows, <a onclick='confirmSMTPRemove()'>click here</a>."
-msgstr "Se você não quer mais usar estas configurações de SMTP para enviar e-mails a partir dos fluxos, <a onclick='confirmSMTPRemove()'>clique aqui</a>."
+msgid "If you no longer want to use these SMTP settings to send emails from flows, <a onclick=\"confirmSMTPRemove()\">click here</a>."
+msgstr "Se você não quer mais usar estas configurações de SMTP para enviar e-mails a partir dos fluxos, <a onclick=\"confirmSMTPRemove()\">clique aqui</a>."
 
 msgid "You can add your own SMTP settings for emails sent from flows."
 msgstr "Você pode adicionar suas próprias configurações de SMTP para os e-mails enviados a partir dos fluxos."

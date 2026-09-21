@@ -28,11 +28,13 @@
   </style>
 {% endblock extra-style %}
 {% block content %}
-  <temba-field-list id="field-list"
-                    header-title="{{ title }}"
-                    content-menu-endpoint="{{ request.path }}?{{ request.GET.urlencode }}"
-                    priority-endpoint="{% url 'contacts.contactfield_update_priority' %}"
-                    detail-endpoint="/contactfield/detail/">
+  <temba-field-list
+    id="field-list"
+    header-title="{{ title }}"
+    content-menu-endpoint="{{ request.path }}?{{ request.GET.urlencode }}"
+    priority-endpoint="{% url 'contacts.contactfield_update_priority' %}"
+    detail-endpoint="/contactfield/detail/"
+  >
   </temba-field-list>
 {% endblock content %}
 {% block extra-script %}

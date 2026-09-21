@@ -15,7 +15,7 @@
       {% if object.flow %}
         <div class="font-normal mr-2">{% trans "Flow" %}</div>
         <div>
-          <a href="{% url "flows.flow_editor" object.flow.uuid %}" class="linked">{{ object.flow.name }}</a>
+          <a href='{% url "flows.flow_editor" object.flow.uuid %}' class="linked">{{ object.flow.name }}</a>
         </div>
       {% endif %}
     </div>
@@ -36,7 +36,7 @@
 {% endblock extra-script %}
 {% block extra-style %}
   {{ block.super }}
-  <link rel="stylesheet" href="{{ STATIC_URL }}rest_framework/css/prettify.css" />
+  <link rel="stylesheet" href="{{ STATIC_URL }}rest_framework/css/prettify.css">
   <style>
     .page-content {
       max-width: 100%;

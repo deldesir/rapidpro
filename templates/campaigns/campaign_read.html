@@ -39,10 +39,7 @@
   </style>
 {% endblock extra-style %}
 {% block content %}
-  <temba-campaign-events id="campaign-events"
-                         campaign="{{ object.uuid }}"
-                         header-title="{{ object.name }}"
-                         content-menu-endpoint="{{ request.path }}?{{ request.GET.urlencode }}">
+  <temba-campaign-events id="campaign-events" campaign="{{ object.uuid }}" header-title="{{ object.name }}" content-menu-endpoint="{{ request.path }}?{{ request.GET.urlencode }}">
     <div slot="subtitle" class="subtitle-group">
       {# in the past we let users delete groups used by campaigns #}
       {% if object.group.is_active %}

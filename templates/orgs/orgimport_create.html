@@ -7,11 +7,8 @@
 {% block content %}
   <div class="mb-2">{% trans "If you have an export file with flows and or campaigns, select it below to import it into your workspace." %}</div>
   {% block import-status %}
-    <div style="min-height:41px" class="flex w-full mb-4 items-end flex-wrap">
-      <form method="post"
-            action="{% url 'orgs.orgimport_create' %}"
-            enctype="multipart/form-data"
-            id="import-form">
+    <div style="min-height: 41px" class="flex w-full mb-4 items-end flex-wrap">
+      <form method="post" action="{% url 'orgs.orgimport_create' %}" enctype="multipart/form-data" id="import-form">
         {% if form.non_field_errors %}<div class="text-error">{{ form.non_field_errors }}</div>{% endif %}
         {% csrf_token %}
         {% if form.non_field_errors %}<div class="text-error">{{ form.non_field_errors }}</div>{% endif %}
@@ -31,7 +28,7 @@
           <div class="mt-4 font-normal">{% trans "Do not proceed unless you are willing to replace your existing flows and campaigns." %}</div>
         </temba-alert>
         <div class="flex">
-          <input type="submit" value="{% trans "Import" %}" class="button-primary">
+          <input type="submit" value='{% trans "Import" %}' class="button-primary">
           <div onclick="javascript:history.go(-1)" class="ml-4 button-light">{% trans "Cancel" %}</div>
         </div>
       </form>

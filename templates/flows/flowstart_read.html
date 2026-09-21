@@ -53,13 +53,11 @@
   </style>
 {% endblock modal-extra-style %}
 {% block modal %}
-  <div style="padding: 1rem 1.25rem;">
+  <div style="padding: 1rem 1.25rem">
     <div class="start-section">
       <div class="start-label">{% trans "Flow" %}</div>
       {% if object.flow.is_active %}
-        {# djlint:off #}
         <a href="{% url 'flows.flow_editor' object.flow.uuid %}"><temba-label type="flow" primary clickable>{{ object.flow.name }}</temba-label></a>
-        {# djlint:on #}
       {% else %}
         {% trans "A deleted flow" %}
       {% endif %}
@@ -101,10 +99,12 @@
     <div class="start-section">
       <div class="start-label">{% trans "Status" %}</div>
       {% if object.is_starting %}
-        <temba-start-progress id="{{ object.id }}"
-                              interrupttitle="{{ _("Interrupt Flow") |escapejs }}"
-                              interruptendpoint="{% url 'flows.flowstart_interrupt' object.id %}"
-                              statusendpoint="{% url 'flows.flowstart_status' %}?id={{ object.id }}">
+        <temba-start-progress
+          id="{{ object.id }}"
+          interrupttitle='{{ _("Interrupt Flow") |escapejs }}'
+          interruptendpoint="{% url 'flows.flowstart_interrupt' object.id %}"
+          statusendpoint="{% url 'flows.flowstart_status' %}?id={{ object.id }}"
+        >
         </temba-start-progress>
       {% else %}
         <div>

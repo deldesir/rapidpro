@@ -10,8 +10,7 @@
 {% block modal %}
   {% block delete-message %}
     {% blocktrans trimmed with name=object.flow.name %}
-      Are you sure you want to interrupt starting <b>{{ name }}</b>?
-      Contacts who have already been started will continue in the flow.
+      Are you sure you want to interrupt starting <b>{{ name }}</b>? Contacts who have already been started will continue in the flow.
     {% endblocktrans %}
   {% endblock delete-message %}
   {% block delete-form %}

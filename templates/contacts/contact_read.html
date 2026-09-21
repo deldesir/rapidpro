@@ -48,37 +48,34 @@
   <div class="read-page">
     <temba-header-bar>
       <temba-page-header content-menu-endpoint="{{ request.path }}" -temba-selection="handleContentMenuSelected(event)">
-        <temba-contact-name slot="title" contact="{{ object.uuid }}" icon-size="16" -temba-refreshed="handleContactRefreshed">
-        </temba-contact-name>
+        <temba-contact-name slot="title" contact="{{ object.uuid }}" icon-size="16" -temba-refreshed="handleContactRefreshed"> </temba-contact-name>
       </temba-page-header>
     </temba-header-bar>
-    <temba-card-layout id="card-layout"
-                       main-name="{{ _("Chat") |escapejs }}"
-                       main-icon="message"
-                       settings-endpoint="{% url 'users.user_settings' %}"
-                       settings="{{ card_settings }}">
-      <temba-contact-chat slot="main"
-                          contact="{{ object.uuid }}"
-                          user="{{ request.user.uuid }}"
-                          monitor="true"
-                          avatar="{{ branding.logos.avatar }}"
-                          {% if object.last_seen_on %}showSearch{% endif %}
-                          {% if org_perms.contacts.contact_interrupt %}showInterrupt{% endif %}
-                          {% if org_perms.channels.channel_logs or request.user.is_staff %}showMessageLogsAfter="{{ msg_logs_after }}"{% endif %}
-                          -temba-interrupt="handleInterruptContact">
+    <temba-card-layout id="card-layout" main-name='{{ _("Chat") |escapejs }}' main-icon="message" settings-endpoint="{% url 'users.user_settings' %}" settings="{{ card_settings }}">
+      <temba-contact-chat
+        slot="main"
+        contact="{{ object.uuid }}"
+        user="{{ request.user.uuid }}"
+        monitor="true"
+        avatar="{{ branding.logos.avatar }}"
+        {% if object.last_seen_on %}showSearch{% endif %}
+        {% if org_perms.contacts.contact_interrupt %}showInterrupt{% endif %}
+        {% if org_perms.channels.channel_logs or request.user.is_staff %}showMessageLogsAfter="{{ msg_logs_after }}"{% endif %}
+        -temba-interrupt="handleInterruptContact"
+      >
       </temba-contact-chat>
-      <temba-card id="card-details" label="{{ _("Details") |escapejs }}" icon="info">
-        <temba-contact-details contact="{{ object.uuid }}"
-                               -temba-button-clicked="handleFieldSearch"
-                               {% if org_perms.contacts.contact_update %}editable{% endif %}
-                               {% if object.org.is_anon %}anon{% endif %}>
+      <temba-card id="card-details" label='{{ _("Details") |escapejs }}' icon="info">
+        <temba-contact-details
+          contact="{{ object.uuid }}"
+          -temba-button-clicked="handleFieldSearch"
+          {% if org_perms.contacts.contact_update %}editable{% endif %}
+          {% if object.org.is_anon %}anon{% endif %}
+        >
         </temba-contact-details>
         {{ contact_urn_schemes|json_script:"contact-urn-schemes" }}
       </temba-card>
-      <temba-card id="card-fields" label="{{ _("Fields") |escapejs }}" icon="fields">
-        <temba-contact-fields timezone="{{ object.org.timezone }}"
-                              contact="{{ object.uuid }}"
-                              -temba-button-clicked="handleFieldSearch">
+      <temba-card id="card-fields" label='{{ _("Fields") |escapejs }}' icon="fields">
+        <temba-contact-fields timezone="{{ object.org.timezone }}" contact="{{ object.uuid }}" -temba-button-clicked="handleFieldSearch">
           <div slot="empty" class="no-fields p-4 text-center">
             <div class="text-xl mb-4">{% trans "No Fields" %}</div>
             {% blocktrans trimmed %}
@@ -87,13 +84,11 @@
           </div>
         </temba-contact-fields>
       </temba-card>
-      <temba-card id="card-nextup" label="{{ _("Next Up") |escapejs }}" icon="schedule">
-        <temba-contact-timeline contact="{{ object.uuid }}" -temba-selection="handleTimelineClicked">
-        </temba-contact-timeline>
+      <temba-card id="card-nextup" label='{{ _("Next Up") |escapejs }}' icon="schedule">
+        <temba-contact-timeline contact="{{ object.uuid }}" -temba-selection="handleTimelineClicked"> </temba-contact-timeline>
       </temba-card>
-      <temba-card id="card-notepad" variant="note" label="{{ _("Notepad") |escapejs }}" icon="notes" activity bleed>
-        <temba-contact-notepad contact="{{ object.uuid }}" autogrow>
-        </temba-contact-notepad>
+      <temba-card id="card-notepad" variant="note" label='{{ _("Notepad") |escapejs }}' icon="notes" activity bleed>
+        <temba-contact-notepad contact="{{ object.uuid }}" autogrow> </temba-contact-notepad>
       </temba-card>
     </temba-card-layout>
   </div>

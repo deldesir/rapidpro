@@ -6,7 +6,7 @@
     <th>{% trans "Flows" %}</th>
     <td>
       {% for flow in flows %}
-        <a href="{% url "flows.flow_editor" flow.uuid %}">{{ flow.name }}</a>
+        <a href='{% url "flows.flow_editor" flow.uuid %}'>{{ flow.name }}</a>
         </br>
       {% endfor %}
     </td>

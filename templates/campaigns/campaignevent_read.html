@@ -9,8 +9,7 @@
   {% endif %}
   <div class="flex mb-4">
     <div class="flex-1 p-4 bg-gray-200 rounded-lg mr-4">
-      <temba-icon name="schedule" class="inline-block mr-2">
-      </temba-icon>
+      <temba-icon name="schedule" class="inline-block mr-2"> </temba-icon>
       {{ object.offset_display }} <b>{{ object.relative_to.name }}</b>
     </div>
     <div class="flex-1 p-4 bg-gray-200 rounded-lg">
@@ -40,28 +39,17 @@
         {% if qrs %}
           <div class="flex flex-row flex-wrap mt-2" style="gap: 6px">
             {% for qr in qrs %}
-              <span style="padding: 4px 8px;
-                           border-radius: 18px;
-                           border: 1px solid var(--color-quick-reply, rgb(60, 146, 221));
-                           background: white;
-                           color: var(--color-quick-reply, rgb(60, 146, 221));
-                           font-size: 11px;
-                           white-space: nowrap;
-                           overflow: hidden;
-                           text-overflow: ellipsis">{{ qr.text }}</span>
+              <span
+                style="padding: 4px 8px; border-radius: 18px; border: 1px solid var(--color-quick-reply, rgb(60, 146, 221)); background: white; color: var(--color-quick-reply, rgb(60, 146, 221)); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis"
+              >{{ qr.text }}</span>
             {% endfor %}
           </div>
         {% endif %}
       {% endwith %}
       {% if object.template %}
         <div class="flex flex-row flex-wrap mt-2">
-          <div class="flex items-center px-2 py-1 mr-1 rounded"
-               style="border: 1px solid #7dc8bc;
-                      background: #f0faf7;
-                      color: #128C7E;
-                      font-size: 0.85em">
-            <temba-icon class="mr-1" name="channel_wa" style="--icon-color: #128C7E">
-            </temba-icon>
+          <div class="flex items-center px-2 py-1 mr-1 rounded" style="border: 1px solid #7dc8bc; background: #f0faf7; color: #128c7e; font-size: 0.85em">
+            <temba-icon class="mr-1" name="channel_wa" style="--icon-color: #128c7e"> </temba-icon>
             <div>{{ object.template.name }}</div>
           </div>
         </div>
@@ -94,7 +82,7 @@
           <td>
             <a href="{% url 'contacts.contact_read' fire.contact.uuid %}" class="name linked">{{ fire.contact.name }}</a>
           </td>
-          <td style="text-align:right">{{ fire.time|timedate }}</td>
+          <td style="text-align: right">{{ fire.time|timedate }}</td>
         </tr>
       {% empty %}
         <tr class="empty_list">

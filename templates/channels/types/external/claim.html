@@ -3,8 +3,7 @@
 
 {% block pre-form %}
   {% blocktrans trimmed with branding.name as brand %}
-    You can connect an external aggregator or messaging service to {{ brand }} using our external API. You can
-    specify parameters to substitute in the URL or body by using these variables:
+    You can connect an external aggregator or messaging service to {{ brand }} using our external API. You can specify parameters to substitute in the URL or body by using these variables:
   {% endblocktrans %}
   <ul class="my-4">
     <li>
@@ -53,16 +52,15 @@
   </div>
   <div class="mt-4 leading-loose">
     {% blocktrans trimmed with "<div class='code'>quick_replies</div>" as quick_replies_var and "<div class='code'>&quick_reply=(reply)</div>" as quick_replies_output %}
-    The {{ quick_replies_var }} variable with method GET or content type URL Encoded will be
-    replaced by {{ quick_replies_output }} for each quick reply.
-{% endblocktrans %}
-</div>
-<div class="mt-4">
-  {% blocktrans trimmed with branding.name as brand %}
-    After connecting your service we will provide URLs for the endpoints to call when you want to push a message to
-    {{ brand }} or notify {{ brand }} of the delivery status of a message.
-  {% endblocktrans %}
-</div>
+      The {{ quick_replies_var }} variable with method GET or content type URL Encoded will be replaced by {{ quick_replies_output }} for each quick reply.
+    {% endblocktrans %}
+  </div>
+  <div class="mt-4">
+    {% blocktrans trimmed with branding.name as brand %}
+      After connecting your service we will provide URLs for the endpoints to call when you want to push a message to
+      {{ brand }} or notify {{ brand }} of the delivery status of a message.
+    {% endblocktrans %}
+  </div>
 {% endblock pre-form %}
 {% block extra-script %}
   {{ block.super }}
