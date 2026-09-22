@@ -1,3 +1,44 @@
+v26.3.107 (2026-09-21)
+-------------------------
+ * Switch template formatting from djlint to djangofmt and check it in code_check.py
+ * Fix template markup issues surfaced by formatting - a malformed mailto link, an unquoted href, a stray closing tag in a blocktrans, self-closing buttons and a dead CSS declaration
+ * Use trimmed on every blocktrans in HTML templates
+ * Reorganize code_check.py into a checker class and extract the mutated-globals check into a tested module
+ * Rebuild the webchat bundle in watch mode too
+ * Tell a tab when its session has moved to another workspace
+
+v26.3.106 (2026-09-18)
+-------------------------
+ * Gate the internal-only API on a shared token in the middleware
+
+v26.3.105 (2026-09-18)
+-------------------------
+ * Default to serving on an internet port and an internal port
+
+v26.3.104 (2026-09-17)
+-------------------------
+ * Refuse requests on the wrong port with a bare 404 rather than the 404 page
+
+v26.3.103 (2026-09-17)
+-------------------------
+ * Add a setting for serving the internal-only API on its own port
+ * Revive the webchat client for the realtime chat implementation
+ * Share the article card with the blog and let the editor take a subtitle and cover image
+
+v26.3.102 (2026-09-17)
+-------------------------
+ * Validate contact import URNs via mailroom instead of normalizing them locally
+ * Stop asking which language a helpdesk article is in
+ * List an article's headings in the help site sidebar and level imported headings
+ * Stop serving the websockets endpoints at their previous path
+
+v26.3.101 (2026-09-17)
+-------------------------
+ * Serve the websockets endpoints under an internal-only URL prefix
+ * Reject non-E164 phone numbers in contact imports and remove URN normalization task
+ * Require a real translation for every string in maintained locales
+ * Fan out template refresh cron into per-channel tasks
+
 v26.3.100 (2026-09-16)
 -------------------------
  * Keep loggers that exist before Django configures logging

@@ -3,9 +3,9 @@ import traceback
 
 from django.conf import settings
 from django.contrib import messages
-from django.core.exceptions import MiddlewareNotUsed
-from django.http import HttpResponseForbidden
+from django.http import HttpResponseForbidden, HttpResponseNotFound
 from django.utils import timezone, translation
+from django.utils.crypto import constant_time_compare
 
 from temba.orgs.models import Org
 
@@ -26,25 +26,48 @@ class ExceptionMiddleware:
 
 class ProxiedRequestMiddleware:
     """
-    Corrects what a request says about how it arrived, for deployments where something always sits in front of the app.
+    Adjusts requests for the load balancing in front of the app, and keeps the internal-only API to our own services.
+    It all has to happen before anything reads the scheme or the host or answers a request - static files included -
+    which is why this is first.
 
-    Two things are otherwise wrong behind a load balancer. The connection reaching the app is plain http even though
-    the client's was https, and everything that keys off the scheme gets that wrong - CSRF origin checks, HSTS,
-    absolute URLs, the API's SSL requirement. And some requests reach the app by its network address rather than by one
-    of its domains, so the allowed hosts check rejects them - health checks being the case that matters, since a load
-    balancer can't be told to address an instance any other way and failing them takes the deployment out of service.
+    Two things a request says about itself are otherwise wrong behind a load balancer. The connection reaching the
+    app is plain http even though the client's was https, and everything that keys off the scheme gets that wrong -
+    CSRF origin checks, HSTS, absolute URLs, the API's SSL requirement. And some requests reach the app by its network
+    address rather than by one of its domains, so the allowed hosts check rejects them - health checks being the case
+    that matters, since a load balancer can't be told to address an instance any other way and failing them takes the
+    deployment out of service.
 
-    Both corrections are settings-gated, so a deployment with nothing in front of it is left alone. This has to run
-    before anything that reads the scheme or the host, which is why it's first.
+    And the app listens on two ports: one for the internet and one that only its own network can reach, for the
+    internal load balancer where the deployment has one. The internal-only API - everything under /ti/ - is served on
+    the internal port and nowhere else, and that port serves nothing else, bar the health-check paths above, since the
+    internal load balancer checks the same way as the public one. Nothing at all is served on any other port. A request
+    in the wrong place gets a 404, the same as if the URL didn't exist. The port is the one the app's own socket
+    accepted the connection on, never one a header claims, since a client can put what it likes in a header - which
+    means TCP ports: bound to a unix socket, the WSGI server has no port of its own and fills in what the Host header
+    says, which is the client's to choose.
+
+    The test client doesn't listen anywhere and says its requests arrived on port 80, so under test any port that
+    isn't the internal one is taken to be the internet one.
+
+    The internal-only API is also gated on a shared secret that only our own services know, carried as
+    `Authorization: Token <secret>` the way the other services' internal APIs are. That's defense in depth on top of
+    the port split - a request which does reach /ti/ still has to come from one of our own services - and not a
+    substitute for it. It's a plain 403 for the same reason the wrong port is a plain 404, and it fails closed: with no
+    secret configured nothing under /ti/ is served, though a system check refuses to start without one.
     """
 
     def __init__(self, get_response=None):
-        if not settings.SECURE_ASSUME_HTTPS and not settings.ALLOWED_HOSTS_EXEMPT_PATHS:
-            raise MiddlewareNotUsed()
-
         self.get_response = get_response
 
     def __call__(self, request):
+        # a bare 404 rather than the 404 page: nothing later in the chain has run yet, so the page's context isn't there
+        if settings.INTERNAL_PORT and not self._is_correct_port(request):
+            return HttpResponseNotFound()
+
+        # path_info rather than path so the gate still applies when the app is served under a subpath (FORCE_SCRIPT_NAME)
+        if request.path_info.startswith("/ti/") and not self._has_internal_token(request):
+            return HttpResponseForbidden()
+
         if settings.SECURE_ASSUME_HTTPS:
             request.META["wsgi.url_scheme"] = "https"
 
@@ -55,6 +78,23 @@ class ProxiedRequestMiddleware:
                 request.META["HTTP_X_FORWARDED_HOST"] = settings.BRAND["domain"]
 
         return self.get_response(request)
+
+    @staticmethod
+    def _is_correct_port(request) -> bool:
+        port = int(request.META["SERVER_PORT"])
+
+        if request.path_info.startswith("/ti/"):
+            return port == settings.INTERNAL_PORT
+        if port == settings.INTERNAL_PORT:
+            return request.path in settings.ALLOWED_HOSTS_EXEMPT_PATHS
+
+        return port == settings.INTERNET_PORT or settings.TESTING
+
+    @staticmethod
+    def _has_internal_token(request) -> bool:
+        token = settings.INTERNAL_AUTH_TOKEN
+
+        return bool(token) and constant_time_compare(request.headers.get("Authorization", ""), f"Token {token}")
 
 
 class NoStoreMiddleware:
@@ -95,7 +135,11 @@ class OrgMiddleware:
         # if request was sent with a workspace identifier, ensure it matches the current org
         if posted_uuid := request.headers.get(self.header_name):
             if request.org and str(request.org.uuid) != posted_uuid:
-                return HttpResponseForbidden()
+                # typically the session has switched workspace in another tab - say which workspace it's in now so
+                # the UI can tell that apart from any other refusal
+                response = HttpResponseForbidden()
+                response[self.header_name] = str(request.org.uuid)
+                return response
 
         request.branding = settings.BRAND
 
