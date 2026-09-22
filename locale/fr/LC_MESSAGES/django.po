@@ -3450,8 +3450,8 @@ msgstr "Déclencheurs"
 msgid "Tickets"
 msgstr "Billets"
 
-msgid "Knowledge"
-msgstr "Connaissances"
+msgid "Knowledge Base"
+msgstr "Base de connaissances"
 
 msgid "Notifications"
 msgstr "Notifications"
