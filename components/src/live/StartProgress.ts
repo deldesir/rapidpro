@@ -13,6 +13,17 @@ const STATUS_COMPLETED = 'C';
 const STATUS_FAILED = 'F';
 const STATUS_INTERRUPTED = 'I';
 
+// the order a start moves through its statuses, so that an update which
+// would take it backwards can be recognized as stale
+const STATUS_ORDER = [
+  STATUS_PENDING,
+  STATUS_QUEUED,
+  STATUS_STARTED,
+  STATUS_COMPLETED,
+  STATUS_FAILED,
+  STATUS_INTERRUPTED
+];
+
 /**
  * Shows the progress of a flow start. The current state is read from the
  * status endpoint when the start is set and whenever the flow's socket is
@@ -75,6 +86,9 @@ export class StartProgress extends RapidElement {
 
   private fetching = false;
   private refreshAgain = false;
+
+  // the furthest status seen so far
+  private status: string = null;
 
   public connectedCallback(): void {
     super.connectedCallback();
@@ -178,21 +192,35 @@ export class StartProgress extends RapidElement {
       });
   }
 
-  // applies a new state for the start, from either source
+  /**
+   * Applies a new state for the start, from either source. Mailroom runs a
+   * start's batches in parallel and each publishes the status it loaded, so
+   * an update can report an earlier status than one already seen - the
+   * furthest status wins, and progress never falls, but an update's count
+   * still counts since it is real progress whenever it was measured.
+   */
   private update_(status: string, current: number, total: number): void {
-    this.current = current;
+    if (
+      this.status === null ||
+      STATUS_ORDER.indexOf(status) >= STATUS_ORDER.indexOf(this.status)
+    ) {
+      this.status = status;
+    }
+
+    this.current = Math.max(current, this.current || 0);
     this.total = total;
 
+    const wasComplete = this.complete;
     this.complete =
-      status === STATUS_COMPLETED ||
-      status === STATUS_FAILED ||
-      status === STATUS_INTERRUPTED;
+      this.status === STATUS_COMPLETED ||
+      this.status === STATUS_FAILED ||
+      this.status === STATUS_INTERRUPTED;
 
-    this.running = status === STATUS_STARTED;
+    this.running = this.status === STATUS_STARTED;
 
-    if (status === STATUS_PENDING) {
+    if (this.status === STATUS_PENDING) {
       this.message = 'Preparing to start..';
-    } else if (status === STATUS_QUEUED) {
+    } else if (this.status === STATUS_QUEUED) {
       this.message = 'Waiting..';
     } else {
       this.message = null;
@@ -206,7 +234,7 @@ export class StartProgress extends RapidElement {
       this.updateEta();
     }
 
-    if (this.complete) {
+    if (this.complete && !wasComplete) {
       this.scheduleRemoval();
     }
   }
@@ -215,7 +243,8 @@ export class StartProgress extends RapidElement {
     const elapsed = new Date().getTime() - this.startedOn.getTime();
     const rate = this.current / elapsed;
 
-    // only calculate eta if the rate is actually reasonable
+    // only estimate if the rate is actually reasonable, otherwise any earlier
+    // estimate is no longer worth anything either
     if (rate > 0.1) {
       const eta = new Date(
         new Date().getTime() + (this.total - this.current) / rate
@@ -228,6 +257,8 @@ export class StartProgress extends RapidElement {
       } else {
         this.eta = eta.toISOString();
       }
+    } else {
+      this.eta = null;
     }
   }
 

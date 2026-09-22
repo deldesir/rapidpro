@@ -193,10 +193,17 @@ export class ProgressBar extends RapidElement {
   public willUpdate(changes: PropertyValues): void {
     super.willUpdate(changes);
 
-    if (changes.has('eta') && this.eta) {
-      this.estimatedCompletionDate = new Date(this.eta);
-      this.showEstimatedCompletion =
-        this.estimatedCompletionDate.getTime() - Date.now() >= MIN_ESTIMATE_MS;
+    if (changes.has('eta')) {
+      if (this.eta) {
+        this.estimatedCompletionDate = new Date(this.eta);
+        this.showEstimatedCompletion =
+          this.estimatedCompletionDate.getTime() - Date.now() >=
+          MIN_ESTIMATE_MS;
+      } else {
+        // an estimate that has been withdrawn must not linger as a countdown
+        this.estimatedCompletionDate = null;
+        this.showEstimatedCompletion = false;
+      }
     }
 
     if (changes.has('current') || changes.has('total')) {

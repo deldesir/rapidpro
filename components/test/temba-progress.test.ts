@@ -56,6 +56,16 @@ describe('temba-progress', () => {
     );
   });
 
+  it('drops the countdown when the estimate is withdrawn', async () => {
+    const progress = await createProgress(`eta="${inMinutes(30)}"`);
+    expect(progress.showEstimatedCompletion).to.equal(true);
+
+    progress.eta = null;
+    await progress.updateComplete;
+    expect(progress.showEstimatedCompletion).to.equal(false);
+    expect(progress.shadowRoot.querySelector('.etc temba-date')).to.equal(null);
+  });
+
   it('ignores an estimate that has already passed', async () => {
     const progress = await createProgress(`eta="${inMinutes(-1)}"`);
     expect(progress.showEstimatedCompletion).to.equal(false);

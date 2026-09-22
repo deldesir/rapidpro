@@ -125,7 +125,30 @@ describe('temba-start-progress', () => {
         })
       ]);
       const progress = await createProgress();
-      expect(progress.eta).to.equal(undefined);
+      expect(progress.eta).to.equal(null);
+    });
+
+    it('withdraws an earlier estimate once the rate drops', async () => {
+      mockStatus([
+        start({
+          status: 'S',
+          modified_on: new Date(Date.now() - 1000).toISOString(),
+          progress: { current: 1000, total: 2000 }
+        })
+      ]);
+      const progress = await createProgress();
+      expect(progress.eta).to.be.a('string');
+
+      mockStatus([
+        start({
+          status: 'S',
+          modified_on: new Date(Date.now() - 1000000).toISOString(),
+          progress: { current: 1001, total: 2000 }
+        })
+      ]);
+      progress.refresh();
+      await waitForCondition(() => progress.refreshes > 1, 60, 50);
+      expect(progress.eta).to.equal(null);
     });
   });
 
@@ -200,6 +223,35 @@ describe('temba-start-progress', () => {
       mockSocket.serverPublish(`flow:${FLOW}`, { type: 'activity' });
       expect(progress.current).to.equal(10);
       expect(progress.complete).to.equal(false);
+    });
+
+    it('ignores an update that would take the start backwards', async () => {
+      const progress = await createWatching('7');
+      const publish = (status: string, current: number) =>
+        mockSocket.serverPublish(`flow:${FLOW}`, {
+          type: 'start_progress',
+          start_id: 7,
+          status,
+          progress: { current, total: 100 }
+        });
+
+      // batches run in parallel, so a batch that loaded the start before it
+      // was marked started can still publish queued after it is running
+      publish('Q', 25);
+      expect(progress.running).to.equal(true);
+      expect(progress.message).to.equal(null);
+      expect(progress.current).to.equal(25);
+
+      // and a lagging batch can report less progress than we already have
+      publish('S', 20);
+      expect(progress.current).to.equal(25);
+
+      // once complete, a late running update changes nothing
+      publish('C', 100);
+      publish('S', 90);
+      expect(progress.complete).to.equal(true);
+      expect(progress.running).to.equal(false);
+      expect(progress.current).to.equal(100);
     });
 
     it('catches up over http when the socket (re)subscribes', async () => {
