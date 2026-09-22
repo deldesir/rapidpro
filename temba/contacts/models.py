@@ -1464,25 +1464,6 @@ class ContactURN(LegacyIDMixin, models.Model):
     # auth tokens - usage is channel specific, e.g. every FCM URN has its own token, FB channels have per opt-in tokens
     auth_tokens = models.JSONField(null=True)
 
-    def ensure_number_normalization(self, country_code):
-        """
-        Tries to normalize our phone number from a possible 10 digit (0788 383 383) to a 12 digit number
-        with country code (+250788383383) using the country we now know about the channel.
-        """
-        number = self.path
-
-        if number and not number[0] == "+" and country_code:
-            norm_number = URN.normalize_number(number, country_code)
-
-            # don't trounce existing contacts with that country code already
-            norm_urn = URN.from_tel(norm_number)
-            if not ContactURN.objects.filter(identity=norm_urn, org_id=self.org_id).exclude(id=self.id):
-                self.identity = norm_urn
-                self.path = norm_number
-                self.save(update_fields=["identity", "path"])
-
-        return self
-
     def get_display(self, org=None, international: bool = False, formatted: bool = True) -> str:
         """
         Gets a representation of the URN for display, e.g. tel:+12345678901 becomes +1 234 567-8901
@@ -2112,6 +2093,7 @@ def get_import_upload_path(instance: Any, filename: str):
 class ContactImport(SmartModel):
     MAX_RECORDS = 25_000
     BATCH_SIZE = 100
+    URN_VALIDATION_CHUNK = 1000  # how many URNs we ask mailroom to validate per request
     EXPLICIT_CLEAR = "--"
 
     # how many sequential URNs triggers flagging
@@ -2183,7 +2165,7 @@ class ContactImport(SmartModel):
 
         # iterate over rest of the rows to do row-level validation
         seen_uuids = set()
-        seen_urns = set()
+        urns = []  # tuples of row number, original value and URN, validated by mailroom after the row walk
         num_records = 0
         row_num = 1
 
@@ -2196,7 +2178,7 @@ class ContactImport(SmartModel):
                 break
 
             row = cls._parse_row(raw_row, len(mappings))
-            uuid, urns = cls._extract_uuid_and_urns(row, mappings)
+            uuid, row_urns = cls._extract_uuid_and_urns(row, mappings)
             if uuid:
                 if uuid in seen_uuids:
                     raise ValidationError(
@@ -2204,15 +2186,10 @@ class ContactImport(SmartModel):
                         params={"uuid": uuid, "row": intcomma(row_num)},
                     )
                 seen_uuids.add(uuid)
-            for urn in urns:
-                if urn in seen_urns:
-                    raise ValidationError(
-                        _("Import file contains duplicated contact URN '%(urn)s' on row %(row)s."),
-                        params={"urn": urn, "row": intcomma(row_num)},
-                    )
-                seen_urns.add(urn)
+            for value, urn in row_urns:
+                urns.append((row_num, value, urn))
 
-            if uuid or urns:  # if we have a UUID or URN on this row it's an importable record
+            if uuid or row_urns:  # if we have a UUID or URN on this row it's an importable record
                 num_records += 1
 
             # check if we exceed record limit
@@ -2225,14 +2202,17 @@ class ContactImport(SmartModel):
         if num_records == 0:
             raise ValidationError(_("Import file doesn't contain any records."))
 
+        cls._validate_urns(org, urns)
+
         file.seek(0)  # seek back to beginning so subsequent reads work
 
         return mappings, num_records
 
-    @staticmethod
-    def _extract_uuid_and_urns(row, mappings) -> tuple[str, list[str]]:
+    @classmethod
+    def _extract_uuid_and_urns(cls, row, mappings) -> tuple[str, list[tuple[str, str]]]:
         """
-        Extracts any UUIDs and URNs from the given row so they can be checked for uniqueness
+        Extracts any UUIDs and URNs from the given row so they can be validated - URNs as tuples of the original value
+        and the URN string
         """
         uuid = ""
         urns = []
@@ -2241,13 +2221,46 @@ class ContactImport(SmartModel):
             if mapping["type"] == "attribute" and mapping["name"] == "uuid":
                 uuid = value.lower()
             elif mapping["type"] == "scheme" and value:
-                urn = URN.from_parts(mapping["scheme"], value)
-                try:
-                    urn = URN.normalize(urn)
-                except ValueError:
-                    pass
-                urns.append(urn)
+                urns.append((value, URN.from_parts(mapping["scheme"], value)))
         return uuid, urns
+
+    @classmethod
+    def _validate_urns(cls, org: Org, urns: list[tuple[int, str, str]]):
+        """
+        Has mailroom normalize and validate the given URNs (tuples of row number, original value and URN) so that we
+        can reject files with invalid URNs, phone numbers which can't be made E164 or duplicated URNs. Normalization
+        uses the workspace's country so local phone numbers are only accepted if there is a country to interpret them
+        in. Rows are only validated here, the import itself sends the original values to mailroom.
+        """
+        client = mailroom.get_client()
+        seen_urns = set()
+
+        for start in range(0, len(urns), cls.URN_VALIDATION_CHUNK):
+            chunk = urns[start : start + cls.URN_VALIDATION_CHUNK]
+            results = client.contact_urns(org, [urn for _, _, urn in chunk], validate_only=True)
+
+            for (row_num, value, urn), result in zip(chunk, results, strict=True):
+                if URN.to_parts(urn)[0] == URN.TEL_SCHEME:
+                    if result.error or not result.e164:
+                        raise ValidationError(
+                            _(
+                                "Import file contains invalid phone number '%(number)s' on row %(row)s. Ensure phone "
+                                "numbers include a country code."
+                            ),
+                            params={"number": value, "row": intcomma(row_num)},
+                        )
+                elif result.error:
+                    raise ValidationError(
+                        _("Import file contains invalid contact URN '%(urn)s' on row %(row)s."),
+                        params={"urn": urn, "row": intcomma(row_num)},
+                    )
+
+                if result.normalized in seen_urns:
+                    raise ValidationError(
+                        _("Import file contains duplicated contact URN '%(urn)s' on row %(row)s."),
+                        params={"urn": result.normalized, "row": intcomma(row_num)},
+                    )
+                seen_urns.add(result.normalized)
 
     @classmethod
     def _auto_mappings(cls, org: Org, headers: list[str]) -> list:
@@ -2487,16 +2500,10 @@ class ContactImport(SmartModel):
                     value = value.lower()
                 spec[attribute] = value
             elif mapping["type"] == "scheme":
-                scheme = mapping["scheme"]
                 if value:
                     if "urns" not in spec:
                         spec["urns"] = []
-                    urn = URN.from_parts(scheme, value)
-                    try:
-                        urn = URN.normalize(urn, country_code=self.org.default_country_code)
-                    except ValueError:
-                        pass
-                    spec["urns"].append(urn)
+                    spec["urns"].append(URN.from_parts(mapping["scheme"], value))
 
             elif mapping["type"] in ("field", "new_field"):
                 if "fields" not in spec:
@@ -2543,14 +2550,13 @@ class ContactImport(SmartModel):
         Takes the list of URNs that have been imported and tries to detect spamming
         """
 
-        # extract all numerical URN paths
+        # extract all numerical URN paths, ignoring any formatting as the values haven't been normalized
         numerical_paths = []
         for urn in urns:
             scheme, path, query, display = URN.to_parts(urn)
-            try:
-                numerical_paths.append(int(path))
-            except ValueError:
-                pass
+            digits = regex.sub(r"\D", "", path)
+            if digits:
+                numerical_paths.append(int(digits))
 
         if len(numerical_paths) < cls.SEQUENTIAL_URNS_THRESHOLD:
             return False

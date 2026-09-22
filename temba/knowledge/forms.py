@@ -5,7 +5,6 @@ from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 
 from temba.orgs.views.mixins import UniqueNameMixin
-from temba.utils import languages
 from temba.utils.fields import CheckboxWidget, ColorInputWidget, InputWidget, SelectWidget
 
 from .models import Article, HelpdeskImport, HelpSite, KnowledgeSource
@@ -22,12 +21,18 @@ class MarkdownEditorWidget(forms.Widget):
 
     # The form's title field, when the title is to be edited at the head of the article as the site shows it. It's
     # slotted into the editor as the input it is - so its name, value, length and errors stay the form's - and the
-    # editor draws it as the site's heading. Set by the view that has the bound form.
+    # editor draws it as the site's heading. Set by the view that has the bound form. A subtitle field goes the same
+    # way, drawn under the title; and a file field for a cover image, which the editor draws across the head of the
+    # article and offers as the way to pick one. Neither is a help article's - the blog has both.
     title = None
+    subtitle = None
+    hero = None
 
     def get_context(self, name, value, attrs):
         context = super().get_context(name, value, attrs)
         context["title"] = self.title
+        context["subtitle"] = self.subtitle
+        context["hero"] = self.hero
         return context
 
 
@@ -113,31 +118,15 @@ class ArticleForm(forms.ModelForm):
     alongside the save, so that saving an edit can never silently make a draft public.
     """
 
-    # declared rather than taken from the model, whose language field has no choices of its own - which ones are on
-    # offer depends on the workspace, and a ChoiceField is what puts them onto the widget as well as validating them
-    language = forms.ChoiceField(label=_("Language"), widget=SelectWidget(attrs={"widget_only": False}))
-
     def __init__(self, org, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         if "body" in self.fields:  # the create form asks only for a title
             self.fields["body"].max_length = Article.MAX_BODY_LEN
 
-        # an article keeps the language it was written in even if the workspace later drops it, so that language stays
-        # a choice here - otherwise the article could never be saved again
-        codes = list(org.flow_languages)
-        if self.instance.language and self.instance.language not in codes:
-            codes.append(self.instance.language)
-
-        # only worth asking which language an article is in when there's actually more than one to choose from
-        if len(codes) > 1:
-            self.fields["language"].choices = [(c, languages.get_name(c)) for c in codes]
-        else:
-            del self.fields["language"]
-
     class Meta:
         model = Article
-        fields = ("title", "language", "body")
+        fields = ("title", "body")
         widgets = {
             "title": InputWidget(attrs={"widget_only": False}),
             "body": MarkdownEditorWidget(),
@@ -151,13 +140,13 @@ class ArticleCreateForm(ArticleForm):
     """
 
     class Meta(ArticleForm.Meta):
-        fields = ("title", "language")
+        fields = ("title",)
 
 
 class SectionForm(forms.ModelForm):
     """
     A section - a root of the helpdesk tree - is a heading over the articles filed under it, so it's titled and
-    described in plain text rather than written. Nothing of it is indexed, so it isn't asked its language either.
+    described in plain text rather than written.
     """
 
     description = forms.CharField(
@@ -204,6 +193,12 @@ class HelpSiteForm(forms.ModelForm):
         help_text=_("Shown at the bottom of every page."),
         widget=InputWidget(),
     )
+    chat_channel = forms.ChoiceField(
+        required=False,
+        label=_("Chat"),
+        help_text=_("A WebChat channel to let readers chat with you from every page."),
+        widget=SelectWidget(),
+    )
     primary_color = forms.CharField(
         label=_("Primary Color"),
         help_text=_("Used for links, buttons and highlights."),
@@ -227,6 +222,10 @@ class HelpSiteForm(forms.ModelForm):
 
     def __init__(self, org, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        self.fields["chat_channel"].choices = [("", _("None"))] + [
+            (str(channel.uuid), channel.name) for channel in HelpSite.get_chat_channels(org)
+        ]
 
     def _clean_color(self, field: str, required: bool) -> str:
         value = (self.cleaned_data[field] or "").strip().lower()

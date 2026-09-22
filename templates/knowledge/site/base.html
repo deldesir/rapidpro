@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n static %}
 
 {% get_current_language as LANGUAGE_CODE %}
 <!DOCTYPE html>
@@ -14,11 +14,17 @@
     <meta name="description" content="{% block description %}{% if site.tagline %}{{ site.tagline }}{% else %}{{ site.title }}{% endif %}{% endblock description %}">
     {% if is_preview %}<meta name="robots" content="noindex">{% endif %}
     <link rel="stylesheet" href="{{ STATIC_URL }}css/helpsite.css">
+    <link rel="stylesheet" href="{{ STATIC_URL }}css/article.css">
     <style>
       :root {
         --primary: {{ site.primary_color }};
         --header-bg: {{ site.header_color }};
         --header-text: {{ site.header_text_color }};
+      }
+
+      /* the chat widget takes the site's accent */
+      temba-webchat {
+        --webchat-primary: var(--primary);
       }
     </style>
   </head>
@@ -38,18 +44,13 @@
         <a class="brand" href="{{ prefix }}/">{{ site.title }}</a>
         {% block header-search %}
           <form class="search header-search" action="{{ prefix }}/search/" method="get" role="search">
-            <input type="search"
-                   name="q"
-                   value="{{ query|default:'' }}"
-                   placeholder="{% trans "Search articles" %}"
-                   aria-label="{% trans "Search articles" %}">
+            <input type="search" name="q" value="{{ query|default:'' }}" placeholder='{% trans "Search articles" %}' aria-label='{% trans "Search articles" %}'>
           </form>
         {% endblock header-search %}
       </div>
     </header>
     <main class="container">
-      {% block content %}
-      {% endblock content %}
+      {% block content %} {% endblock content %}
     </main>
     <footer class="site-footer">
       <div class="container">
@@ -60,5 +61,11 @@
         {% endif %}
       </div>
     </footer>
+    {% block scripts %}
+    {% endblock scripts %}
+    {% if chat_channel %}
+      <script src="{% static 'components/temba-webchat.js' %}"></script>
+      <temba-webchat channel="{{ chat_channel.uuid }}" host="{{ chat_host }}"> </temba-webchat>
+    {% endif %}
   </body>
 </html>

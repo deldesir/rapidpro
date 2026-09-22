@@ -76,6 +76,30 @@ class SiteViewsTest(TembaTest):
         self.assertContains(response, "--header-bg: #1f2937;")
         self.assertContains(response, "--header-text: #ffffff;")
 
+        # there's no chat widget until the site has a chat channel
+        self.assertNotContains(response, "<temba-webchat")
+
+        webchat = self.create_channel("WCH", "Site Chat", None)
+        self.site.set_config(self.admin, chat_channel=str(webchat.uuid))
+
+        with override_settings(HOSTNAME="app.nyaruka.com"):
+            response = self.public("/")
+            self.assertContains(response, "components/temba-webchat.js")
+            self.assertContains(response, f'<temba-webchat channel="{webchat.uuid}" host="https://app.nyaruka.com">')
+
+            # on every page of the site, including the preview
+            self.assertContains(self.public("/flows/"), f'<temba-webchat channel="{webchat.uuid}"')
+            self.assertContains(
+                self.public("/nothing/here/"), f'<temba-webchat channel="{webchat.uuid}"', status_code=404
+            )
+            self.login(self.admin)
+            self.assertContains(self.client.get("/helpsite/preview/"), f'<temba-webchat channel="{webchat.uuid}"')
+            self.client.logout()
+
+        # and none once the channel is gone
+        webchat.release(self.admin)
+        self.assertNotContains(self.public("/"), "<temba-webchat")
+
         # popular articles show up once there are views
         for _ in range(2):
             ArticleCount.record_view(self.importing)
@@ -142,6 +166,29 @@ class SiteViewsTest(TembaTest):
         self.assertEqual(1, ArticleCount.objects.filter(article=self.nodes, scope="views").sum())
         self.public("/flows/nodes/")
         self.assertEqual(2, ArticleCount.objects.filter(article=self.nodes, scope="views").sum())
+
+        # an article with no top level headings lists none, and doesn't need the script that follows them
+        self.assertEqual([], response.context["headings"])
+        self.assertNotContains(response, 'class="headings"')
+        self.assertNotContains(response, "js/helpsite.js")
+
+        # one that has them lists them beneath itself in the sidebar, as links to the headings in the article
+        self.nodes.body = "Intro.\n\n# Adding a node\n\nText.\n\n## Details\n\n# Removing *a* node\n\nMore."
+        self.nodes.save(update_fields=("body",))
+        response = self.public("/flows/nodes/")
+        self.assertEqual(
+            [("adding-a-node", "Adding a node"), ("removing-a-node", "Removing a node")], response.context["headings"]
+        )
+        self.assertContains(response, '<h1 id="adding-a-node">Adding a node</h1>')
+        self.assertContains(response, '<h1 id="removing-a-node">Removing <em>a</em> node</h1>')
+        self.assertContains(response, '<ul class="headings" aria-label="In this article">')
+        self.assertContains(response, '<a href="#adding-a-node">Adding a node</a>')
+        self.assertContains(response, '<a href="#removing-a-node">Removing a node</a>')
+        self.assertNotContains(response, '<a href="#details">')
+        self.assertContains(response, "js/helpsite.js")
+
+        # and only the current article lists its headings
+        self.assertEqual(1, response.content.decode().count('class="headings"'))
 
         self.assertEqual(404, self.public("/flows/drafting/").status_code)
         self.assertEqual(404, self.public("/contacts/nodes/").status_code)  # only under its own section
