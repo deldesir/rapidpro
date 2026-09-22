@@ -5375,6 +5375,9 @@ msgstr "Estatísticas da área de trabalho"
 msgid "This email was generated at"
 msgstr "Este e-mail foi gerado em"
 
+msgid "Interrupt Flow"
+msgstr "Interromper fluxo"
+
 msgid "Sorry, this flow cannot be exported because it references another flow. To export it, please remove any actions that reference other flows and try again."
 msgstr "Desculpe, esse fluxo não pode ser exportado porque faz referência a outro fluxo. Para exportá-lo, por favor, remova qualquer ação que faça referência a outros fluxos e tente novamente."
 
@@ -5458,9 +5461,6 @@ msgstr "Excluindo"
 
 msgid "Parameters"
 msgstr "Parâmetros"
-
-msgid "Interrupt Flow"
-msgstr "Interromper fluxo"
 
 #, python-format
 msgid "<b>%(count)s</b> contact"
