@@ -1,6 +1,7 @@
 import '../temba-modules';
 import { fixture, expect } from '@open-wc/testing';
 import { Counter } from '../src/display/Counter';
+import { assertScreenshot, getClip } from './utils.test';
 
 const createCounter = async (value: number): Promise<Counter> => {
   const counter = (await fixture(
@@ -27,6 +28,14 @@ const columns = (counter: Counter): Element[] =>
   Array.from(counter.shadowRoot.querySelectorAll('.digit'));
 
 describe('temba-counter', () => {
+  it('renders as a count', async () => {
+    const counter = (await fixture(
+      `<temba-counter value="4975" style="font-size: 20px"></temba-counter>`
+    )) as Counter;
+    await counter.updateComplete;
+    await assertScreenshot('counter/count', getClip(counter));
+  });
+
   it('shows each digit of the value in its own column', async () => {
     const counter = await createCounter(407);
     expect(columns(counter).length).to.equal(3);
