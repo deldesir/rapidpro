@@ -1,3 +1,14 @@
+v26.3.108 (2026-09-22)
+-------------------------
+ * Fix attachments in the webchat client and add an emoji picker
+ * Claim every file drag over the webchat panel
+ * Fix deletion of released orgs failing when a team still has members
+ * Remove unused django.contrib.gis from INSTALLED_APPS
+ * Rename the Knowledge navigation item to Knowledge Base
+ * Rework the helpdesk section cards' headers
+ * Give the markdown editor's column padding options icons that show padding
+ * Stop the verified domain card underlining its text on hover
+
 v26.3.107 (2026-09-21)
 -------------------------
  * Switch template formatting from djlint to djangofmt and check it in code_check.py
