@@ -3454,8 +3454,8 @@ msgstr "Disparadores"
 msgid "Tickets"
 msgstr "Tickets"
 
-msgid "Knowledge"
-msgstr "Conhecimento"
+msgid "Knowledge Base"
+msgstr "Base de conhecimento"
 
 msgid "Notifications"
 msgstr "Notificações"

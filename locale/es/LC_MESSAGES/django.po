@@ -3450,8 +3450,8 @@ msgstr "Activadores"
 msgid "Tickets"
 msgstr "Tickets"
 
-msgid "Knowledge"
-msgstr "Conocimiento"
+msgid "Knowledge Base"
+msgstr "Base de conocimiento"
 
 msgid "Notifications"
 msgstr "Notificaciones"
