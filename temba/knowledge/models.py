@@ -332,20 +332,22 @@ ARTICLE_LINK = re.compile(r"^article:([0-9a-f-]{36})$", re.IGNORECASE)
 
 class ArticleLinks(Extension):
     """
-    Resolves article: links against the given map of uuid to address. A link to an article that isn't in the map -
-    unpublished, deleted, or never there - is left as its text, since there's nowhere for it to go.
+    Links to other articles, authored as article:<uuid> - by uuid rather than by address, so a retitled or refiled
+    article keeps every link to it. Given a map of uuid to address they're resolved against it, and one to an article
+    that isn't in the map - unpublished, deleted, or never there - is left as its text, since there's nowhere for it to
+    go. Without a map they're kept as article: links, normalized, for whatever serves the page to resolve as it does.
     """
 
     def __init__(self, links: dict = None):
         super().__init__()
-        self.links = links or {}
+        self.links = links
 
     def extendMarkdown(self, md):
         md.treeprocessors.register(ArticleLinksProcessor(md, self.links), "article_links", 4)
 
 
 class ArticleLinksProcessor(Treeprocessor):
-    def __init__(self, md, links: dict):
+    def __init__(self, md, links: dict | None):
         super().__init__(md)
         self.links = links
 
@@ -354,12 +356,22 @@ class ArticleLinksProcessor(Treeprocessor):
             match = ARTICLE_LINK.match(anchor.get("href") or "")
             if not match:
                 continue
-            target = self.links.get(match[1].lower())
-            if target:
+            uuid = match[1].lower()
+            if self.links is None:
+                anchor.set("href", f"article:{uuid}")
+            elif target := self.links.get(uuid):
                 anchor.set("href", target)
             else:
                 anchor.tag = "span"
                 del anchor.attrib["href"]
+
+
+# what an unresolved link to another article is emitted as - exactly this, so that whatever resolves them as it
+# serves the page has one form to look for - so the rel the sanitizer puts on every link comes off these
+ARTICLE_LINK_HTML = re.compile(r'<a href="(article:[0-9a-f-]{36})" rel="noopener noreferrer">')
+
+# and the URL scheme those links carry, which the sanitizer would otherwise strip
+SANITIZE_URL_SCHEMES = nh3.ALLOWED_URL_SCHEMES | {"article"}
 
 
 # markdown extensions we render article bodies with. Deliberately conservative - no extension that would make markdown
@@ -438,11 +450,11 @@ def _sanitize_attribute(element: str, attribute: str, value: str) -> str | None:
 def render_markdown(body: str, colors: dict = None, links: dict = None) -> tuple[str, list[Heading]]:
     """
     Renders authored markdown for display, resolving column backgrounds against the org's palette and article: links
-    against the given map of article uuid to address. Raw HTML is escaped rather than passed through, so that a
-    reader sees what the author saw - the editor renders client side and escapes it too, and text that merely looks
-    like a tag (the `<url>` of our own quick reply syntax, say) survives instead of being quietly swallowed.
-    Sanitizing stays as defense in depth, and still deals with the javascript: URLs markdown will happily make a
-    link out of.
+    against the given map of article uuid to address - or leaving them as article: links, for whatever serves the
+    page to resolve, when there's no map. Raw HTML is escaped rather than passed through, so that a reader sees what
+    the author saw - the editor renders client side and escapes it too, and text that merely looks like a tag (the
+    `<url>` of our own quick reply syntax, say) survives instead of being quietly swallowed. Sanitizing stays as
+    defense in depth, and still deals with the javascript: URLs markdown will happily make a link out of.
 
     Every heading gets an id made from its text, so a page can link to it, and the top level ones come back
     alongside the HTML in the order they appear, for the page to list them.
@@ -458,7 +470,13 @@ def render_markdown(body: str, colors: dict = None, links: dict = None) -> tuple
             TocExtension(marker="", toc_depth=1, slugify=heading_id),  # no marker, so [TOC] in an article is just text
         ]
     )
-    html = nh3.clean(md.convert(body), attributes=SANITIZE_ATTRIBUTES, attribute_filter=_sanitize_attribute)
+    html = nh3.clean(
+        md.convert(body),
+        attributes=SANITIZE_ATTRIBUTES,
+        attribute_filter=_sanitize_attribute,
+        url_schemes=SANITIZE_URL_SCHEMES,
+    )
+    html = ARTICLE_LINK_HTML.sub(r'<a href="\1">', html)
 
     # the extension's names are HTML with the tags stripped, so their entities are still encoded
     headings = [Heading(token["id"], unescape(token["name"])) for token in md.toc_tokens]
@@ -923,7 +941,7 @@ class Article(models.Model):
         """
         The article rendered for reading, and its top level headings for the page to link to. Links to other
         articles are resolved against the given map of uuid to address - see HelpSite.get_link_targets. Without one,
-        they render as plain text.
+        they're kept as article: links for whatever serves the page to resolve.
         """
         return render_markdown(self.body, self.source.colors, links)
 
