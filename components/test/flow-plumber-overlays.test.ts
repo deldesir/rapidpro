@@ -46,14 +46,16 @@ describe('flow/Plumber overlays', () => {
   });
 
   describe('createOverlayElement', () => {
-    it('renders the activity count', async () => {
+    it('renders the activity count as a rolling counter', async () => {
       const plumber = await createPlumber(withDefinition());
       const overlay = (plumber as any).createOverlayElement(5, 'exit-1:node-2');
       expect(overlay.className).to.equal('activity-overlay');
-      expect(overlay.textContent).to.equal('5');
       expect(overlay.getAttribute('data-activity-key')).to.equal(
         'exit-1:node-2'
       );
+
+      const counter = overlay.querySelector('temba-counter');
+      expect(counter.value).to.equal(5);
     });
 
     it('formats large counts with separators', async () => {
@@ -62,7 +64,13 @@ describe('flow/Plumber overlays', () => {
         12345,
         'exit-1:node-2'
       );
-      expect(overlay.textContent).to.equal((12345).toLocaleString());
+      const counter = overlay.querySelector('temba-counter');
+      document.body.appendChild(overlay);
+      await counter.updateComplete;
+      expect(counter.getAttribute('aria-label')).to.equal(
+        (12345).toLocaleString()
+      );
+      overlay.remove();
     });
   });
 
