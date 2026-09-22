@@ -60,7 +60,20 @@ export interface FlowActivityEvent extends RealtimeEvent {
   type: 'activity';
 }
 
-export type FlowEvent = FlowActivityEvent;
+/**
+ * flow:<flow-uuid> - published as a start of the flow makes progress: when
+ * it is queued (so the total is known), after each batch of contacts is
+ * started and when it ends. Status is the start's status code and progress
+ * matches what the start status endpoint reports.
+ */
+export interface FlowStartProgressEvent extends RealtimeEvent {
+  type: 'start_progress';
+  start_id: number;
+  status: string;
+  progress: { current: number; total: number };
+}
+
+export type FlowEvent = FlowActivityEvent | FlowStartProgressEvent;
 
 /**
  * history:<contact-uuid> and history:<contact-uuid>:<ticket-uuid> - the

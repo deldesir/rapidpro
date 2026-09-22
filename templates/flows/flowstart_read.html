@@ -101,6 +101,7 @@
       {% if object.is_starting %}
         <temba-start-progress
           id="{{ object.id }}"
+          flow="{{ object.flow.uuid }}"
           interrupttitle='{{ _("Interrupt Flow") |escapejs }}'
           interruptendpoint="{% url 'flows.flowstart_interrupt' object.id %}"
           statusendpoint="{% url 'flows.flowstart_status' %}?id={{ object.id }}"

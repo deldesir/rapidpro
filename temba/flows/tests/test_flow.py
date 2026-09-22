@@ -277,6 +277,23 @@ class FlowTest(TembaTest, CRUDLTestMixin):
 
         response = self.client.get(flow_editor_url)
         self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.context["active_start"])
+        self.assertNotContains(response, "<temba-start-progress")
+
+        # a start by a user that is still in progress is shown so it can be followed
+        start = self.create_flowstart(flow, self.admin)
+        response = self.client.get(flow_editor_url)
+        self.assertEqual(start, response.context["active_start"])
+        self.assertContains(response, "<temba-start-progress")
+        self.assertContains(response, f'statusendpoint="{reverse("flows.flowstart_status")}?id={start.id}"')
+        self.assertContains(response, f'interruptendpoint="{reverse("flows.flowstart_interrupt", args=[start.id])}"')
+
+        # but not once it has finished
+        start.status = FlowStart.STATUS_COMPLETED
+        start.save(update_fields=("status",))
+        response = self.client.get(flow_editor_url)
+        self.assertIsNone(response.context["active_start"])
+        self.assertNotContains(response, "<temba-start-progress")
 
         # flows that are archived can't be edited, started or simulated
         flow.is_archived = True

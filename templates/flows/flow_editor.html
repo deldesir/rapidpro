@@ -34,6 +34,21 @@
       display: none;
     }
 
+    /* a start in progress sits in a white band on top of the editor, as part
+       of it rather than of the page header */
+    temba-start-progress {
+      display: block;
+      /* the toolbar below pads its widgets by 6px, so this leaves the bar the
+         same 12px of space below as above */
+      padding: 12px 1em 6px;
+      border-top: 1px solid #e7e7e7;
+      background: #fff;
+    }
+
+    temba-start-progress + temba-flow-editor {
+      border-top: none;
+    }
+
     temba-flow-editor {
       display: flex;
       flex: 1;
@@ -71,6 +86,32 @@
       navigateTo("/contact/group/" + e.detail.uuid + "/", e.detail);
     }
 
+    function showStartProgress(startId) {
+      const existing = document.querySelector("temba-start-progress");
+      if (existing) {
+        existing.remove();
+      }
+
+      const progress = document.createElement("temba-start-progress");
+      progress.setAttribute("flow", "{{ object.uuid }}");
+      progress.setAttribute("interrupttitle", "{{ _("Interrupt Flow") |escapejs }}");
+      progress.setAttribute("interruptendpoint", "/flowstart/interrupt/" + startId + "/");
+      progress.setAttribute("statusendpoint", "{% url 'flows.flowstart_status' %}?id=" + startId);
+      progress.setAttribute("id", startId);
+      document.querySelector("temba-flow-editor").before(progress);
+    }
+
+    function handleFlowStarted() {
+      // the start was just created so the latest start of this flow is ours
+      fetchAjax("{% url 'flows.flowstart_status' %}?flow={{ object.uuid }}")
+        .then((response) => (response && response.ok ? response.json() : null))
+        .then((data) => {
+          if (data && data.results.length > 0) {
+            showStartProgress(data.results[0].id);
+          }
+        });
+    }
+
     function handleFollow(event) {
       const {
         flowUuid,
@@ -92,6 +133,16 @@
   </script>
 {% endblock extra-script %}
 {% block content %}
+  {% if active_start %}
+    <temba-start-progress
+      id="{{ active_start.id }}"
+      flow="{{ object.uuid }}"
+      interrupttitle='{{ _("Interrupt Flow") |escapejs }}'
+      interruptendpoint="{% url 'flows.flowstart_interrupt' active_start.id %}"
+      statusendpoint="{% url 'flows.flowstart_status' %}?id={{ active_start.id }}"
+    >
+    </temba-start-progress>
+  {% endif %}
   <temba-flow-editor
     flow="{{ object.uuid }}"
     features="{{ feature_filters }}"

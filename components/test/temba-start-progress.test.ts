@@ -2,13 +2,19 @@ import '../temba-modules';
 import { fixture, expect } from '@open-wc/testing';
 import { useFakeTimers } from 'sinon';
 import { StartProgress } from '../src/live/StartProgress';
-import { mockGET, clearMockGets, waitForCondition } from './utils.test';
+import {
+  mockGET,
+  clearMockGets,
+  MockSocketProvider,
+  waitForCondition
+} from './utils.test';
+import { setSocketProvider, SocketProvider } from '../src/live/SocketService';
 
 const STATUS_URL = '/api/v2/flow_starts.json';
 
 // a flow start payload as returned by the status endpoint
 const start = (overrides: any = {}) => ({
-  status: 'Started',
+  status: 'S',
   modified_on: new Date().toISOString(),
   progress: { current: 10, total: 100 },
   ...overrides
@@ -53,7 +59,7 @@ describe('temba-start-progress', () => {
     });
 
     it('marks a started run as running', async () => {
-      mockStatus([start({ status: 'Started' })]);
+      mockStatus([start({ status: 'S' })]);
       const progress = await createProgress();
       expect(progress.running).to.equal(true);
       expect(progress.complete).to.equal(false);
@@ -61,19 +67,19 @@ describe('temba-start-progress', () => {
     });
 
     it('shows a preparing message while pending', async () => {
-      mockStatus([start({ status: 'Pending' })]);
+      mockStatus([start({ status: 'P' })]);
       const progress = await createProgress();
       expect(progress.message).to.equal('Preparing to start..');
       expect(progress.running).to.equal(false);
     });
 
     it('shows a waiting message while queued', async () => {
-      mockStatus([start({ status: 'Queued' })]);
+      mockStatus([start({ status: 'Q' })]);
       const progress = await createProgress();
       expect(progress.message).to.equal('Waiting..');
     });
 
-    for (const status of ['Completed', 'Failed', 'Interrupted']) {
+    for (const status of ['C', 'F', 'I']) {
       it(`treats ${status} as complete`, async () => {
         mockStatus([start({ status, progress: { current: 100, total: 100 } })]);
         const progress = await createProgress();
@@ -85,7 +91,7 @@ describe('temba-start-progress', () => {
     it('estimates an eta once progress is underway', async () => {
       mockStatus([
         start({
-          status: 'Started',
+          status: 'S',
           modified_on: new Date(Date.now() - 1000).toISOString(),
           progress: { current: 1000, total: 2000 }
         })
@@ -101,7 +107,7 @@ describe('temba-start-progress', () => {
     it('skips an eta that is months away', async () => {
       mockStatus([
         start({
-          status: 'Started',
+          status: 'S',
           modified_on: new Date(Date.now() - 1000).toISOString(),
           progress: { current: 1000, total: 10000000000 }
         })
@@ -113,7 +119,7 @@ describe('temba-start-progress', () => {
     it('skips the eta when the rate is too low to be meaningful', async () => {
       mockStatus([
         start({
-          status: 'Started',
+          status: 'S',
           modified_on: new Date(Date.now() - 1000000).toISOString(),
           progress: { current: 1, total: 100 }
         })
@@ -123,34 +129,93 @@ describe('temba-start-progress', () => {
     });
   });
 
-  describe('polling', () => {
-    it('schedules another refresh while work remains', async () => {
-      mockStatus([
-        start({ status: 'Started', progress: { current: 10, total: 100 } })
-      ]);
-      const progress = await createProgress();
-      expect(progress.refreshes).to.equal(1);
+  describe('socket', () => {
+    const FLOW = '4c9b1a3e-1c7e-4b9e-9d5f-3a2b1c0d9e8f';
+    let mockSocket: MockSocketProvider;
+    let previousProvider: SocketProvider;
 
-      // the follow-up completes, so polling stops after one more round
+    const createWatching = async (id = 'start-1'): Promise<StartProgress> => {
       mockStatus([
-        start({ status: 'Completed', progress: { current: 100, total: 100 } })
+        start({ status: 'S', progress: { current: 10, total: 100 } })
       ]);
+      const progress = (await fixture(
+        `<temba-start-progress statusEndpoint="${STATUS_URL}" flow="${FLOW}"></temba-start-progress>`
+      )) as StartProgress;
+      progress.id = id;
+      await waitForCondition(() => progress.refreshes > 0, 60, 50);
+      return progress;
+    };
 
-      // the backoff after the first refresh is 1s; poll for the follow-up
-      // rather than sleeping a fixed margin, which goes flaky under load
-      await waitForCondition(() => progress.refreshes > 1, 60, 50);
-      expect(progress.refreshes).to.equal(2);
-      expect(progress.complete).to.equal(true);
+    beforeEach(() => {
+      mockSocket = new MockSocketProvider();
+      previousProvider = setSocketProvider(mockSocket);
     });
 
-    it('stops polling once the work is complete', async () => {
-      mockStatus([
-        start({ status: 'Completed', progress: { current: 100, total: 100 } })
-      ]);
-      const progress = await createProgress();
+    afterEach(() => {
+      setSocketProvider(previousProvider);
+    });
+
+    it('watches the flow socket', async () => {
+      const progress = await createWatching();
+      const subs = mockSocket.subs.filter((sub) => !sub.unsubscribed);
+      expect(subs.map((sub) => sub.channel)).to.deep.equal([`flow:${FLOW}`]);
+
+      progress.remove();
+      expect(mockSocket.subs.every((sub) => sub.unsubscribed)).to.equal(true);
+    });
+
+    it('applies progress published for its start', async () => {
+      const progress = await createWatching('7');
+
+      mockSocket.serverPublish(`flow:${FLOW}`, {
+        type: 'start_progress',
+        start_id: 7,
+        status: 'S',
+        progress: { current: 50, total: 100 }
+      });
+      expect(progress.current).to.equal(50);
+      expect(progress.total).to.equal(100);
+      expect(progress.running).to.equal(true);
+
+      mockSocket.serverPublish(`flow:${FLOW}`, {
+        type: 'start_progress',
+        start_id: 7,
+        status: 'C',
+        progress: { current: 100, total: 100 }
+      });
+      expect(progress.current).to.equal(100);
+      expect(progress.complete).to.equal(true);
+      expect(progress.running).to.equal(false);
+    });
+
+    it('ignores progress of other starts and other events', async () => {
+      const progress = await createWatching('7');
+
+      mockSocket.serverPublish(`flow:${FLOW}`, {
+        type: 'start_progress',
+        start_id: 8,
+        status: 'C',
+        progress: { current: 5, total: 5 }
+      });
+      mockSocket.serverPublish(`flow:${FLOW}`, { type: 'activity' });
+      expect(progress.current).to.equal(10);
+      expect(progress.complete).to.equal(false);
+    });
+
+    it('catches up over http when the socket (re)subscribes', async () => {
+      const progress = await createWatching();
+      const before = progress.refreshes;
+
+      mockSocket.subs[0].onSubscribed();
+      await waitForCondition(() => progress.refreshes > before, 60, 50);
+      expect(progress.refreshes).to.equal(before + 1);
+    });
+
+    it('does not poll', async () => {
+      const progress = await createWatching();
       const after = progress.refreshes;
 
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await new Promise((resolve) => setTimeout(resolve, 1200));
       expect(progress.refreshes).to.equal(after);
     });
   });
@@ -197,7 +262,7 @@ describe('temba-start-progress', () => {
     });
 
     it('offers an interrupt control only while running', async () => {
-      mockStatus([start({ status: 'Started' })]);
+      mockStatus([start({ status: 'S' })]);
       const progress = await createProgress();
       progress.interruptTitle = 'Stop';
       progress.interruptEndpoint = '/interrupt/';
@@ -208,7 +273,7 @@ describe('temba-start-progress', () => {
     });
 
     it('hides the interrupt control when not running', async () => {
-      mockStatus([start({ status: 'Completed' })]);
+      mockStatus([start({ status: 'C' })]);
       const progress = await createProgress();
       progress.interruptTitle = 'Stop';
       progress.interruptEndpoint = '/interrupt/';
@@ -219,7 +284,7 @@ describe('temba-start-progress', () => {
     });
 
     it('hides the interrupt control with no endpoint configured', async () => {
-      mockStatus([start({ status: 'Started' })]);
+      mockStatus([start({ status: 'S' })]);
       const progress = await createProgress();
       await progress.updateComplete;
       expect(

@@ -129,7 +129,15 @@ class FlowStartCRUDLTest(TembaTest, CRUDLTestMixin):
         response = self.assertReadFetch(status_url, [self.editor, self.admin])
 
         # status returns json
-        self.assertEqual("Pending", response.json()["results"][0]["status"])
+        self.assertEqual("P", response.json()["results"][0]["status"])
+
+        # the editor looks up a flow's latest start made by a user, so starts without one (e.g. from triggers) are ignored
+        start2 = self.create_flowstart(flow, self.editor)
+        FlowStart.objects.create(org=self.org, flow=flow, start_type=FlowStart.TYPE_TRIGGER)
+        self.create_flowstart(self.create_flow("Test Flow 2"), self.admin)
+
+        response = self.requestView(f"{reverse('flows.flowstart_status')}?flow={flow.uuid}", self.admin)
+        self.assertEqual([start2.id, start.id], [r["id"] for r in response.json()["results"]])
 
         # starts from other orgs should not be accessible even by id
         other_flow = self.create_flow("Other Flow", org=self.org2)
