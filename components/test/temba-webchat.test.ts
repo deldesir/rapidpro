@@ -699,17 +699,36 @@ describe('temba-webchat', () => {
     const webChat = await openWebChat();
     mockSocket.setConnectionState(ConnectionState.Disconnected);
     await settle(() => webChat.status === ConnectionState.Disconnected);
+    mockPOST(UPLOAD_URL, { attachment: 'image/jpeg:https://x/hat.jpg' });
 
     const files = new DataTransfer();
     files.items.add(new File(['hat'], 'hat.jpg', { type: 'image/jpeg' }));
-    const event = new DragEvent('dragenter', {
-      bubbles: true,
-      cancelable: true,
-      dataTransfer: files
-    });
-    webChat.shadowRoot.querySelector('.panel').dispatchEvent(event);
-    expect(event.defaultPrevented).to.equal(false);
+    const panel = webChat.shadowRoot.querySelector('.panel');
+    const drag = (type: string) => {
+      const event = new DragEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: files
+      });
+      panel.dispatchEvent(event);
+      return event;
+    };
+
+    // the drag is still claimed - an unclaimed drop would have the browser
+    // open the file in place of the page - but shown as not allowed
+    expect(drag('dragenter').defaultPrevented).to.equal(true);
+    await webChat.updateComplete;
     expect(webChat.dragging).to.equal(false);
+    expect(webChat.shadowRoot.querySelector('.dropzone')).to.not.exist;
+    const over = drag('dragover');
+    expect(over.defaultPrevented).to.equal(true);
+    expect(over.dataTransfer.dropEffect).to.equal('none');
+
+    // and a drop goes nowhere
+    expect(drag('drop').defaultPrevented).to.equal(true);
+    await webChat.updateComplete;
+    expect(requestsTo(UPLOAD_URL).length).to.equal(0);
+    expect(webChat.attachments).to.deep.equal([]);
   });
 
   it('searches the emoji catalog', async () => {

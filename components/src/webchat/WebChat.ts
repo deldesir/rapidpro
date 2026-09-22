@@ -1532,30 +1532,33 @@ export class WebChat extends LitElement {
     return Array.from(event.dataTransfer?.types || []).includes('Files');
   }
 
+  // whether dropped files can be taken right now
+  private canTakeFiles(): boolean {
+    return this.status === ConnectionState.Connected && !this.uploading;
+  }
+
+  // Every file drag over the panel is claimed, whether or not we'll take the
+  // files - an unclaimed drop is left to the browser, which opens the file in
+  // place of the page the widget is on
   private handleDragEnter(event: DragEvent): void {
-    if (
-      !this.hasFiles(event) ||
-      this.status !== ConnectionState.Connected ||
-      this.uploading
-    ) {
+    if (!this.hasFiles(event)) {
       return;
     }
     event.preventDefault();
     this.dragDepth++;
-    this.dragging = true;
+    this.dragging = this.canTakeFiles();
   }
 
   private handleDragOver(event: DragEvent): void {
-    if (!this.dragging) {
+    if (!this.hasFiles(event)) {
       return;
     }
-    // claiming the drag is what lets it be dropped
     event.preventDefault();
-    event.dataTransfer.dropEffect = 'copy';
+    event.dataTransfer.dropEffect = this.dragging ? 'copy' : 'none';
   }
 
-  private handleDragLeave(): void {
-    if (!this.dragging) {
+  private handleDragLeave(event: DragEvent): void {
+    if (!this.hasFiles(event)) {
       return;
     }
     this.dragDepth = Math.max(0, this.dragDepth - 1);
@@ -1565,13 +1568,16 @@ export class WebChat extends LitElement {
   }
 
   private handleDrop(event: DragEvent): void {
-    if (!this.dragging) {
+    if (!this.hasFiles(event)) {
       return;
     }
     event.preventDefault();
+    const take = this.dragging;
     this.dragDepth = 0;
     this.dragging = false;
-    this.uploadFiles(Array.from(event.dataTransfer?.files || []));
+    if (take) {
+      this.uploadFiles(Array.from(event.dataTransfer?.files || []));
+    }
   }
 
   private handleAttachClick(event: MouseEvent): void {
