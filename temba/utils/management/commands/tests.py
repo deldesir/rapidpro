@@ -59,6 +59,7 @@ class MigrateDynamoTest(TembaTest):
 
         self.assertIn("Creating TempMain", out.getvalue())
         self.assertIn("Creating TempHistory", out.getvalue())
+        self.assertIn("Creating TempCerts", out.getvalue())
 
         client = dynamo.get_client()
         table = client.Table("TempMain")
@@ -69,3 +70,4 @@ class MigrateDynamoTest(TembaTest):
 
         self.assertIn("Skipping TempMain", out.getvalue())
         self.assertIn("Skipping TempHistory", out.getvalue())
+        self.assertIn("Skipping TempCerts", out.getvalue())
