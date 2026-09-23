@@ -61,7 +61,7 @@ describe('temba-contact-notepad', () => {
     previousProvider = setSocketProvider(new MockSocketProvider());
     mockGET(
       /\/api\/v2\/contacts\.json\?.*uuid=notepad-contact/,
-      '/test-assets/contacts/contact-notepad.json'
+      '/test/assets/contacts/contact-notepad.json'
     );
     // the contact we switch to mid-edit
     mockGET(/\/api\/v2\/contacts\.json\?.*uuid=other-notepad-contact/, {

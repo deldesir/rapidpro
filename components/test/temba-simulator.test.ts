@@ -554,7 +554,7 @@ describe('temba-simulator', () => {
     let previousSamples: SampleMedia = null;
     try {
       previousSamples = setSampleMedia({
-        images: ['/test-assets/img/sim_image_c.jpg']
+        images: ['/test/assets/img/sim_image_c.jpg']
       });
       await sendImageAttachment();
     } finally {

@@ -1,7 +1,7 @@
 {
   "count": 2417,
   "paged_by": "cursor",
-  "next": "/test-assets/content-list/calls.json?cursor=next",
+  "next": "/test/assets/content-list/calls.json?cursor=next",
   "previous": null,
   "results": [
     {

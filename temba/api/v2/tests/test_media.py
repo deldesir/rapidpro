@@ -28,14 +28,14 @@ class MediaEndpointTest(APITest):
         response = self.client.post(endpoint_url, {}, HTTP_X_FORWARDED_HTTPS="https")
         self.assertResponseError(response, "file", "No file was submitted.")
 
-        response = upload(self.agent, f"{settings.MEDIA_ROOT}/test_imports/simple.xlsx")
+        response = upload(self.agent, f"{settings.TESTDATA_DIR}/imports/simple.xlsx")
         self.assertResponseError(response, "file", "Unsupported file type.")
 
         with patch("temba.msgs.models.Media.MAX_UPLOAD_SIZE", 1024):
-            response = upload(self.editor, f"{settings.MEDIA_ROOT}/test_media/snow.mp4")
+            response = upload(self.editor, f"{settings.TESTDATA_DIR}/media/snow.mp4")
             self.assertResponseError(response, "file", "Limit for file uploads is 0.0009765625 MB.")
 
-        response = upload(self.admin, f"{settings.MEDIA_ROOT}/test_media/steve marten.jpg")
+        response = upload(self.admin, f"{settings.TESTDATA_DIR}/media/steve marten.jpg")
         self.assertEqual(201, response.status_code)
         self.assertEqual(
             {

@@ -98,7 +98,7 @@ class BroadcastCRUDLTest(TembaTest, CRUDLTestMixin):
         media = Media.from_upload(
             self.org,
             self.admin,
-            self.upload(f"{settings.MEDIA_ROOT}/test_media/steve marten.jpg", "image/jpeg"),
+            self.upload(f"{settings.TESTDATA_DIR}/media/steve marten.jpg", "image/jpeg"),
             process=False,
         )
 

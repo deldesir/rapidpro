@@ -15,12 +15,12 @@ class ContactImportTest(TembaTest):
     def test_parse_errors(self, mr_mocks):
         # try to open an import that is completely empty
         with self.assertRaisesRegex(ValidationError, "Import file appears to be empty."):
-            path = "media/test_imports/empty_all_rows.xlsx"  # No header row present either
+            path = "test-data/imports/empty_all_rows.xlsx"  # No header row present either
             with open(path, "rb") as f:
                 ContactImport.try_to_parse(self.org, f, path)
 
         def try_to_parse(name):
-            path = f"media/test_imports/{name}"
+            path = f"test-data/imports/{name}"
             with open(path, "rb") as f:
                 ContactImport.try_to_parse(self.org, f, path)
 
@@ -72,7 +72,7 @@ class ContactImportTest(TembaTest):
     def test_extract_mappings(self):
         # try simple import in different formats
         for ext in ("xlsx",):
-            imp = self.create_contact_import(f"media/test_imports/simple.{ext}")
+            imp = self.create_contact_import(f"test-data/imports/simple.{ext}")
             self.assertEqual(3, imp.num_records)
             self.assertEqual(
                 [
@@ -83,7 +83,7 @@ class ContactImportTest(TembaTest):
             )
 
         # try import with 2 URN types
-        imp = self.create_contact_import("media/test_imports/twitter_and_phone.xlsx")
+        imp = self.create_contact_import("test-data/imports/twitter_and_phone.xlsx")
         self.assertEqual(
             [
                 {"header": "URN:Tel", "mapping": {"type": "scheme", "scheme": "tel"}},
@@ -94,7 +94,7 @@ class ContactImportTest(TembaTest):
         )
 
         # or with 3 URN columns
-        imp = self.create_contact_import("media/test_imports/multiple_tel_urns.xlsx")
+        imp = self.create_contact_import("test-data/imports/multiple_tel_urns.xlsx")
         self.assertEqual(
             [
                 {"header": "Name", "mapping": {"type": "attribute", "name": "name"}},
@@ -105,12 +105,12 @@ class ContactImportTest(TembaTest):
             imp.mappings,
         )
 
-        imp = self.create_contact_import("media/test_imports/missing_name_header.xlsx")
+        imp = self.create_contact_import("test-data/imports/missing_name_header.xlsx")
         self.assertEqual([{"header": "URN:Tel", "mapping": {"type": "scheme", "scheme": "tel"}}], imp.mappings)
 
         self.create_field("goats", "Num Goats", ContactField.TYPE_NUMBER)
 
-        imp = self.create_contact_import("media/test_imports/extra_fields_and_group.xlsx")
+        imp = self.create_contact_import("test-data/imports/extra_fields_and_group.xlsx")
         self.assertEqual(
             [
                 {"header": "URN:Tel", "mapping": {"type": "scheme", "scheme": "tel"}},
@@ -135,7 +135,7 @@ class ContactImportTest(TembaTest):
         # that's how we export contacts
         self.create_field("num_goats", "Goats", ContactField.TYPE_NUMBER)
 
-        imp = self.create_contact_import("media/test_imports/extra_fields_and_group.xlsx")
+        imp = self.create_contact_import("test-data/imports/extra_fields_and_group.xlsx")
         self.assertEqual(
             {
                 "header": "field: goats",
@@ -145,7 +145,7 @@ class ContactImportTest(TembaTest):
         )
 
         # a header can be a number but it will be ignored
-        imp = self.create_contact_import("media/test_imports/numerical_header.xlsx")
+        imp = self.create_contact_import("test-data/imports/numerical_header.xlsx")
         self.assertEqual(
             [
                 {"header": "URN:Tel", "mapping": {"type": "scheme", "scheme": "tel"}},
@@ -157,7 +157,7 @@ class ContactImportTest(TembaTest):
 
         self.create_field("a_number", "A-Number", ContactField.TYPE_NUMBER)
 
-        imp = self.create_contact_import("media/test_imports/header_chars.xlsx")
+        imp = self.create_contact_import("test-data/imports/header_chars.xlsx")
         self.assertEqual(
             [
                 {"header": "URN:Tel", "mapping": {"type": "scheme", "scheme": "tel"}},
@@ -169,7 +169,7 @@ class ContactImportTest(TembaTest):
 
     @mock_mailroom
     def test_batches(self, mr_mocks):
-        imp = self.create_contact_import("media/test_imports/simple.xlsx")
+        imp = self.create_contact_import("test-data/imports/simple.xlsx")
         self.assertEqual(3, imp.num_records)
         self.assertIsNone(imp.started_on)
 
@@ -215,7 +215,7 @@ class ContactImportTest(TembaTest):
 
         # records are batched if they exceed batch size
         with patch("temba.contacts.models.ContactImport.BATCH_SIZE", 2):
-            imp = self.create_contact_import("media/test_imports/simple.xlsx")
+            imp = self.create_contact_import("test-data/imports/simple.xlsx")
             imp.start()
 
         batches = list(imp.batches.order_by("id"))
@@ -294,7 +294,7 @@ class ContactImportTest(TembaTest):
     def test_batches_with_fields(self):
         self.create_field("goats", "Goats", ContactField.TYPE_NUMBER)
 
-        imp = self.create_contact_import("media/test_imports/extra_fields_and_group.xlsx")
+        imp = self.create_contact_import("test-data/imports/extra_fields_and_group.xlsx")
         imp.start()
         batch = imp.batches.get()  # single batch
 
@@ -327,7 +327,7 @@ class ContactImportTest(TembaTest):
             batch.specs,
         )
 
-        imp = self.create_contact_import("media/test_imports/with_empty_rows.xlsx")
+        imp = self.create_contact_import("test-data/imports/with_empty_rows.xlsx")
         imp.start()
         batch = imp.batches.get()  # single batch
 
@@ -359,7 +359,7 @@ class ContactImportTest(TembaTest):
             batch.specs,
         )
 
-        imp = self.create_contact_import("media/test_imports/with_uuid.xlsx")
+        imp = self.create_contact_import("test-data/imports/with_uuid.xlsx")
         imp.start()
         batch = imp.batches.get()
         self.assertEqual(
@@ -381,7 +381,7 @@ class ContactImportTest(TembaTest):
         )
 
         # cells with -- mean explicit clearing of those values
-        imp = self.create_contact_import("media/test_imports/explicit_clearing.xlsx")
+        imp = self.create_contact_import("test-data/imports/explicit_clearing.xlsx")
         imp.start()
         batch = imp.batches.get()  # single batch
 
@@ -398,7 +398,7 @@ class ContactImportTest(TembaTest):
         )
 
         # uuids and languages converted to lowercase, case in names is preserved
-        imp = self.create_contact_import("media/test_imports/uppercase.xlsx")
+        imp = self.create_contact_import("test-data/imports/uppercase.xlsx")
         imp.start()
         batch = imp.batches.get()
         self.assertEqual(
@@ -425,7 +425,7 @@ class ContactImportTest(TembaTest):
     def test_local_numbers(self, mr_mocks):
         # mailroom normalizes local numbers using the workspace's country, and we pass the values as they appear in
         # the file so that it can do the same when importing
-        imp = self.create_contact_import("media/test_imports/local_numbers.xlsx")
+        imp = self.create_contact_import("test-data/imports/local_numbers.xlsx")
 
         self.assertEqual(
             [call(self.org, ["tel:0788 383 383", "tel:+250788111222"], validate_only=True)],
@@ -448,7 +448,7 @@ class ContactImportTest(TembaTest):
         mr_mocks.contact_urns({"tel:0788 383 383": False})
 
         with self.assertRaises(ValidationError) as e:
-            self.create_contact_import("media/test_imports/local_numbers.xlsx")
+            self.create_contact_import("test-data/imports/local_numbers.xlsx")
 
         self.assertEqual(
             "Import file contains invalid phone number '0788 383 383' on row 2. Ensure phone numbers include a country code.",
@@ -459,7 +459,7 @@ class ContactImportTest(TembaTest):
     def test_urn_validation_chunks(self, mr_mocks):
         # URNs are sent to mailroom for validation in chunks
         with patch("temba.contacts.models.ContactImport.URN_VALIDATION_CHUNK", 2):
-            self.create_contact_import("media/test_imports/multiple_tel_urns.xlsx")
+            self.create_contact_import("test-data/imports/multiple_tel_urns.xlsx")
 
         self.assertEqual(
             [
@@ -471,7 +471,7 @@ class ContactImportTest(TembaTest):
         )
 
     def test_batches_with_multiple_tels(self):
-        imp = self.create_contact_import("media/test_imports/multiple_tel_urns.xlsx")
+        imp = self.create_contact_import("test-data/imports/multiple_tel_urns.xlsx")
         imp.start()
         batch = imp.batches.get()
 
@@ -494,7 +494,7 @@ class ContactImportTest(TembaTest):
         )
 
     def test_batches_from_xlsx(self):
-        imp = self.create_contact_import("media/test_imports/simple.xlsx")
+        imp = self.create_contact_import("test-data/imports/simple.xlsx")
         imp.start()
         batch = imp.batches.get()
 
@@ -523,7 +523,7 @@ class ContactImportTest(TembaTest):
         )
 
     def test_batches_from_xlsx_with_formulas(self):
-        imp = self.create_contact_import("media/test_imports/formula_data.xlsx")
+        imp = self.create_contact_import("test-data/imports/formula_data.xlsx")
         imp.start()
         batch = imp.batches.get()
 
@@ -548,7 +548,7 @@ class ContactImportTest(TembaTest):
         )
 
     def test_detect_spamminess(self):
-        imp = self.create_contact_import("media/test_imports/sequential_tels.xlsx")
+        imp = self.create_contact_import("test-data/imports/sequential_tels.xlsx")
         imp.start()
 
         self.org.refresh_from_db()
@@ -587,14 +587,14 @@ class ContactImportTest(TembaTest):
         # if an org is verified, no flagging occurs
         self.org.verify()
 
-        imp = self.create_contact_import("media/test_imports/sequential_tels.xlsx")
+        imp = self.create_contact_import("test-data/imports/sequential_tels.xlsx")
         imp.start()
 
         self.org.refresh_from_db()
         self.assertFalse(self.org.is_flagged)
 
     def test_data_types(self):
-        imp = self.create_contact_import("media/test_imports/data_formats.xlsx")
+        imp = self.create_contact_import("test-data/imports/data_formats.xlsx")
         imp.start()
         batch = imp.batches.get()
         self.assertEqual(
@@ -616,7 +616,7 @@ class ContactImportTest(TembaTest):
         )
 
     def test_parse_value(self):
-        imp = self.create_contact_import("media/test_imports/simple.xlsx")
+        imp = self.create_contact_import("test-data/imports/simple.xlsx")
         kgl = ZoneInfo("Africa/Kigali")
 
         tests = [
@@ -645,7 +645,7 @@ class ContactImportTest(TembaTest):
             self.assertEqual(test[1], ContactImport(org=self.org, original_filename=test[0]).get_default_group_name())
 
     def test_delete(self):
-        imp = self.create_contact_import("media/test_imports/simple.xlsx")
+        imp = self.create_contact_import("test-data/imports/simple.xlsx")
         imp.start()
         imp.delete()
 

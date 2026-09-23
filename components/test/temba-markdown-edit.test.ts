@@ -314,10 +314,10 @@ describe(TAG, () => {
 
   it('renders images inline', async () => {
     const editor = await getEditor(
-      '![a shot](/test-assets/img/sim_image_c.jpg)'
+      '![a shot](/test/assets/img/sim_image_c.jpg)'
     );
     const img = blocks(editor)[0].querySelector('img');
-    assert.equal(img.getAttribute('src'), '/test-assets/img/sim_image_c.jpg');
+    assert.equal(img.getAttribute('src'), '/test/assets/img/sim_image_c.jpg');
     assert.equal(img.getAttribute('alt'), 'a shot');
   });
 
@@ -1436,7 +1436,7 @@ describe(TAG, () => {
   });
 
   describe('images', () => {
-    const IMAGE = '/test-assets/img/sim_image_c.jpg';
+    const IMAGE = '/test/assets/img/sim_image_c.jpg';
 
     const clickImage = async (editor: MarkdownEditor): Promise<void> => {
       const img = doc(editor).querySelector('img');
@@ -1800,7 +1800,7 @@ describe(TAG, () => {
   describe('uploads', () => {
     const ok = () =>
       mockPOST(/msgmedia\/upload/, {
-        url: '/test-assets/img/sim_image_c.jpg',
+        url: '/test/assets/img/sim_image_c.jpg',
         name: 'shot.png'
       });
 
@@ -1814,7 +1814,7 @@ describe(TAG, () => {
 
       assert.equal(
         editor.value,
-        'before ![shot.png](/test-assets/img/sim_image_c.jpg)after'
+        'before ![shot.png](/test/assets/img/sim_image_c.jpg)after'
       );
 
       // it is in the document as an image, not as the markdown for one
@@ -1832,7 +1832,7 @@ describe(TAG, () => {
 
       assert.equal(
         editor.value,
-        '![shot.png](/test-assets/img/sim_image_c.jpg)![shot.png](/test-assets/img/sim_image_c.jpg)'
+        '![shot.png](/test/assets/img/sim_image_c.jpg)![shot.png](/test/assets/img/sim_image_c.jpg)'
       );
       assert.equal(blocks(editor)[0].querySelectorAll('img').length, 2);
       assert.isFalse(editor.uploading);
@@ -1851,7 +1851,7 @@ describe(TAG, () => {
 
       assert.equal(
         editor.value,
-        'alpha![shot.png](/test-assets/img/sim_image_c.jpg)\n\nbravo'
+        'alpha![shot.png](/test/assets/img/sim_image_c.jpg)\n\nbravo'
       );
     });
 
@@ -1871,7 +1871,7 @@ describe(TAG, () => {
       // the end of the article would have been wrong - the caret was in the first block
       assert.equal(
         editor.value,
-        'alpha![shot.png](/test-assets/img/sim_image_c.jpg)\n\nbravo'
+        'alpha![shot.png](/test/assets/img/sim_image_c.jpg)\n\nbravo'
       );
     });
 
@@ -1893,7 +1893,7 @@ describe(TAG, () => {
     it('strips the delimiters out of alt text', async () => {
       // clean_name deliberately keeps [ ] ( ) in filenames, which are what delimit a markdown image
       mockPOST(/msgmedia\/upload/, {
-        url: '/test-assets/img/sim_image_c.jpg',
+        url: '/test/assets/img/sim_image_c.jpg',
         name: 'a [weird] (name).png'
       });
 
@@ -1905,7 +1905,7 @@ describe(TAG, () => {
 
       assert.equal(
         editor.value,
-        '![a weird name.png](/test-assets/img/sim_image_c.jpg)'
+        '![a weird name.png](/test/assets/img/sim_image_c.jpg)'
       );
     });
 
@@ -1921,7 +1921,7 @@ describe(TAG, () => {
 
       assert.equal(
         editor.value,
-        'body![shot.png](/test-assets/img/sim_image_c.jpg)'
+        'body![shot.png](/test/assets/img/sim_image_c.jpg)'
       );
     });
 
@@ -1944,7 +1944,7 @@ describe(TAG, () => {
       '* Add a node',
       '* Connect it up',
       '',
-      '![a screenshot](/test-assets/img/sim_image_c.jpg)'
+      '![a screenshot](/test/assets/img/sim_image_c.jpg)'
     ].join('\n');
 
     // The rendered document sizes itself to its content, so the screenshots only need a floor for source mode. The

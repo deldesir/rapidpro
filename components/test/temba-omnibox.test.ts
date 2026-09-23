@@ -44,7 +44,7 @@ describe('temba-omnibox', () => {
 
   it('can be created', async () => {
     const omnibox: Omnibox = await fixture(
-      getHTML({ endpoint: '/test-assets/select/omnibox.json' })
+      getHTML({ endpoint: '/test/assets/select/omnibox.json' })
     );
     assert.instanceOf(omnibox, Omnibox);
   });
@@ -52,7 +52,7 @@ describe('temba-omnibox', () => {
   // TODO: make this pass reliably on CI
   xit('fires change events on selection', async () => {
     const omnibox: Omnibox = await createOmnibox(clock, {
-      endpoint: '/test-assets/select/omnibox.json'
+      endpoint: '/test/assets/select/omnibox.json'
     });
 
     const changeEvent = spy();

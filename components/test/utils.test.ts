@@ -272,7 +272,7 @@ before(async () => {
 
   // preload Roboto so layouts that depend on text width (e.g. slider's range
   // labels) don't shift when the font finishes loading mid-test. Only the
-  // weights declared in test-assets/style.css are loadable; other weights
+  // weights declared in test/assets/style.css are loadable; other weights
   // fall back to system fonts.
   if (document.fonts && (document.fonts as any).load) {
     await Promise.all([
@@ -288,19 +288,19 @@ after(() => {
 });
 
 const mockMapping = {
-  '/test-assets/api/users/admin1.json': [
+  '/test/assets/api/users/admin1.json': [
     /\/api\/v2\/users.json\?email=admin1@nyaruka.com/
   ],
-  '/test-assets/api/users/editor1.json': [
+  '/test/assets/api/users/editor1.json': [
     /\/api\/v2\/users.json\?email=editor1@nyaruka.com/
   ],
-  '/test-assets/api/users/agent1.json': [
+  '/test/assets/api/users/agent1.json': [
     /\/api\/v2\/users.json\?email=agent1@nyaruka.com/
   ],
-  '/test-assets/api/users/viewer1.json': [
+  '/test/assets/api/users/viewer1.json': [
     /\/api\/v2\/users.json\?email=viewer1@nyaruka.com/
   ],
-  '/test-assets/contacts/contact-tickets.json': [
+  '/test/assets/contacts/contact-tickets.json': [
     /\/api\/v2\/tickets.json\?contact=24d64810-3315-4ff5-be85-48e3fe055bf9/
   ]
 };
@@ -343,7 +343,7 @@ export const mockPOST = (
 };
 
 export const mockAssetResolver = () => {
-  mockPOST(/\/test-assets\/store\/assets\.json/, {
+  mockPOST(/\/test\/assets\/store\/assets\.json/, {
     results: [
       {
         type: 'flow',
@@ -603,11 +603,11 @@ export const getHTML = (tag: string, attrs: any = {}) => {
 export const loadStore = async () => {
   const store: Store = await fixture(
     `<temba-store
-      completion='/test-assets/store/editor.json'
-      groups='/test-assets/store/groups.json'
-      fields='/test-assets/store/fields.json'
-      users='/test-assets/store/users.json'
-      workspace='/test-assets/store/workspace.json'
+      completion='/test/assets/store/editor.json'
+      groups='/test/assets/store/groups.json'
+      fields='/test/assets/store/fields.json'
+      users='/test/assets/store/users.json'
+      workspace='/test/assets/store/workspace.json'
     />`
   );
   await store.initialHttpComplete;

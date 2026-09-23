@@ -19,11 +19,11 @@ class ContactImportCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertFormError(response.context["form"], "file", "This field is required.")
 
         # try uploading an empty file
-        response = self.client.post(create_url, {"file": self.upload("media/test_imports/empty.xlsx")})
+        response = self.client.post(create_url, {"file": self.upload("test-data/imports/empty.xlsx")})
         self.assertFormError(response.context["form"], "file", "Import file doesn't contain any records.")
 
         # try uploading a valid XLSX file
-        response = self.client.post(create_url, {"file": self.upload("media/test_imports/simple.xlsx")})
+        response = self.client.post(create_url, {"file": self.upload("test-data/imports/simple.xlsx")})
         self.assertEqual(302, response.status_code)
 
         imp = ContactImport.objects.get()
@@ -58,7 +58,7 @@ class ContactImportCRUDLTest(TembaTest, CRUDLTestMixin):
 
     def test_creating_new_group(self):
         self.login(self.admin)
-        imp = self.create_contact_import("media/test_imports/simple.xlsx")
+        imp = self.create_contact_import("test-data/imports/simple.xlsx")
         preview_url = reverse("contacts.contactimport_preview", args=[imp.id])
         read_url = reverse("contacts.contactimport_read", args=[imp.uuid])
 
@@ -98,7 +98,7 @@ class ContactImportCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual(new_group, imp.group)
 
         # existing group should not check for workspace limit
-        imp = self.create_contact_import("media/test_imports/simple.xlsx")
+        imp = self.create_contact_import("test-data/imports/simple.xlsx")
         preview_url = reverse("contacts.contactimport_preview", args=[imp.id])
         read_url = reverse("contacts.contactimport_read", args=[imp.uuid])
         with override_settings(ORG_LIMIT_DEFAULTS={"groups": 2, "fields": 1}):
@@ -111,7 +111,7 @@ class ContactImportCRUDLTest(TembaTest, CRUDLTestMixin):
 
     def test_using_existing_group(self):
         self.login(self.admin)
-        imp = self.create_contact_import("media/test_imports/simple.xlsx")
+        imp = self.create_contact_import("test-data/imports/simple.xlsx")
         preview_url = reverse("contacts.contactimport_preview", args=[imp.id])
         read_url = reverse("contacts.contactimport_read", args=[imp.uuid])
 
@@ -141,7 +141,7 @@ class ContactImportCRUDLTest(TembaTest, CRUDLTestMixin):
     def test_preview_with_mappings(self):
         self.create_field("age", "Age", ContactField.TYPE_NUMBER)
 
-        imp = self.create_contact_import("media/test_imports/extra_fields_and_group.xlsx")
+        imp = self.create_contact_import("test-data/imports/extra_fields_and_group.xlsx")
         preview_url = reverse("contacts.contactimport_preview", args=[imp.id])
 
         self.assertRequestDisallowed(preview_url, [None, self.agent, self.admin2])
@@ -266,7 +266,7 @@ class ContactImportCRUDLTest(TembaTest, CRUDLTestMixin):
 
     @patch("temba.contacts.models.ContactImport.BATCH_SIZE", 2)
     def test_read(self):
-        imp = self.create_contact_import("media/test_imports/simple.xlsx")
+        imp = self.create_contact_import("test-data/imports/simple.xlsx")
         imp.start()
 
         read_url = reverse("contacts.contactimport_read", args=[imp.uuid])
@@ -277,7 +277,7 @@ class ContactImportCRUDLTest(TembaTest, CRUDLTestMixin):
     def test_preview_with_field_limit_reached(self):
         """Test that new fields are automatically ignored when field limit is reached"""
         # Create import with a file that has new fields
-        imp = self.create_contact_import("media/test_imports/extra_fields_and_group.xlsx")
+        imp = self.create_contact_import("test-data/imports/extra_fields_and_group.xlsx")
 
         preview_url = reverse("contacts.contactimport_preview", args=[imp.id])
 
@@ -297,7 +297,7 @@ class ContactImportCRUDLTest(TembaTest, CRUDLTestMixin):
     def test_preview_with_field_limit_not_reached(self):
         """Test that new fields are normally available when field limit is not reached"""
         # Create import with a file that has new fields
-        imp = self.create_contact_import("media/test_imports/extra_fields_and_group.xlsx")
+        imp = self.create_contact_import("test-data/imports/extra_fields_and_group.xlsx")
 
         preview_url = reverse("contacts.contactimport_preview", args=[imp.id])
 
@@ -317,7 +317,7 @@ class ContactImportCRUDLTest(TembaTest, CRUDLTestMixin):
     def test_preview_with_group_limit_reached(self):
         """Test that new group option is hidden when group limit is reached"""
 
-        imp = self.create_contact_import("media/test_imports/simple.xlsx")
+        imp = self.create_contact_import("test-data/imports/simple.xlsx")
 
         preview_url = reverse("contacts.contactimport_preview", args=[imp.id])
 
@@ -336,7 +336,7 @@ class ContactImportCRUDLTest(TembaTest, CRUDLTestMixin):
 
     def test_field_limit_validation_prevents_circumvention(self):
         """Test that backend validation prevents field limit circumvention"""
-        imp = self.create_contact_import("media/test_imports/extra_fields_and_group.xlsx")
+        imp = self.create_contact_import("test-data/imports/extra_fields_and_group.xlsx")
 
         preview_url = reverse("contacts.contactimport_preview", args=[imp.id])
 

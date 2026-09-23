@@ -6,7 +6,7 @@
       "id": "tasks",
       "name": "Tasks",
       "icon": "icon.tickets_mine",
-      "endpoint": "/test-assets/menu/menu-tasks.json"
+      "endpoint": "/test/assets/menu/menu-tasks.json"
     },
     {
       "id": "support",

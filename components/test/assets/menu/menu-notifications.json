@@ -6,7 +6,7 @@
       "id": "tasks",
       "name": "Tasks",
       "icon": "icon.tickets_mine",
-      "endpoint": "/test-assets/menu/menu-tasks.json"
+      "endpoint": "/test/assets/menu/menu-tasks.json"
     },
     {
       "id": "notifications",
@@ -19,7 +19,7 @@
         {
           "id": "notifications-list",
           "type": "temba-notification-list",
-          "href": "/test-assets/list/notifications.json"
+          "href": "/test/assets/list/notifications.json"
         }
       ]
     }

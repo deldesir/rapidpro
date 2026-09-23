@@ -30,7 +30,7 @@ SPECS_FILE = "temba/utils/management/commands/data/mailroom_db.json"
 USER_PASSWORD = "Qwerty123"
 
 # database dump containing admin boundary records
-LOCATIONS_FILE = "test-data/nigeria.bin"
+LOCATIONS_FILE = "test-data/locations/nigeria.bin"
 
 MAILROOM_PORT = 8092
 MAILROOM_DB_NAME = "mailroom_test"
@@ -337,7 +337,7 @@ class Command(BaseCommand):
         self._log(f"Creating {len(spec['flows'])} flows... ")
 
         for f in spec["flows"]:
-            with open("media/test_flows/mailroom/" + f["file"], "r") as flow_file:
+            with open("test-data/flows/mailroom/" + f["file"], "r") as flow_file:
                 org.import_app(json.load(flow_file), user)
 
                 # set the uuid on this flow

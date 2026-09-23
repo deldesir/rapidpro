@@ -268,8 +268,8 @@ class FieldsTest(APITest):
         self.assertRaises(serializers.ValidationError, field.run_validation, "HelloHello1")  # translation too long
         self.assertRaises(serializers.ValidationError, field.run_validation, {"eng": "HelloHello1"})
 
-        media1 = self.upload_media(self.admin, f"{settings.MEDIA_ROOT}/test_media/steve marten.jpg")
-        media2 = self.upload_media(self.admin, f"{settings.MEDIA_ROOT}/test_media/snow.mp4")
+        media1 = self.upload_media(self.admin, f"{settings.TESTDATA_DIR}/media/steve marten.jpg")
+        media2 = self.upload_media(self.admin, f"{settings.TESTDATA_DIR}/media/snow.mp4")
 
         field = fields.TranslatedAttachmentsField(source="test")
         field._context = {"org": self.org}
@@ -308,7 +308,7 @@ class FieldsTest(APITest):
         event = CampaignEvent.create_flow_event(
             self.org, self.admin, campaign, field_obj, 6, CampaignEvent.UNIT_HOURS, flow, delivery_hour=12
         )
-        media = self.upload_media(self.admin, f"{settings.MEDIA_ROOT}/test_media/steve marten.jpg")
+        media = self.upload_media(self.admin, f"{settings.TESTDATA_DIR}/media/steve marten.jpg")
 
         field = fields.CampaignField(source="test")
         field._context = {"org": self.org}

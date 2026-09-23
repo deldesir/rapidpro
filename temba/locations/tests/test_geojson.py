@@ -392,7 +392,7 @@ class ImportGeoJSONtest(TembaTest):
 
     def test_import_geojson(self):
         self.assertEqual(0, AdminBoundary.objects.all().count())
-        call_command("import_geojson", "test-data/rwanda.zip")
+        call_command("import_geojson", "test-data/locations/rwanda.zip")
         self.assertEqual(9, AdminBoundary.objects.all().count())
         self.assertEqual(1, AdminBoundary.objects.filter(level=0).count())
         self.assertEqual(5, AdminBoundary.objects.filter(level=1).count())
