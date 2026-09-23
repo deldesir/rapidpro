@@ -53,7 +53,7 @@ const closedTicket = (uuid: string, lastActivity: string) => {
   };
 };
 
-// uuids of the tickets in test-assets/list/tickets-merged.json, in the order
+// uuids of the tickets in test/assets/list/tickets-merged.json, in the order
 // the fixture serves them (three open, then three closed)
 const MERGED = [
   'a1000000-0000-0000-0000-000000000001',
@@ -109,7 +109,7 @@ describe('temba-ticket-list', () => {
     mockAgents();
 
     await loadStore();
-    const list = await getList('/test-assets/list/tickets-merged.json');
+    const list = await getList('/test/assets/list/tickets-merged.json');
     assert.equal(list.items.length, 6);
 
     await assertScreenshot('list/tickets-merged', getClip(list));
@@ -126,7 +126,7 @@ describe('temba-ticket-list', () => {
     mockAgents();
 
     await loadStore();
-    const list = await getList('/test-assets/list/tickets-merged.json');
+    const list = await getList('/test/assets/list/tickets-merged.json');
     assert.deepEqual(ticketUuids(list), MERGED);
 
     // the poll returns the second (open) ticket, now closed
@@ -179,7 +179,7 @@ describe('temba-ticket-list', () => {
     mockAgents();
 
     await loadStore();
-    const list = await getList('/test-assets/list/tickets-merged.json');
+    const list = await getList('/test/assets/list/tickets-merged.json');
 
     // the next page has an older open ticket, which belongs above the closed
     // ones we already have loaded
@@ -211,7 +211,7 @@ describe('temba-ticket-list', () => {
       });
     });
 
-    list.nextPage = '/test-assets/list/tickets-merged-page2.json';
+    list.nextPage = '/test/assets/list/tickets-merged-page2.json';
     const options = list.shadowRoot.querySelector('temba-options') as any;
     options.fireCustomEvent(CustomEventType.ScrollThreshold);
 
@@ -235,7 +235,7 @@ describe('temba-ticket-list', () => {
     mockAgents();
 
     await loadStore();
-    const list = await getList('/test-assets/list/tickets-merged.json');
+    const list = await getList('/test/assets/list/tickets-merged.json');
 
     // select a closed ticket, the second one in the closed block
     list.setSelection(MERGED[4]);
@@ -290,7 +290,7 @@ describe('temba-ticket-list', () => {
       });
     });
 
-    list.nextPage = '/test-assets/list/tickets-merged-page3.json';
+    list.nextPage = '/test/assets/list/tickets-merged-page3.json';
     const options = list.shadowRoot.querySelector('temba-options') as any;
     options.fireCustomEvent(CustomEventType.ScrollThreshold);
 
@@ -322,7 +322,7 @@ describe('temba-ticket-list', () => {
     mockAgents();
 
     await loadStore();
-    const list = await getList('/test-assets/list/tickets-merged.json');
+    const list = await getList('/test/assets/list/tickets-merged.json');
 
     mockGET(/tickets-merged-page4\.json/, {}, {}, '500');
 
@@ -332,7 +332,7 @@ describe('temba-ticket-list', () => {
       });
     });
 
-    list.nextPage = '/test-assets/list/tickets-merged-page4.json';
+    list.nextPage = '/test/assets/list/tickets-merged-page4.json';
     const options = list.shadowRoot.querySelector('temba-options') as any;
     options.fireCustomEvent(CustomEventType.ScrollThreshold);
 

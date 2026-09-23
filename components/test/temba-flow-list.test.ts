@@ -54,7 +54,7 @@ describe('temba-flow-list', () => {
           <temba-store
             org="org-uuid"
             user="user-uuid"
-            assets="/test-assets/store/assets.json"
+            assets="/test/assets/store/assets.json"
           ></temba-store>
           <temba-flow-list></temba-flow-list>
         </div>`
@@ -67,7 +67,7 @@ describe('temba-flow-list', () => {
         'Canonical Welcome Campaign'
       );
       const fetched = oneEvent(list, CustomEventType.FetchComplete, false);
-      list.endpoint = '/test-assets/content-list/flows.json';
+      list.endpoint = '/test/assets/content-list/flows.json';
       await fetched;
 
       // the fetched page is newer than anything cached, so it wins and

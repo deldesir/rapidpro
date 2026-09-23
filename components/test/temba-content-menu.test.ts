@@ -40,7 +40,7 @@ describe('temba-content-menu', () => {
 
   it('with 1+ items and 1+ buttons', async () => {
     const contentMenu: ContentMenu = await getContentMenu({
-      endpoint: '/test-assets/list/content-menu-contact-read.json'
+      endpoint: '/test/assets/list/content-menu-contact-read.json'
     });
 
     expect(contentMenu.items.length).equals(5);
@@ -53,7 +53,7 @@ describe('temba-content-menu', () => {
 
   it('with 1+ items and 0 buttons', async () => {
     const contentMenu: ContentMenu = await getContentMenu({
-      endpoint: '/test-assets/list/content-menu-archived-contacts.json'
+      endpoint: '/test/assets/list/content-menu-archived-contacts.json'
     });
 
     expect(contentMenu.items.length).equals(1);
@@ -66,7 +66,7 @@ describe('temba-content-menu', () => {
 
   it('with 0 items and 1+ buttons', async () => {
     const contentMenu: ContentMenu = await getContentMenu({
-      endpoint: '/test-assets/list/content-menu-new-campaign.json'
+      endpoint: '/test/assets/list/content-menu-new-campaign.json'
     });
 
     expect(contentMenu.items.length).equals(0);
@@ -79,7 +79,7 @@ describe('temba-content-menu', () => {
 
   it('bad endpoint', async () => {
     const contentMenu: ContentMenu = await getContentMenu({
-      endpoint: '/test-assets/list/content-menu-bad-endpoint.json'
+      endpoint: '/test/assets/list/content-menu-bad-endpoint.json'
     });
 
     expect(contentMenu.items.length).equals(0);
@@ -88,7 +88,7 @@ describe('temba-content-menu', () => {
 
   it('is spa page', async () => {
     const contentMenu: ContentMenu = await getContentMenu({
-      endpoint: '/test-assets/list/content-menu-contact-read.json',
+      endpoint: '/test/assets/list/content-menu-contact-read.json',
       legacy: 0
     });
     expect(contentMenu.legacy).equals(0);
@@ -96,7 +96,7 @@ describe('temba-content-menu', () => {
 
   it('is legacy page', async () => {
     const contentMenu: ContentMenu = await getContentMenu({
-      endpoint: '/test-assets/list/content-menu-contact-read.json',
+      endpoint: '/test/assets/list/content-menu-contact-read.json',
       legacy: 1
     });
     expect(contentMenu.legacy).equals(1);
@@ -104,7 +104,7 @@ describe('temba-content-menu', () => {
 
   it('fires selection when an open menu item is clicked', async () => {
     const contentMenu: ContentMenu = await getContentMenu({
-      endpoint: '/test-assets/list/content-menu-contact-read.json'
+      endpoint: '/test/assets/list/content-menu-contact-read.json'
     });
 
     const toggle = contentMenu.shadowRoot.querySelector(

@@ -21,7 +21,7 @@ const getMenu = async (attrs: any = {}, width = 0) => {
 describe('temba-menu support item', () => {
   it('fires button clicked for link items in popups', async () => {
     const menu: TembaMenu = await getMenu({
-      endpoint: '/test-assets/menu/menu-support.json'
+      endpoint: '/test/assets/menu/menu-support.json'
     });
 
     let clickedItem: any = null;
@@ -55,7 +55,7 @@ describe('temba-menu support item', () => {
 
   it('delegates href link navigation to the host', async () => {
     const menu: TembaMenu = await getMenu({
-      endpoint: '/test-assets/menu/menu-support.json'
+      endpoint: '/test/assets/menu/menu-support.json'
     });
 
     let clickedItem: any = null;
@@ -91,7 +91,7 @@ describe('temba-menu support item', () => {
     };
 
     const menu: TembaMenu = await getMenu({
-      endpoint: '/test-assets/menu/menu-support.json',
+      endpoint: '/test/assets/menu/menu-support.json',
       '-temba-button-clicked': 'handleMenuClicked(event)'
     });
 
@@ -108,7 +108,7 @@ describe('temba-menu support item', () => {
     (window as any).isMobile = () => true;
     try {
       const menu: TembaMenu = await getMenu({
-        endpoint: '/test-assets/menu/menu-support.json',
+        endpoint: '/test/assets/menu/menu-support.json',
         collapsed: 'collapsed'
       });
       await menu.updateComplete;

@@ -1,0 +1,51 @@
+{
+  "version": "13",
+  "flows": [
+    {
+      "_ui": {
+        "nodes": {
+          "9855bdb6-7cd1-4d48-813f-516b651fee28": {
+            "position": {
+              "left": 100,
+              "top": 0
+            },
+            "type": "execute_actions"
+          }
+        },
+        "stickies": {}
+      },
+      "expire_after_minutes": 10080,
+      "language": "eng",
+      "localization": {},
+      "name": "Group Send Flow",
+      "nodes": [
+        {
+          "actions": [
+            {
+              "groups": [
+                {
+                  "name": "Survey Audience",
+                  "uuid": "e17c6643-610a-4ffc-80d1-2ed583788d9d"
+                }
+              ],
+              "text": "It is time for a new survey.",
+              "type": "send_broadcast",
+              "uuid": "dc21cfe1-6c0f-4bb2-9918-6dc00e8d530f"
+            }
+          ],
+          "exits": [
+            {
+              "uuid": "82cfbbbe-867b-445b-926b-6a717199bc91"
+            }
+          ],
+          "uuid": "9855bdb6-7cd1-4d48-813f-516b651fee28"
+        }
+      ],
+      "revision": 1,
+      "spec_version": "14.4.1",
+      "type": "messaging",
+      "uuid": "92474cb5-7d9c-42a1-8953-5f81824a660d"
+    }
+  ],
+  "triggers": []
+}

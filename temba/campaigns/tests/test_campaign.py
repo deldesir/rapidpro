@@ -175,7 +175,7 @@ class CampaignTest(TembaTest):
         self.assertEqual("eng", event.base_language)
 
     def test_import(self):
-        self.import_file("test_flows/the_clinic.json")
+        self.import_file("flows/the_clinic.json")
         self.assertEqual(1, Campaign.objects.count())
 
         campaign = Campaign.objects.get()

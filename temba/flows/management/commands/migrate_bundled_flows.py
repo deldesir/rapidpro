@@ -2,16 +2,16 @@
 Re-migrates bundled flow exports to the current spec version.
 
 Covers:
-  - flow test fixtures in media/test_flows/
+  - flow test fixtures in test-data/flows/
   - the shipped sample flows in static/examples/sample_flows.json
 
 Used when bumping Flow.CURRENT_SPEC_VERSION so that imports of these exports don't need to call
 mailroom's flow/migrate endpoint just to bring the definitions up to the current spec.
 
 Skips fixtures used to test legacy migration behavior:
-  - media/test_flows/legacy/migrations/*  (inputs to FlowMigrationTest)
-  - media/test_flows/legacy/invalid/*     (intentionally invalid)
-  - media/test_flows/legacy/color_v11.json (tests legacy revision migration UI)
+  - test-data/flows/legacy/migrations/*  (inputs to FlowMigrationTest)
+  - test-data/flows/legacy/invalid/*     (intentionally invalid)
+  - test-data/flows/legacy/color_v11.json (tests legacy revision migration UI)
 """
 
 import json
@@ -32,11 +32,11 @@ EXTRA_FILES = {
 }
 
 SKIP = {
-    "media/test_flows/legacy/color_v11.json",
+    "test-data/flows/legacy/color_v11.json",
 }
 SKIP_DIRS = {
-    "media/test_flows/legacy/migrations",
-    "media/test_flows/legacy/invalid",
+    "test-data/flows/legacy/migrations",
+    "test-data/flows/legacy/invalid",
 }
 
 
@@ -59,7 +59,7 @@ class Command(BaseCommand):
         # anchor to the repo root (parent of the temba package) so the command works from any CWD
         root = pathlib.Path(settings.PROJECT_DIR).parent
 
-        paths = list((root / "media/test_flows").rglob("*.json"))
+        paths = list((root / "test-data/flows").rglob("*.json"))
         paths += [root / p for p in EXTRA_FILES]
 
         for path in sorted(set(paths)):

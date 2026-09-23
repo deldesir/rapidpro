@@ -25,7 +25,7 @@ class MediaCRUDLTest(CRUDLTestMixin, TembaTest):
 
         assert_upload(
             self.admin,
-            f"{settings.MEDIA_ROOT}/test_media/steve marten.jpg",
+            f"{settings.TESTDATA_DIR}/media/steve marten.jpg",
             {
                 "uuid": "b97f69f7-5edf-45c7-9fda-d37066eae91d",
                 "content_type": "image/jpeg",
@@ -37,7 +37,7 @@ class MediaCRUDLTest(CRUDLTestMixin, TembaTest):
         )
         assert_upload(
             self.editor,
-            f"{settings.MEDIA_ROOT}/test_media/snow.mp4",
+            f"{settings.TESTDATA_DIR}/media/snow.mp4",
             {
                 "uuid": "14f6ea01-456b-4417-b0b8-35e942f549f1",
                 "content_type": "video/mp4",
@@ -49,7 +49,7 @@ class MediaCRUDLTest(CRUDLTestMixin, TembaTest):
         )
         assert_upload(
             self.editor,
-            f"{settings.MEDIA_ROOT}/test_media/bubbles.m4a",
+            f"{settings.TESTDATA_DIR}/media/bubbles.m4a",
             {
                 "uuid": "9295ebab-5c2d-4eb1-86f9-7c15ed2f3219",
                 "content_type": "audio/mp4",
@@ -59,22 +59,22 @@ class MediaCRUDLTest(CRUDLTestMixin, TembaTest):
                 "size": 46468,
             },
         )
-        with open(f"{settings.MEDIA_ROOT}/test_media/fake_jpg_svg_pencil.jpg", "rb") as data:
+        with open(f"{settings.TESTDATA_DIR}/media/fake_jpg_svg_pencil.jpg", "rb") as data:
             response = self.client.post(upload_url, {"file": data}, HTTP_X_FORWARDED_HTTPS="https")
             self.assertEqual({"error": "Unsupported file type"}, response.json())
 
         # error message if you upload something unsupported
-        with open(f"{settings.MEDIA_ROOT}/test_imports/simple.xlsx", "rb") as data:
+        with open(f"{settings.TESTDATA_DIR}/imports/simple.xlsx", "rb") as data:
             response = self.client.post(upload_url, {"file": data}, HTTP_X_FORWARDED_HTTPS="https")
             self.assertEqual({"error": "Unsupported file type"}, response.json())
 
-        with open(f"{settings.MEDIA_ROOT}/test_media/pencil.svg", "rb") as data:
+        with open(f"{settings.TESTDATA_DIR}/media/pencil.svg", "rb") as data:
             response = self.client.post(upload_url, {"file": data}, HTTP_X_FORWARDED_HTTPS="https")
             self.assertEqual({"error": "Unsupported file type"}, response.json())
 
         # error message if upload is too big
         with patch("temba.msgs.models.Media.MAX_UPLOAD_SIZE", 1024):
-            with open(f"{settings.MEDIA_ROOT}/test_media/snow.mp4", "rb") as data:
+            with open(f"{settings.TESTDATA_DIR}/media/snow.mp4", "rb") as data:
                 response = self.client.post(upload_url, {"file": data}, HTTP_X_FORWARDED_HTTPS="https")
                 self.assertEqual({"error": "Limit for file uploads is 0.0009765625 MB"}, response.json())
 
@@ -89,9 +89,9 @@ class MediaCRUDLTest(CRUDLTestMixin, TembaTest):
                 self.client.post(upload_url, {"file": data}, HTTP_X_FORWARDED_HTTPS="https")
                 return self.org.media.filter(original=None).order_by("id").last()
 
-        media1 = upload(self.admin, f"{settings.MEDIA_ROOT}/test_media/steve marten.jpg")
-        media2 = upload(self.admin, f"{settings.MEDIA_ROOT}/test_media/bubbles.m4a")
-        upload(self.admin2, f"{settings.MEDIA_ROOT}/test_media/bubbles.m4a")  # other org
+        media1 = upload(self.admin, f"{settings.TESTDATA_DIR}/media/steve marten.jpg")
+        media2 = upload(self.admin, f"{settings.TESTDATA_DIR}/media/bubbles.m4a")
+        upload(self.admin2, f"{settings.TESTDATA_DIR}/media/bubbles.m4a")  # other org
 
         self.login(self.customer_support, choose_org=self.org)
         response = self.client.get(list_url)

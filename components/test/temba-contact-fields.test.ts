@@ -15,8 +15,8 @@ import {
 
 const TAG = 'temba-contact-fields';
 const getFields = async (attrs: any = {}) => {
-  attrs['endpoint'] = '/test-assets/contacts/';
-  attrs['writeEndpoint'] = '/test-assets/contacts/';
+  attrs['endpoint'] = '/test/assets/contacts/';
+  attrs['writeEndpoint'] = '/test/assets/contacts/';
   const fields = (await getComponent(TAG, attrs, '', 600)) as ContactFields;
 
   // wait for our contact data to load
@@ -45,7 +45,7 @@ describe(TAG, () => {
     // the central watcher fetches its contact from the api
     mockGET(
       /\/api\/v2\/contacts\.json\?expand_urns=true&urn_order=priority&uuid=contact-dave-active/,
-      '/test-assets/contacts/contact-dave-active'
+      '/test/assets/contacts/contact-dave-active'
     );
 
     const fields: ContactFields = await getFields({
@@ -87,7 +87,7 @@ describe(TAG, () => {
       delete group['is_dynamic'];
     });
     // field updates post to the write endpoint
-    mockPOST(/\/test-assets\/contacts\/contact-dave-active/, data);
+    mockPOST(/\/test\/assets\/contacts\/contact-dave-active/, data);
 
     // update our fields
     await typeInto(

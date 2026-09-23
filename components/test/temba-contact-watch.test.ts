@@ -37,7 +37,7 @@ describe('ContactWatch', () => {
     clearMockGets();
     mockGET(
       /\/api\/v2\/contacts\.json\?expand_urns=true&urn_order=priority&uuid=contact-dave-active/,
-      '/test-assets/contacts/contact-dave-active'
+      '/test/assets/contacts/contact-dave-active'
     );
     await loadStore();
     getUrl = spy(getStore(), 'getUrl');

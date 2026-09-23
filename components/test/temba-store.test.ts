@@ -38,7 +38,7 @@ describe('temba-store', () => {
 
   it('completion schema', async () => {
     const store: Store = await createStore(
-      "<temba-store completion='/test-assets/store/editor.json'></temba-store>"
+      "<temba-store completion='/test/assets/store/editor.json'></temba-store>"
     );
     assert.equal(store.getCompletionSchema().types.length, 16);
     assert.equal(store.getFunctions().length, 80);
@@ -46,14 +46,14 @@ describe('temba-store', () => {
 
   it('globals', async () => {
     const store: Store = await createStore(
-      "<temba-store globals='/test-assets/store/globals.json'></temba-store>"
+      "<temba-store globals='/test/assets/store/globals.json'></temba-store>"
     );
     assert.equal(store.getKeyedAssets().globals.length, 2);
   });
 
   it('fields', async () => {
     const store: Store = await createStore(
-      "<temba-store fields='/test-assets/store/fields.json'></temba-store>"
+      "<temba-store fields='/test/assets/store/fields.json'></temba-store>"
     );
 
     assert.equal(store.getKeyedAssets().fields.length, 8);
@@ -123,7 +123,7 @@ describe('temba-store', () => {
         <temba-store
           org="org-uuid"
           user="user-uuid"
-          assets="/test-assets/store/assets.json"
+          assets="/test/assets/store/assets.json"
         ></temba-store>
       `);
       const events = [];
@@ -213,7 +213,7 @@ describe('temba-store', () => {
   });
 
   it('splits a large request into batches the endpoint accepts', async () => {
-    const endpoint = '/test-assets/store/assets-batch.json';
+    const endpoint = '/test/assets/store/assets-batch.json';
     mockPOST(/assets-batch\.json/, { results: [] });
     const store = await createStore(
       `<temba-store assets="${endpoint}"></temba-store>`
@@ -233,7 +233,7 @@ describe('temba-store', () => {
   });
 
   it('remembers identities the endpoint had no asset for', async () => {
-    const endpoint = '/test-assets/store/assets-missing.json';
+    const endpoint = '/test/assets/store/assets-missing.json';
     mockPOST(/assets-missing\.json/, { results: [] });
     const store = await createStore(
       `<temba-store assets="${endpoint}"></temba-store>`
@@ -248,7 +248,7 @@ describe('temba-store', () => {
   });
 
   it('does not negatively cache identities a rejected request covered', async () => {
-    const endpoint = '/test-assets/store/assets-error.json';
+    const endpoint = '/test/assets/store/assets-error.json';
     // a 4xx resolves with an empty body rather than raising
     mockPOST(/assets-error\.json/, { error: 'nope' }, {}, '400');
     const store = await createStore(
@@ -271,7 +271,7 @@ describe('temba-store', () => {
   });
 
   it('shares a single request between concurrent callers', async () => {
-    const endpoint = '/test-assets/store/assets-concurrent.json';
+    const endpoint = '/test/assets/store/assets-concurrent.json';
     mockPOST(/assets-concurrent\.json/, {
       results: [{ type: 'group', uuid: 'group-1', name: 'Farmers' }]
     });
@@ -291,7 +291,7 @@ describe('temba-store', () => {
   });
 
   it('keeps a rename that arrives while a request is in flight', async () => {
-    const endpoint = '/test-assets/store/assets-race.json';
+    const endpoint = '/test/assets/store/assets-race.json';
     const groupUuid = 'group-1';
     const mockSocket = new MockSocketProvider();
     const previousProvider = setSocketProvider(mockSocket);
@@ -324,7 +324,7 @@ describe('temba-store', () => {
   });
 
   it('matches a normalized uuid back to the reference that asked for it', async () => {
-    const endpoint = '/test-assets/store/assets-uuid.json';
+    const endpoint = '/test/assets/store/assets-uuid.json';
     const canonical = '11111111-1111-4111-8111-111111111111';
     // the endpoint normalizes uuids and echoes the normalized form
     mockPOST(/assets-uuid\.json/, {
@@ -352,7 +352,7 @@ describe('temba-store', () => {
   });
 
   it('returns the names it has when a batch fails', async () => {
-    const endpoint = '/test-assets/store/assets-partial.json';
+    const endpoint = '/test/assets/store/assets-partial.json';
     mockPOST(/assets-partial\.json/, {
       results: [{ type: 'flow', uuid: 'flow-1', name: 'Registration' }]
     });
@@ -402,7 +402,7 @@ describe('temba-store', () => {
   });
 
   it('keeps a page-authoritative name written while a request is in flight', async () => {
-    const endpoint = '/test-assets/store/assets-cached.json';
+    const endpoint = '/test/assets/store/assets-cached.json';
     mockPOST(/assets-cached\.json/, {
       results: [{ type: 'flow', uuid: 'flow-1', name: 'Stale name' }]
     });
@@ -420,7 +420,7 @@ describe('temba-store', () => {
   });
 
   it('refreshes watched assets when the socket resubscribes', async () => {
-    const endpoint = '/test-assets/store/assets-reconnect.json';
+    const endpoint = '/test/assets/store/assets-reconnect.json';
     const groupUuid = 'group-1';
     const mockSocket = new MockSocketProvider();
     const previousProvider = setSocketProvider(mockSocket);

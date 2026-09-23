@@ -1,0 +1,52 @@
+{
+  "version": "13",
+  "site": "https://textit.in",
+  "flows": [
+    {
+      "_ui": {
+        "nodes": {
+          "849133b9-732e-4e62-9da3-48132960d38c": {
+            "position": {
+              "left": 100,
+              "top": 0
+            },
+            "type": "execute_actions"
+          }
+        },
+        "stickies": {}
+      },
+      "expire_after_minutes": 10080,
+      "language": "eng",
+      "localization": {},
+      "name": "Extra Flow",
+      "nodes": [
+        {
+          "actions": [
+            {
+              "name": "@legacy_extra.name",
+              "type": "set_contact_name",
+              "uuid": "4c7439f0-38a5-44c5-a35f-e9a72c459445"
+            },
+            {
+              "text": "Great to meet you @contact.name. Your age is @legacy_extra.age.",
+              "type": "send_msg",
+              "uuid": "c58fed5a-81b8-487e-a360-320b3a3ab4e3"
+            }
+          ],
+          "exits": [
+            {
+              "uuid": "f0129714-a2b1-413c-9d8f-38673e0173ac"
+            }
+          ],
+          "uuid": "849133b9-732e-4e62-9da3-48132960d38c"
+        }
+      ],
+      "revision": 4,
+      "spec_version": "14.4.1",
+      "type": "messaging",
+      "uuid": "dc9a2be2-7706-4539-b9ef-4cbb42bce34e"
+    }
+  ],
+  "campaigns": [],
+  "triggers": []
+}

@@ -16,7 +16,7 @@ run.sh
 
 ## testing
 /coverage/
-/screenshots/test
+/test/screenshots/test
 
 ## temp folders
 /.tmp/
@@ -32,7 +32,7 @@ run.sh
 /static/svg/work/
 
 # dont check in diffs
-/screenshots/diff/
+/test/screenshots/diff/
 
 # codex local artifacts
 CODEX.md

@@ -147,8 +147,8 @@ class BroadcastsEndpointTest(APITest):
             errors={"non_field_errors": "No text translation provided in base language."},
         )
 
-        media1 = self.upload_media(self.admin, f"{settings.MEDIA_ROOT}/test_media/steve marten.jpg")
-        media2 = self.upload_media(self.admin, f"{settings.MEDIA_ROOT}/test_media/snow.mp4")
+        media1 = self.upload_media(self.admin, f"{settings.TESTDATA_DIR}/media/steve marten.jpg")
+        media2 = self.upload_media(self.admin, f"{settings.TESTDATA_DIR}/media/snow.mp4")
 
         # try to create new broadcast with attachment translations that don't include base language
         self.assertPost(

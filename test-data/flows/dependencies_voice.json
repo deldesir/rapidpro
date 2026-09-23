@@ -1,0 +1,124 @@
+{
+  "campaigns": [],
+  "version": "13",
+  "site": "https://textit.in",
+  "flows": [
+    {
+      "_ui": {
+        "nodes": {
+          "72344181-7921-4974-8976-fb63bfb61dd1": {
+            "position": {
+              "left": 37,
+              "top": 229
+            },
+            "type": "execute_actions"
+          },
+          "86f2ce52-cfdd-425a-a1ec-1a9105349047": {
+            "position": {
+              "left": 36,
+              "top": 121
+            },
+            "type": "wait_for_response"
+          },
+          "cc1873f9-767c-4f21-a606-06c2a343bc57": {
+            "position": {
+              "left": 34,
+              "top": 0
+            },
+            "type": "execute_actions"
+          }
+        },
+        "stickies": {}
+      },
+      "expire_after_minutes": 1,
+      "language": "eng",
+      "localization": {},
+      "name": "Voice Dependencies",
+      "nodes": [
+        {
+          "actions": [
+            {
+              "text": "This is how you @fields.play_message!",
+              "type": "say_msg",
+              "uuid": "673a18ac-b952-4b8f-a6af-7b3760af5cb6"
+            }
+          ],
+          "exits": [
+            {
+              "destination_uuid": "86f2ce52-cfdd-425a-a1ec-1a9105349047",
+              "uuid": "02a4ef4e-d23f-4115-90d5-34c621f130e7"
+            }
+          ],
+          "uuid": "cc1873f9-767c-4f21-a606-06c2a343bc57"
+        },
+        {
+          "exits": [
+            {
+              "destination_uuid": "72344181-7921-4974-8976-fb63bfb61dd1",
+              "uuid": "5289d5df-ee7a-4f41-98b1-3663b1d77ddc"
+            },
+            {
+              "uuid": "9ba2d7bc-b8e7-4c7e-a997-a9da49c72efe"
+            }
+          ],
+          "router": {
+            "cases": [
+              {
+                "arguments": [
+                  "@fields.voice_rule"
+                ],
+                "category_uuid": "69f9586a-db78-4394-8eed-1707091390ab",
+                "type": "has_number_eq",
+                "uuid": "0f2edaf6-df6d-4f35-8ee5-f642823adcd5"
+              }
+            ],
+            "categories": [
+              {
+                "exit_uuid": "5289d5df-ee7a-4f41-98b1-3663b1d77ddc",
+                "name": "1",
+                "uuid": "69f9586a-db78-4394-8eed-1707091390ab"
+              },
+              {
+                "exit_uuid": "9ba2d7bc-b8e7-4c7e-a997-a9da49c72efe",
+                "name": "Other",
+                "uuid": "009527d0-26f1-443d-a369-35311ade8642"
+              }
+            ],
+            "default_category_uuid": "009527d0-26f1-443d-a369-35311ade8642",
+            "operand": "@input.text",
+            "result_name": "Button",
+            "type": "switch",
+            "wait": {
+              "hint": {
+                "terminated_by": "",
+                "type": "digits"
+              },
+              "type": "msg"
+            }
+          },
+          "uuid": "86f2ce52-cfdd-425a-a1ec-1a9105349047"
+        },
+        {
+          "actions": [
+            {
+              "audio_url": "@fields.voice_recording",
+              "type": "play_audio",
+              "uuid": "512eb20d-56d2-4f3c-b04d-917a3bea3088"
+            }
+          ],
+          "exits": [
+            {
+              "uuid": "60361615-124e-4bd4-804b-58045c3f283f"
+            }
+          ],
+          "uuid": "72344181-7921-4974-8976-fb63bfb61dd1"
+        }
+      ],
+      "revision": 22,
+      "spec_version": "14.4.1",
+      "type": "voice",
+      "uuid": "e05a2116-20b5-4641-833d-f7184a13ddd5"
+    }
+  ],
+  "triggers": []
+}

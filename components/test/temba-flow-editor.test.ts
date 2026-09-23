@@ -668,7 +668,7 @@ describe('Editor', () => {
 
       try {
         stub(window, 'fetch').callsFake(async (input: RequestInfo) => {
-          if (`${input}`.includes('/test-assets/store/assets.json')) {
+          if (`${input}`.includes('/test/assets/store/assets.json')) {
             return new Response(
               JSON.stringify({
                 results: [
@@ -700,7 +700,7 @@ describe('Editor', () => {
             <temba-store
               org="44444444-4444-4444-8444-444444444444"
               user="55555555-5555-4555-8555-555555555555"
-              assets="/test-assets/store/assets.json"
+              assets="/test/assets/store/assets.json"
             ></temba-store>
             <temba-flow-editor .flow=${flowUuid}>
               <div id="canvas"></div>

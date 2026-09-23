@@ -19,7 +19,7 @@ let previousProvider: SocketProvider;
 
 const TAG = 'temba-notification-list';
 const CHANNEL = 'notifications:org-uuid:user-uuid';
-const ENDPOINT = '/test-assets/list/notifications.json';
+const ENDPOINT = '/test/assets/list/notifications.json';
 
 const createList = async (attrs: any = {}) => {
   return (await getComponent(TAG, attrs, '', 350)) as NotificationList;
@@ -77,7 +77,7 @@ describe('temba-notification-list', () => {
 
   it('shows an empty message when there are no notifications', async () => {
     const list = await getList({
-      endpoint: '/test-assets/list/notifications-empty.json'
+      endpoint: '/test/assets/list/notifications-empty.json'
     });
     expect(list.items.length).to.equal(0);
 
@@ -191,7 +191,7 @@ describe('temba-notification-list', () => {
   });
 
   it('marks seen without refetching, unbolding on the next call', async () => {
-    mockPOST(/test-assets\/list\/notifications\.json/, {});
+    mockPOST(/test\/assets\/list\/notifications\.json/, {});
     const list = await getList();
 
     // one unseen item from the fetch, plus one arriving over the socket
@@ -219,7 +219,7 @@ describe('temba-notification-list', () => {
   });
 
   it('keeps items bold and retries when marking seen fails', async () => {
-    mockPOST(/test-assets\/list\/notifications\.json/, {}, {}, '500');
+    mockPOST(/test\/assets\/list\/notifications\.json/, {}, {}, '500');
     const list = await getList();
 
     const fetchCount = (window.fetch as any).getCalls().length;

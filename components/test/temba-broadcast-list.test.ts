@@ -95,7 +95,7 @@ describe('temba-broadcast-list', () => {
     await setItems(list, [
       broadcast({
         attachments: [
-          { content_type: 'image/jpeg', url: '/test-assets/img/meow.jpg' }
+          { content_type: 'image/jpeg', url: '/test/assets/img/meow.jpg' }
         ],
         template: { uuid: 'tpl-1', name: 'order_update' }
       })
@@ -434,7 +434,7 @@ describe('temba-broadcast-list', () => {
       list,
       broadcast({
         attachments: [
-          { content_type: 'image/jpeg', url: '/test-assets/img/meow.jpg' }
+          { content_type: 'image/jpeg', url: '/test/assets/img/meow.jpg' }
         ],
         // server sends engine {text} objects; plain strings are legacy
         quick_replies: [{ text: 'Confirm' }, 'Change', { type: 'location' }],

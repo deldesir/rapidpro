@@ -132,14 +132,11 @@ PROJECT_DIR = os.path.join(os.path.abspath(os.path.dirname(__file__)))
 LOCALE_PATHS = (os.path.join(PROJECT_DIR, "../locale"),)
 RESOURCES_DIR = os.path.join(PROJECT_DIR, "../resources")
 FIXTURE_DIRS = (os.path.join(PROJECT_DIR, "../fixtures"),)
-TESTFILES_DIR = os.path.join(PROJECT_DIR, "../testfiles")
+TESTDATA_DIR = os.path.join(PROJECT_DIR, "../test-data")
 # the components/ project, whose build output is served by temba.utils.staticfiles.ComponentsFinder
 COMPONENTS_DIR = os.path.join(PROJECT_DIR, "../components")
 
-STATICFILES_DIRS = (
-    os.path.join(PROJECT_DIR, "../static"),
-    os.path.join(PROJECT_DIR, "../media"),
-)
+STATICFILES_DIRS = (os.path.join(PROJECT_DIR, "../static"),)
 STATIC_ROOT = os.path.join(PROJECT_DIR, "../sitestatic")
 STATIC_URL = "/sitestatic/"
 COMPRESS_ROOT = os.path.join(PROJECT_DIR, "../sitestatic")

@@ -84,14 +84,14 @@ describe('temba-modax', () => {
 
   it('can be created', async () => {
     const modax: Modax = await fixture(
-      getModaxHTML('/test-assets/modax/hello.html')
+      getModaxHTML('/test/assets/modax/hello.html')
     );
     assert.instanceOf(modax, Modax);
   });
 
   it('opens', async () => {
     const modax: Modax = await fixture(
-      getModaxHTML('/test-assets/modax/hello.html')
+      getModaxHTML('/test/assets/modax/hello.html')
     );
 
     await open(modax);
@@ -105,7 +105,7 @@ describe('temba-modax', () => {
 
   it('fetches forms', async () => {
     const modax: Modax = await fixture(
-      getModaxHTML('/test-assets/modax/form.html')
+      getModaxHTML('/test/assets/modax/form.html')
     );
     expect(modax.open).to.equal(false);
     await open(modax);
@@ -126,7 +126,7 @@ describe('temba-modax', () => {
 
   it('focuses the first field on opening', async () => {
     const modax: Modax = await fixture(
-      getModaxHTML('/test-assets/modax/form.html')
+      getModaxHTML('/test/assets/modax/form.html')
     );
     await open(modax);
     await clock.runAll();
@@ -137,7 +137,7 @@ describe('temba-modax', () => {
   it('leaves focus alone on opening when told to', async () => {
     // a dialog that's read before it's written in
     const modax: Modax = await fixture(
-      `<temba-modax header="Quiet" endpoint="/test-assets/modax/form.html" no-autofocus>
+      `<temba-modax header="Quiet" endpoint="/test/assets/modax/form.html" no-autofocus>
         <div>Open Me</div>
       </temba-modax>`
     );
@@ -150,7 +150,7 @@ describe('temba-modax', () => {
 
   it('reverts primary name on reuse', async () => {
     const modax: Modax = await fixture(
-      getModaxHTML('/test-assets/modax/hello.html')
+      getModaxHTML('/test/assets/modax/hello.html')
     );
 
     // await click('temba-modax');
@@ -166,7 +166,7 @@ describe('temba-modax', () => {
     expect(modax.open).equals(false);
 
     // now fetch form from the same modax
-    modax.endpoint = '/test-assets/modax/form.html';
+    modax.endpoint = '/test/assets/modax/form.html';
     await open(modax);
     expect(modax.open).equals(true);
 
@@ -181,7 +181,7 @@ describe('temba-modax', () => {
 
   it('closes after redirect', async () => {
     const modax: Modax = await fixture(
-      getModaxHTML('/test-assets/modax/form.html')
+      getModaxHTML('/test/assets/modax/form.html')
     );
 
     await open(modax);
@@ -189,7 +189,7 @@ describe('temba-modax', () => {
     expect(primary.name).equals('Save Everything');
 
     // click the submit button
-    mockPOST(/\/test-assets\/modax\/form\.html/, 'arst', {
+    mockPOST(/\/test\/assets\/modax\/form\.html/, 'arst', {
       'X-Temba-Success': 'hide'
     });
 
@@ -207,7 +207,7 @@ describe('temba-modax', () => {
 
   it('sizes the dialog it renders', async () => {
     const modax: Modax = await fixture(
-      getModaxHTML('/test-assets/modax/form.html')
+      getModaxHTML('/test/assets/modax/form.html')
     );
 
     const dialog = () =>
@@ -236,7 +236,7 @@ describe('temba-modax', () => {
 
   it('renders page level gutter content in the dialog footer', async () => {
     const modax: Modax = await fixture(`
-      <temba-modax header="Hello Modax" endpoint="/test-assets/modax/form.html">
+      <temba-modax header="Hello Modax" endpoint="/test/assets/modax/form.html">
         <div>Open Me</div>
         <div slot="gutter" id="extra">Extra controls</div>
       </temba-modax>
@@ -272,13 +272,13 @@ describe('temba-modax', () => {
   });
 
   it('applies header colors from response headers', async () => {
-    mockGET(/\/test-assets\/modax\/hello\.html/, '<div>Colored Header</div>', {
+    mockGET(/\/test\/assets\/modax\/hello\.html/, '<div>Colored Header</div>', {
       'X-Temba-Header-Bg': '#8e5ea7',
       'X-Temba-Header-Text': '#fff'
     });
 
     const modax: Modax = await fixture(
-      getModaxHTML('/test-assets/modax/hello.html')
+      getModaxHTML('/test/assets/modax/hello.html')
     );
 
     await open(modax);
@@ -300,7 +300,7 @@ describe('temba-modax', () => {
 
     // Close and reopen with a different endpoint (no headers)
     await clickPrimary(modax);
-    modax.endpoint = '/test-assets/modax/form.html';
+    modax.endpoint = '/test/assets/modax/form.html';
     await open(modax);
     expect(modax.style.getPropertyValue('--header-bg')).to.equal('');
     expect(modax.style.getPropertyValue('--header-text')).to.equal('');

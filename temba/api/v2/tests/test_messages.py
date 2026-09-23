@@ -286,7 +286,7 @@ class MessagesEndpointTest(APITest):
             errors={"attachments": "No such object: 67ffe746-8771-40fb-89c1-5388e7ddd439"},
         )
 
-        upload = self.upload_media(self.admin, f"{settings.MEDIA_ROOT}/test_media/steve marten.jpg")
+        upload = self.upload_media(self.admin, f"{settings.TESTDATA_DIR}/media/steve marten.jpg")
 
         # create a new message with an attachment as the media UUID...
         self.assertPost(endpoint_url, self.admin, {"contact": joe.uuid, "attachments": [str(upload.uuid)]}, status=201)

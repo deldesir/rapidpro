@@ -514,26 +514,26 @@ class ArticleCRUDLTest(TembaTest, CRUDLTestMixin):
 
         # can't upload a file type we don't support (sniffed, not the browser supplied type)
         response = self.client.post(
-            upload_url, {"file": self.upload(f"{settings.MEDIA_ROOT}/test_media/simple.pdf", "image/png")}
+            upload_url, {"file": self.upload(f"{settings.TESTDATA_DIR}/media/simple.pdf", "image/png")}
         )
         self.assertEqual({"error": "Unsupported file type"}, response.json())
 
         # can't upload a file that's too big
         with patch("temba.knowledge.models.ArticleImage.MAX_UPLOAD_SIZE", 10):
             response = self.client.post(
-                upload_url, {"file": self.upload(f"{settings.MEDIA_ROOT}/test_media/klab.png", "image/png")}
+                upload_url, {"file": self.upload(f"{settings.TESTDATA_DIR}/media/klab.png", "image/png")}
             )
             self.assertEqual({"error": "Limit for file uploads is 9.5367431640625e-06 MB"}, response.json())
 
         # can't exceed the per article limit
         with patch("temba.knowledge.models.ArticleImage.MAX_IMAGES", 0):
             response = self.client.post(
-                upload_url, {"file": self.upload(f"{settings.MEDIA_ROOT}/test_media/klab.png", "image/png")}
+                upload_url, {"file": self.upload(f"{settings.TESTDATA_DIR}/media/klab.png", "image/png")}
             )
             self.assertEqual({"error": "Limit of 0 images reached."}, response.json())
 
         response = self.client.post(
-            upload_url, {"file": self.upload(f"{settings.MEDIA_ROOT}/test_media/klab.png", "image/png")}
+            upload_url, {"file": self.upload(f"{settings.TESTDATA_DIR}/media/klab.png", "image/png")}
         )
 
         image = article.images.get()
