@@ -916,16 +916,6 @@ LLM_TYPES = {
             "claude-haiku-4-5-20251001": 64_000,
         },
     },
-    "temba.ai.types.google.type.GoogleType": {
-        "models": {
-            "gemini-3.8-flash": 65_536,
-            "gemini-3.7-flash": 65_536,
-            "gemini-3.6-flash": 65_536,
-            "gemini-3.5-flash": 65_536,
-            "gemini-3.5-flash-lite": 65_536,
-            "gemini-2.5-flash": 65_536,
-        },
-    },
     "temba.ai.types.openai.type.OpenAIType": {
         "models": {
             "gpt-6-astra": 128_000,

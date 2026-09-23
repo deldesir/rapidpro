@@ -26,9 +26,6 @@ msgstr "Vous trouverez votre clé d'API sur https://console.anthropic.com/settin
 msgid "Invalid API Key."
 msgstr "Clé d'API non valide."
 
-msgid "You can find your API key at https://aistudio.google.com/"
-msgstr "Vous trouverez votre clé d'API sur https://aistudio.google.com/"
-
 msgid "You can find your API key at https://platform.openai.com/account/api-key"
 msgstr "Vous trouverez votre clé d'API sur https://platform.openai.com/account/api-key"
 
