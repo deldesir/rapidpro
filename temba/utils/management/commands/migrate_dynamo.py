@@ -34,6 +34,14 @@ TABLES = [
         "TableClass": "STANDARD_INFREQUENT_ACCESS",
         "BillingMode": "PAY_PER_REQUEST",
     },
+    # TLS certificates for help site custom domains, used by helpsites rather than temba itself
+    {
+        "TableName": "Certs",
+        "KeySchema": [{"AttributeName": "Key", "KeyType": "HASH"}],
+        "AttributeDefinitions": [{"AttributeName": "Key", "AttributeType": "S"}],
+        "TableClass": "STANDARD",
+        "BillingMode": "PAY_PER_REQUEST",
+    },
 ]
 
 
