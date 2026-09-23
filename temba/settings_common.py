@@ -904,6 +904,10 @@ LLM_TYPES = {
     "temba.ai.types.anthropic.type.AnthropicType": {
         # model id -> max output tokens
         "models": {
+            "claude-fable-5-1": 128_000,
+            "claude-fable-5": 128_000,
+            "claude-opus-5-5": 128_000,
+            "claude-opus-5": 128_000,
             "claude-opus-4-8": 128_000,
             "claude-opus-4-7": 128_000,
             "claude-opus-4-5-20251101": 64_000,
@@ -914,6 +918,8 @@ LLM_TYPES = {
     },
     "temba.ai.types.google.type.GoogleType": {
         "models": {
+            "gemini-3.8-flash": 65_536,
+            "gemini-3.7-flash": 65_536,
             "gemini-3.6-flash": 65_536,
             "gemini-3.5-flash": 65_536,
             "gemini-3.5-flash-lite": 65_536,
@@ -922,6 +928,9 @@ LLM_TYPES = {
     },
     "temba.ai.types.openai.type.OpenAIType": {
         "models": {
+            "gpt-6-astra": 128_000,
+            "gpt-6-sol": 128_000,
+            "gpt-6-luna": 128_000,
             "gpt-5.6-sol": 128_000,
             "gpt-5.6-terra": 128_000,
             "gpt-5.6-luna": 128_000,
@@ -930,10 +939,8 @@ LLM_TYPES = {
             "gpt-5.4-mini": 128_000,
             "gpt-4.1": 32_768,
             "gpt-4.1-mini": 32_768,
-            "gpt-4.1-nano": 32_768,
             "gpt-4o": 16_384,
             "gpt-4o-mini": 16_384,
-            "gpt-3.5-turbo": 4_096,
         },
     },
 }
