@@ -1,3 +1,7 @@
+v26.3.111 (2026-09-23)
+-------------------------
+ * Move template tag tests out of templatetags packages
+
 v26.3.110 (2026-09-23)
 -------------------------
  * Show flow start progress in the flow editor, updated over the flow socket, with activity counts that roll like an odometer
