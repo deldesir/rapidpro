@@ -2,6 +2,9 @@ import { css, html, PropertyValues, TemplateResult } from 'lit';
 import { RapidElement } from '../RapidElement';
 import { property } from 'lit/decorators.js';
 
+// an estimate closer than this isn't worth showing, the percentage says more
+const MIN_ESTIMATE_MS = 5 * 60 * 1000;
+
 export class ProgressBar extends RapidElement {
   static styles = css`
     :host {
@@ -19,10 +22,17 @@ export class ProgressBar extends RapidElement {
       min-height: var(--progress-min-height, 1.5rem);
     }
 
+    /* the status message sits at the right end of the bar, over the track,
+       so the meter always fills from the left edge */
     .message {
-      padding: 0 0.5rem;
+      position: absolute;
+      right: 0.5rem;
+      top: 50%;
+      transform: translateY(-50%);
       color: rgba(0, 0, 0, 0.4);
       white-space: nowrap;
+      pointer-events: none;
+      z-index: 2;
     }
 
     .meter {
@@ -183,9 +193,17 @@ export class ProgressBar extends RapidElement {
   public willUpdate(changes: PropertyValues): void {
     super.willUpdate(changes);
 
-    if (changes.has('eta') && this.eta) {
-      this.estimatedCompletionDate = new Date(this.eta);
-      this.showEstimatedCompletion = this.estimatedCompletionDate > new Date();
+    if (changes.has('eta')) {
+      if (this.eta) {
+        this.estimatedCompletionDate = new Date(this.eta);
+        this.showEstimatedCompletion =
+          this.estimatedCompletionDate.getTime() - Date.now() >=
+          MIN_ESTIMATE_MS;
+      } else {
+        // an estimate that has been withdrawn must not linger as a countdown
+        this.estimatedCompletionDate = null;
+        this.showEstimatedCompletion = false;
+      }
     }
 
     if (changes.has('current') || changes.has('total')) {
