@@ -38,7 +38,7 @@ def trim_flow_revisions():
     return {"trimmed": num_trimmed}
 
 
-@cron_task()
+@cron_task(lock_timeout=1800)
 def trim_flow_sessions():
     """
     Cleanup ended flow sessions
