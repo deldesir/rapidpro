@@ -285,6 +285,7 @@ class FlowTest(TembaTest, CRUDLTestMixin):
         response = self.client.get(flow_editor_url)
         self.assertEqual(start, response.context["active_start"])
         self.assertContains(response, "<temba-start-progress")
+        self.assertContains(response, f'uuid="{start.uuid}"')
         self.assertContains(response, f'statusendpoint="{reverse("flows.flowstart_status")}?id={start.id}"')
         self.assertContains(response, f'interruptendpoint="{reverse("flows.flowstart_interrupt", args=[start.id])}"')
 

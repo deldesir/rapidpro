@@ -5,13 +5,13 @@ import { fetchResults, showModax } from '../utils';
 import { CustomEventType } from '../interfaces';
 import { FlowEvent, RealtimeSubscription, subscribeToFlow } from './Realtime';
 
-// status codes of a flow start, as the status endpoint and the flow socket report them
-const STATUS_PENDING = 'P';
-const STATUS_QUEUED = 'Q';
-const STATUS_STARTED = 'S';
-const STATUS_COMPLETED = 'C';
-const STATUS_FAILED = 'F';
-const STATUS_INTERRUPTED = 'I';
+// statuses of a flow start, as the status endpoint and the flow socket report them
+const STATUS_PENDING = 'pending';
+const STATUS_QUEUED = 'queued';
+const STATUS_STARTED = 'started';
+const STATUS_COMPLETED = 'completed';
+const STATUS_FAILED = 'failed';
+const STATUS_INTERRUPTED = 'interrupted';
 
 // the order a start moves through its statuses, so that an update which
 // would take it backwards can be recognized as stale
@@ -41,8 +41,9 @@ export class StartProgress extends RapidElement {
       color: var(--color-primary-dark);
     }
   `;
+  /** uuid of the start, which identifies its progress on the flow's socket */
   @property({ type: String })
-  id: string;
+  uuid: string;
 
   /** uuid of the flow being started, whose socket carries the progress */
   @property({ type: String })
@@ -104,7 +105,7 @@ export class StartProgress extends RapidElement {
     changes: PropertyValueMap<any> | Map<PropertyKey, unknown>
   ): void {
     super.updated(changes);
-    if (changes.has('id')) {
+    if (changes.has('uuid')) {
       this.refresh();
     }
     if (changes.has('flow')) {
@@ -135,10 +136,7 @@ export class StartProgress extends RapidElement {
   }
 
   private handleFlowEvent(event: FlowEvent): void {
-    if (
-      event?.type === 'start_progress' &&
-      String(event.start_id) === String(this.id)
-    ) {
+    if (event?.type === 'start_progress' && event.start_uuid === this.uuid) {
       this.update_(event.status, event.progress.current, event.progress.total);
     }
   }

@@ -129,7 +129,8 @@ class FlowStartCRUDLTest(TembaTest, CRUDLTestMixin):
         response = self.assertReadFetch(status_url, [self.editor, self.admin])
 
         # status returns json
-        self.assertEqual("P", response.json()["results"][0]["status"])
+        self.assertEqual(str(start.uuid), response.json()["results"][0]["uuid"])
+        self.assertEqual("pending", response.json()["results"][0]["status"])
 
         # the editor looks up a flow's latest start made by a user, so starts without one (e.g. from triggers) are ignored
         start2 = self.create_flowstart(flow, self.editor)

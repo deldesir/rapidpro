@@ -100,7 +100,7 @@
       <div class="start-label">{% trans "Status" %}</div>
       {% if object.is_starting %}
         <temba-start-progress
-          id="{{ object.id }}"
+          uuid="{{ object.uuid }}"
           flow="{{ object.flow.uuid }}"
           interrupttitle='{{ _("Interrupt Flow") |escapejs }}'
           interruptendpoint="{% url 'flows.flowstart_interrupt' object.id %}"
