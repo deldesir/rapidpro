@@ -1,8 +1,7 @@
 from django.template import Context, Template
 
+from temba.msgs.templatetags import sms as tags
 from temba.tests import TembaTest
-
-from . import sms as tags
 
 
 class TestTemplateTags(TembaTest):

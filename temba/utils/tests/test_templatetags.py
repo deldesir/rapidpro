@@ -9,8 +9,7 @@ from temba.flows.models import Flow
 from temba.tests import TembaTest
 from temba.triggers.models import Trigger
 from temba.utils import json
-
-from . import temba as tags
+from temba.utils.templatetags import temba as tags
 
 
 class TembaTagLibraryTest(TembaTest):
