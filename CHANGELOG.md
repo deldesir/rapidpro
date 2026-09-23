@@ -1,3 +1,13 @@
+v26.3.110 (2026-09-23)
+-------------------------
+ * Show flow start progress in the flow editor, updated over the flow socket, with activity counts that roll like an odometer
+ * Keep start progress monotonic and withdraw stale completion estimates
+ * Use status slugs rather than display labels in JSON
+ * Resume each batch from the last when trimming flow sessions and increase its lock timeout to 30 minutes
+ * Create the help sites certificates table in migrate_dynamo
+ * Refresh supported LLM models and remove the Google LLM type
+ * Consolidate test-only files under test-data/ and components/test/ and remove unused ones
+
 v26.3.109 (2026-09-22)
 -------------------------
  * Render published help site articles at publish time and proxy help site previews to the help sites service
