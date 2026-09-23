@@ -30,7 +30,7 @@ SPECS_FILE = "temba/utils/management/commands/data/mailroom_db.json"
 USER_PASSWORD = "Qwerty123"
 
 # database dump containing admin boundary records
-LOCATIONS_FILE = "test-data/locations/nigeria.bin"
+LOCATIONS_FILE = "test-data/nigeria.bin"
 
 MAILROOM_PORT = 8092
 MAILROOM_DB_NAME = "mailroom_test"
