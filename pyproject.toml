@@ -41,7 +41,6 @@ dependencies = [
     "requests-toolbelt ~= 1.0.0",
     "openpyxl ~= 3.1.5",
     "pillow~=12.3.0",
-    "google-genai>=2.19.0,<3.0.0",
     "twilio>=9.10.9,<10.0.0",
     "vonage>=4.8.2,<5.0.0",
     "slack-sdk ~= 3.43.0",

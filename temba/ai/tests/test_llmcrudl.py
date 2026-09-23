@@ -56,7 +56,6 @@ class LLMCRUDLTest(TembaTest, CRUDLTestMixin):
             response = self.requestView(reverse("ai.llm_connect"), self.admin)
             providers = dict(response.context["form"].fields["provider"].choices)
             self.assertNotIn("anthropic", providers)
-            self.assertEqual("Google", providers["google"])
             self.assertEqual("OpenAI", providers["openai"])
             self.assertEqual("Azure OpenAI", providers["openai_azure"])
 
@@ -115,7 +114,6 @@ class LLMCRUDLTest(TembaTest, CRUDLTestMixin):
         response = self.assertUpdateFetch(update_url, [self.admin], form_fields={"provider": "openai"})
         providers = dict(response.context["form"].fields["provider"].choices)
         self.assertEqual("Anthropic", providers["anthropic"])
-        self.assertEqual("Google", providers["google"])
         self.assertEqual("OpenAI", providers["openai"])
         self.assertEqual("Azure OpenAI", providers["openai_azure"])
 

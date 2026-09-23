@@ -20,9 +20,6 @@ msgstr ""
 msgid "Invalid API Key."
 msgstr ""
 
-msgid "You can find your API key at https://aistudio.google.com/"
-msgstr ""
-
 msgid "You can find your API key at https://platform.openai.com/account/api-key"
 msgstr ""
 
