@@ -887,12 +887,12 @@ CHANNEL_TYPES = [
     "temba.channels.types.wavy.WavyType",
     "temba.channels.types.webchat.WebChatType",
     "temba.channels.types.wechat.WeChatType",
+    "temba.channels.types.wuzapi.type.WuzapiType",
     "temba.channels.types.whatsapp.WhatsAppType",
     "temba.channels.types.yo.YoType",
     "temba.channels.types.zenvia_sms.ZenviaSMSType",
     "temba.channels.types.zenvia_whatsapp.ZenviaWhatsAppType",
     "temba.channels.types.android.AndroidType",
-    "temba.channels.types.wuzapi.type.WuzapiType",
 ]
 
 # the help sites a helpdesk can be imported from, by class name - none in the core; a deployment adds its own
