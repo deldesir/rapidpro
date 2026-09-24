@@ -649,7 +649,7 @@
               <div class="flex-grow relative" id="folder-title">
                 <div id="title-text">{{ title }}</div>
               </div>
-              <temba-content-menu endpoint="/ticket/folder/{{ folder }}/{{ uuid }}" -temba-selection="handleContentMenuSelected(event)" arrowtopleft class="relative" id="topic-content-menu">
+              <temba-content-menu endpoint="{% url 'tickets.ticket_folder' folder %}{{ uuid }}" -temba-selection="handleContentMenuSelected(event)" arrowtopleft class="relative" id="topic-content-menu">
               </temba-content-menu>
             </div>
             <temba-user-select
@@ -671,7 +671,7 @@
               {% if uuid %}
                 <temba-ticket-list
                   agent="{{ request.user.email }}"
-                  endpoint="/ticket/folder/{{ folder }}/{{ uuid }}"
+                  endpoint="{% url 'tickets.ticket_folder' folder %}{{ uuid }}"
                   -temba-refreshed="handleTicketsRefreshed"
                   onchange="handleContactSelected(event)"
                   class="flex-grow"
@@ -684,7 +684,7 @@
                 <temba-ticket-list
                   nextselection="{{ nextUUID }}"
                   agent="{{ request.user.email }}"
-                  endpoint="/ticket/folder/{{ folder }}/"
+                  endpoint="{% url 'tickets.ticket_folder' folder %}"
                   -temba-refreshed="handleTicketsRefreshed"
                   onchange="handleContactSelected(event)"
                   class="flex-grow"

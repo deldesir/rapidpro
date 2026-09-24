@@ -1,5 +1,5 @@
 {% extends "smartmin/read.html" %}
-{% load i18n %}
+{% load i18n url_tags %}
 
 {% block extra-style %}
   {{ block.super }}
@@ -25,5 +25,5 @@
       Often certain regions are known by more than one name. In {{ brand }}, we call these alternate names for regions, aliases.
     {% endblocktrans %}
   </div>
-  <alias-editor endpoint="{% url 'public.public_index' %}adminboundary/" osmid="{{ object.osm_id }}"></alias-editor>
+  <alias-editor endpoint="{% script_prefix %}adminboundary/" osmid="{{ object.osm_id }}"></alias-editor>
 {% endblock content %}
