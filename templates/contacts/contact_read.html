@@ -106,7 +106,7 @@
       const options = {
         onSubmit: "contactUpdated()"
       }
-      showModax("{{_('Interrupt Contact')|escapejs}}", "{% url 'contacts.contact_interrupt' 'PLACEHOLDER' %}".replace('PLACEHOLDER', event.detail.contact.uuid), options);
+      showModax("{{_('Interrupt Contact')|escapejs}}", "{% url 'contacts.contact_interrupt' '00000000-0000-4000-8000-000000000000' %}".replace('00000000-0000-4000-8000-000000000000', event.detail.contact.uuid), options);
     }
 
     function contactUpdated(evt) {
