@@ -56,7 +56,7 @@ describe(TAG, () => {
     (window.fetch as SinonStub).resetHistory();
     mockGET(
       /\/api\/v2\/contacts.json\?expand_urns=true&urn_order=priority&uuid=contact-dave-active/,
-      '/test-assets/contacts/contact-dave-active'
+      '/test/assets/contacts/contact-dave-active'
     );
   });
 

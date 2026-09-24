@@ -175,10 +175,10 @@ class TembaTest(SmartminTest):
 
     def load_json(self, path: str, substitutions=None) -> dict:
         """
-        Loads a JSON test file from a path relatve to the media directory
+        Loads a JSON test file from a path relative to the test data directory
         """
 
-        with open(os.path.join(settings.MEDIA_ROOT, path), "r") as f:
+        with open(os.path.join(settings.TESTDATA_DIR, path), "r") as f:
             data = f.read()
 
             if substitutions:
@@ -197,7 +197,7 @@ class TembaTest(SmartminTest):
     def get_flow(self, filename, substitutions=None, name=None):
         now = timezone.now()
 
-        self.import_file(f"test_flows/{filename}.json", substitutions=substitutions)
+        self.import_file(f"flows/{filename}.json", substitutions=substitutions)
 
         imported_flows = Flow.objects.filter(org=self.org, saved_on__gt=now)
         flow = imported_flows.filter(name=name).first() if name else imported_flows.order_by("id").last()

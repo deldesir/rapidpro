@@ -59,7 +59,7 @@ class ArticleCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertContains(response, "temba-article-add-requested")
 
         # the public site is the helpdesk's, so it's previewed from the card at the top of the page
-        self.assertEqual(reverse("knowledge.site_home"), response.context["preview_url"])
+        self.assertEqual("/helpsite/preview/", response.context["preview_url"])
         self.assertContains(response, "function previewHelpSite(event)")
         self.assertContains(response, 'class="domain-pill"')
 
@@ -514,26 +514,26 @@ class ArticleCRUDLTest(TembaTest, CRUDLTestMixin):
 
         # can't upload a file type we don't support (sniffed, not the browser supplied type)
         response = self.client.post(
-            upload_url, {"file": self.upload(f"{settings.MEDIA_ROOT}/test_media/simple.pdf", "image/png")}
+            upload_url, {"file": self.upload(f"{settings.TESTDATA_DIR}/media/simple.pdf", "image/png")}
         )
         self.assertEqual({"error": "Unsupported file type"}, response.json())
 
         # can't upload a file that's too big
         with patch("temba.knowledge.models.ArticleImage.MAX_UPLOAD_SIZE", 10):
             response = self.client.post(
-                upload_url, {"file": self.upload(f"{settings.MEDIA_ROOT}/test_media/klab.png", "image/png")}
+                upload_url, {"file": self.upload(f"{settings.TESTDATA_DIR}/media/klab.png", "image/png")}
             )
             self.assertEqual({"error": "Limit for file uploads is 9.5367431640625e-06 MB"}, response.json())
 
         # can't exceed the per article limit
         with patch("temba.knowledge.models.ArticleImage.MAX_IMAGES", 0):
             response = self.client.post(
-                upload_url, {"file": self.upload(f"{settings.MEDIA_ROOT}/test_media/klab.png", "image/png")}
+                upload_url, {"file": self.upload(f"{settings.TESTDATA_DIR}/media/klab.png", "image/png")}
             )
             self.assertEqual({"error": "Limit of 0 images reached."}, response.json())
 
         response = self.client.post(
-            upload_url, {"file": self.upload(f"{settings.MEDIA_ROOT}/test_media/klab.png", "image/png")}
+            upload_url, {"file": self.upload(f"{settings.TESTDATA_DIR}/media/klab.png", "image/png")}
         )
 
         image = article.images.get()

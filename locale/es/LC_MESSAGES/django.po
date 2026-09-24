@@ -26,9 +26,6 @@ msgstr "Puede encontrar su clave de API en https://console.anthropic.com/setting
 msgid "Invalid API Key."
 msgstr "Clave de API no válida."
 
-msgid "You can find your API key at https://aistudio.google.com/"
-msgstr "Puede encontrar su clave de API en https://aistudio.google.com/"
-
 msgid "You can find your API key at https://platform.openai.com/account/api-key"
 msgstr "Puede encontrar su clave de API en https://platform.openai.com/account/api-key"
 
@@ -3450,8 +3447,8 @@ msgstr "Activadores"
 msgid "Tickets"
 msgstr "Tickets"
 
-msgid "Knowledge"
-msgstr "Conocimiento"
+msgid "Knowledge Base"
+msgstr "Base de conocimiento"
 
 msgid "Notifications"
 msgstr "Notificaciones"
@@ -5371,6 +5368,9 @@ msgstr "Estadísticas de workspaces"
 msgid "This email was generated at"
 msgstr "Este correo electrónico fue generado el"
 
+msgid "Interrupt Flow"
+msgstr "Interrumpir flujo"
+
 msgid "Sorry, this flow cannot be exported because it references another flow. To export it, please remove any actions that reference other flows and try again."
 msgstr "Lo sentimos, este flujo no se puede exportar porque hace referencia a otro flujo. Para exportarlo, elimine cualquier acción que haga referencia a otros flujos y vuelva a intentarlo."
 
@@ -5454,9 +5454,6 @@ msgstr "Excluyendo"
 
 msgid "Parameters"
 msgstr "Parámetros"
-
-msgid "Interrupt Flow"
-msgstr "Interrumpir flujo"
 
 #, python-format
 msgid "<b>%(count)s</b> contact"

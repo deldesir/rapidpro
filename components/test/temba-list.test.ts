@@ -48,7 +48,7 @@ describe('temba-list', () => {
 
   it('renders with endpoint', async () => {
     const list: TembaList = await getList({
-      endpoint: '/test-assets/list/temba-list.json'
+      endpoint: '/test/assets/list/temba-list.json'
     });
     expect(list.items.length).to.equal(4);
     await assertScreenshot('list/items', getClip(list));
@@ -56,7 +56,7 @@ describe('temba-list', () => {
 
   it('polls for changes', async () => {
     const list: TembaList = await getList({
-      endpoint: '/test-assets/list/temba-list.json'
+      endpoint: '/test/assets/list/temba-list.json'
     });
 
     const refreshKey = list.refreshKey;
@@ -66,7 +66,7 @@ describe('temba-list', () => {
 
   it('fires change event on cursor change', async () => {
     const list: TembaList = await getList({
-      endpoint: '/test-assets/list/temba-list.json'
+      endpoint: '/test/assets/list/temba-list.json'
     });
 
     const changeTest = new Promise<void>((resolve) => {
@@ -83,7 +83,7 @@ describe('temba-list', () => {
 
   it('clears selection without firing change', async () => {
     const list: TembaList = await getList({
-      endpoint: '/test-assets/list/temba-list.json'
+      endpoint: '/test/assets/list/temba-list.json'
     });
 
     list.cursorIndex = 1;
@@ -114,7 +114,7 @@ describe('temba-list', () => {
 
   it('fires change when first element changes after fetch', async () => {
     const list: TembaList = await getList({
-      endpoint: '/test-assets/list/temba-list.json'
+      endpoint: '/test/assets/list/temba-list.json'
     });
 
     // spy on change event
@@ -127,7 +127,7 @@ describe('temba-list', () => {
       });
     });
 
-    list.endpoint = '/test-assets/list/temba-list-shorter.json';
+    list.endpoint = '/test/assets/list/temba-list-shorter.json';
     await refreshTest;
 
     assert(changeEvent.called, 'change event not fired');

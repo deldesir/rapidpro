@@ -168,7 +168,7 @@ describe('temba-call-list', () => {
     const list = (await getComponent(
       TAG,
       {
-        endpoint: '/test-assets/content-list/calls.json',
+        endpoint: '/test/assets/content-list/calls.json',
         // the host enables log links for viewers who may read them
         'show-logs-after': '2026-05-11T00:00:00Z'
       },

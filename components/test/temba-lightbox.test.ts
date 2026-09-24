@@ -30,7 +30,7 @@ describe('temba-lightbox', () => {
   it('can be created', async () => {
     const lightbox: Lightbox = await fixture(getHTML());
     const img = await fixture(
-      "<img style='width:100px;height:auto' src='./test-assets/img/meow.jpg'/>"
+      "<img style='width:100px;height:auto' src='./test/assets/img/meow.jpg'/>"
     );
 
     await assertScreenshot('lightbox/img', {
@@ -68,7 +68,7 @@ describe('temba-lightbox', () => {
   it('shows a temba-thumbnail via its url property', async () => {
     const lightbox: Lightbox = await fixture(getHTML());
     const thumbnail: Thumbnail = await fixture(
-      "<temba-thumbnail attachment='image/jpeg:./test-assets/img/meow.jpg'></temba-thumbnail>"
+      "<temba-thumbnail attachment='image/jpeg:./test/assets/img/meow.jpg'></temba-thumbnail>"
     );
     await thumbnail.updateComplete;
 
@@ -84,7 +84,7 @@ describe('temba-lightbox', () => {
   it('dismisses on backdrop click', async () => {
     const lightbox: Lightbox = await fixture(getHTML());
     const img = await fixture(
-      "<img style='width:100px;height:auto' src='./test-assets/img/meow.jpg'/>"
+      "<img style='width:100px;height:auto' src='./test/assets/img/meow.jpg'/>"
     );
 
     lightbox.showElement(img as HTMLElement);
@@ -108,10 +108,10 @@ describe('temba-lightbox', () => {
       '<temba-lightbox animationTime="100"></temba-lightbox>'
     );
     const first = await fixture(
-      "<img style='width:100px;height:auto' src='./test-assets/img/meow.jpg'/>"
+      "<img style='width:100px;height:auto' src='./test/assets/img/meow.jpg'/>"
     );
     const second = await fixture(
-      "<img style='width:100px;height:auto' src='./test-assets/img/meow.jpg?second'/>"
+      "<img style='width:100px;height:auto' src='./test/assets/img/meow.jpg?second'/>"
     );
 
     lightbox.showElement(first as HTMLElement);

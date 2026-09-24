@@ -202,6 +202,16 @@ class Broadcast(LegacyIDMixin, models.Model):
         (STATUS_INTERRUPTED, "Interrupted"),
     )
 
+    # slugs used for statuses in JSON, since the choice labels are for display
+    STATUS_SLUGS = {
+        STATUS_PENDING: "pending",
+        STATUS_QUEUED: "queued",
+        STATUS_STARTED: "started",
+        STATUS_COMPLETED: "completed",
+        STATUS_FAILED: "failed",
+        STATUS_INTERRUPTED: "interrupted",
+    }
+
     uuid = models.UUIDField(unique=True)
     org = models.ForeignKey(Org, on_delete=models.PROTECT, related_name="broadcasts")
     status = models.CharField(max_length=1, choices=STATUS_CHOICES, default=STATUS_PENDING)
@@ -396,7 +406,7 @@ class Broadcast(LegacyIDMixin, models.Model):
 
         return {
             "uuid": str(self.uuid),
-            "status": self.get_status_display().lower(),
+            "status": self.STATUS_SLUGS[self.status],
             "text": translation["text"],
             "attachments": translation["attachments"],
             "quick_replies": translation["quick_replies"],

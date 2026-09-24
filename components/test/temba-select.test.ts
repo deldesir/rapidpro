@@ -1082,7 +1082,7 @@ describe('temba-select', () => {
         clock,
         getSelectHTML([], {
           placeholder: 'Select a color',
-          endpoint: '/test-assets/select/colors.json'
+          endpoint: '/test/assets/select/colors.json'
         })
       );
 
@@ -1099,7 +1099,7 @@ describe('temba-select', () => {
         clock,
         getSelectHTML([], {
           placeholder: 'Select a color',
-          endpoint: '/test-assets/select/colors.json',
+          endpoint: '/test/assets/select/colors.json',
           searchable: true
         })
       );
@@ -1122,7 +1122,7 @@ describe('temba-select', () => {
         clock,
         getSelectHTML([], {
           placeholder: 'Select a color',
-          endpoint: '/test-assets/select/colors.json',
+          endpoint: '/test/assets/select/colors.json',
           searchable: true,
           multi: true
         })
@@ -1143,7 +1143,7 @@ describe('temba-select', () => {
         clock,
         getSelectHTML([], {
           placeholder: 'Select a group',
-          endpoint: '/test-assets/select/groups.json',
+          endpoint: '/test/assets/select/groups.json',
           valueKey: 'uuid'
         })
       );
@@ -1163,7 +1163,7 @@ describe('temba-select', () => {
         clock,
         getSelectHTML([], {
           placeholder: 'Select a group',
-          endpoint: '/test-assets/select/groups.json',
+          endpoint: '/test/assets/select/groups.json',
           valueKey: 'uuid',
           searchable: true
         })

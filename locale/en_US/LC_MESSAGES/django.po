@@ -20,9 +20,6 @@ msgstr ""
 msgid "Invalid API Key."
 msgstr ""
 
-msgid "You can find your API key at https://aistudio.google.com/"
-msgstr ""
-
 msgid "You can find your API key at https://platform.openai.com/account/api-key"
 msgstr ""
 
@@ -3436,7 +3433,7 @@ msgstr ""
 msgid "Tickets"
 msgstr ""
 
-msgid "Knowledge"
+msgid "Knowledge Base"
 msgstr ""
 
 msgid "Notifications"
@@ -5351,6 +5348,9 @@ msgstr ""
 msgid "This email was generated at"
 msgstr ""
 
+msgid "Interrupt Flow"
+msgstr ""
+
 msgid "Sorry, this flow cannot be exported because it references another flow. To export it, please remove any actions that reference other flows and try again."
 msgstr ""
 
@@ -5433,9 +5433,6 @@ msgid "Excluding"
 msgstr ""
 
 msgid "Parameters"
-msgstr ""
-
-msgid "Interrupt Flow"
 msgstr ""
 
 #, python-format

@@ -201,7 +201,7 @@
           return;
         }
 
-        if (imp.status === "Complete" || imp.status === "Failed") {
+        if (imp.status === "complete" || imp.status === "failed") {
           refreshHelpdesk();
           return;
         }
@@ -357,6 +357,7 @@
     .domain-card.clickable:hover {
       border-color: var(--accent-300);
       box-shadow: var(--shadow-3);
+      text-decoration: none;
     }
 
     .domain-card:focus-visible {

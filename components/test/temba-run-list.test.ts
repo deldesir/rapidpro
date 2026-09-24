@@ -44,7 +44,7 @@ describe('temba-run-list', () => {
     // set up general mocking
     mockAPI();
     // mock the runs API endpoint
-    mockGET(/\/api\/v2\/runs\.json/, '/test-assets/list/runs.json');
+    mockGET(/\/api\/v2\/runs\.json/, '/test/assets/list/runs.json');
   });
 
   afterEach(function () {

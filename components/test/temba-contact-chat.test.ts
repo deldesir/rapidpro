@@ -74,7 +74,7 @@ const settleLoaded = async (chat: ContactChat) => {
 };
 
 const getContactChat = async (attrs: any = {}) => {
-  attrs['endpoint'] = '/test-assets/contacts/';
+  attrs['endpoint'] = '/test/assets/contacts/';
   // add some sizes and styles to force our chat history to scroll
   const chat = (await getComponent(
     TAG,
@@ -112,12 +112,12 @@ describe('temba-contact-chat', () => {
     mockGET(/\/contact\/chat\/contact-.*\?after=/, { events: [], next: null });
     mockGET(
       /\/contact\/chat\/contact-.*/,
-      '/test-assets/contacts/history.json'
+      '/test/assets/contacts/history.json'
     );
 
     mockGET(
       /\/api\/v2\/users\.json\?email=admin1%40nyaruka\.com/,
-      '/test-assets/api/users/admin1.json'
+      '/test/assets/api/users/admin1.json'
     );
 
     mockAPI();
@@ -158,7 +158,7 @@ describe('temba-contact-chat', () => {
     });
     mockGET(
       /\/contact\/chat\/events-dude\//,
-      '/test-assets/contacts/history-events.json'
+      '/test/assets/contacts/history-events.json'
     );
 
     const chat: ContactChat = await getContactChat({
@@ -176,7 +176,7 @@ describe('temba-contact-chat', () => {
     });
     mockGET(
       /\/contact\/chat\/events-dude\//,
-      '/test-assets/contacts/history-events.json'
+      '/test/assets/contacts/history-events.json'
     );
 
     const chat: ContactChat = await getContactChat({
@@ -210,7 +210,7 @@ describe('temba-contact-chat', () => {
     // a dedicated contact whose history has a single ticket assignment
     // event — hovering its pill should pop our rich tooltip with the
     // acting user (avatar + name) above the detailed timestamp
-    mockGET(/\/test-assets\/contacts\/tooltip-dude/, {
+    mockGET(/\/test\/assets\/contacts\/tooltip-dude/, {
       next: null,
       previous: null,
       results: [
@@ -306,7 +306,7 @@ describe('temba-contact-chat', () => {
     });
     mockGET(
       /\/contact\/chat\/events-dude\//,
-      '/test-assets/contacts/history-events.json'
+      '/test/assets/contacts/history-events.json'
     );
 
     const chat: ContactChat = await getContactChat({
@@ -561,7 +561,7 @@ describe('temba-contact-chat', () => {
     // mock the search endpoint to return results for "primus"
     mockGET(
       /\/contact\/chat_search\/.*\?text=primus/,
-      '/test-assets/contacts/chat-search-primus.json'
+      '/test/assets/contacts/chat-search-primus.json'
     );
 
     const chat: ContactChat = await getContactChat({
@@ -624,7 +624,7 @@ describe('temba-contact-chat', () => {
 
     mockGET(
       /\/contact\/chat_search\/.*\?text=primus/,
-      '/test-assets/contacts/chat-search-primus.json'
+      '/test/assets/contacts/chat-search-primus.json'
     );
 
     const chat: ContactChat = await getContactChat({
@@ -660,12 +660,12 @@ describe('temba-contact-chat', () => {
 
     mockGET(
       /\/contact\/chat_search\/.*\?text=primus/,
-      '/test-assets/contacts/chat-search-primus.json'
+      '/test/assets/contacts/chat-search-primus.json'
     );
 
     const chat = (await getComponent(
       TAG,
-      { contact: 'contact-dave-active', endpoint: '/test-assets/contacts/' },
+      { contact: 'contact-dave-active', endpoint: '/test/assets/contacts/' },
       '',
       500,
       500,
@@ -692,7 +692,7 @@ describe('temba-contact-chat', () => {
 
     mockGET(
       /\/contact\/chat_search\/.*\?text=primus/,
-      '/test-assets/contacts/chat-search-primus.json'
+      '/test/assets/contacts/chat-search-primus.json'
     );
 
     // the host has not enabled search for this conversation
@@ -724,12 +724,12 @@ describe('temba-contact-chat', () => {
 
     mockGET(
       /\/contact\/chat_search\/.*\?text=primus/,
-      '/test-assets/contacts/chat-search-primus.json'
+      '/test/assets/contacts/chat-search-primus.json'
     );
 
     const chat = (await getComponent(
       TAG,
-      { endpoint: '/test-assets/contacts/' },
+      { endpoint: '/test/assets/contacts/' },
       '',
       500,
       500,
@@ -759,7 +759,7 @@ describe('temba-contact-chat', () => {
 
     mockGET(
       /\/contact\/chat_search\/.*\?text=primus/,
-      '/test-assets/contacts/chat-search-primus.json'
+      '/test/assets/contacts/chat-search-primus.json'
     );
 
     const chat: ContactChat = await getContactChat({
@@ -795,7 +795,7 @@ describe('temba-contact-chat', () => {
     // only appear if the search wasn't scoped to the ticket
     mockGET(
       /\/contact\/chat_search\/.*\?text=primus$/,
-      '/test-assets/contacts/chat-search-primus.json'
+      '/test/assets/contacts/chat-search-primus.json'
     );
 
     const chat: ContactChat = await getContactChat({
@@ -826,7 +826,7 @@ describe('temba-contact-chat', () => {
 
     mockGET(
       /\/contact\/chat_search\/.*\?text=primus/,
-      '/test-assets/contacts/chat-search-primus.json'
+      '/test/assets/contacts/chat-search-primus.json'
     );
 
     const chat: ContactChat = await getContactChat({
@@ -881,7 +881,7 @@ describe('temba-contact-chat', () => {
 
     mockGET(
       /\/contact\/chat_search\/.*\?text=primus/,
-      '/test-assets/contacts/chat-search-primus.json'
+      '/test/assets/contacts/chat-search-primus.json'
     );
 
     const chat: ContactChat = await getContactChat({
@@ -924,7 +924,7 @@ describe('temba-contact-chat', () => {
 
     mockGET(
       /\/contact\/chat_search\/.*\?text=primus/,
-      '/test-assets/contacts/chat-search-primus.json'
+      '/test/assets/contacts/chat-search-primus.json'
     );
 
     const chat: ContactChat = await getContactChat({
@@ -984,7 +984,7 @@ describe('temba-contact-chat', () => {
 
     mockGET(
       /\/contact\/chat_search\/.*\?text=xyznotfound/,
-      '/test-assets/contacts/chat-search-empty.json'
+      '/test/assets/contacts/chat-search-empty.json'
     );
 
     const chat: ContactChat = await getContactChat({
@@ -1028,7 +1028,7 @@ describe('temba-contact-chat', () => {
     // mock the search endpoint to return empty results
     mockGET(
       /\/contact\/chat_search\/.*\?text=xyznotfound/,
-      '/test-assets/contacts/chat-search-empty.json'
+      '/test/assets/contacts/chat-search-empty.json'
     );
 
     const chat: ContactChat = await getContactChat({

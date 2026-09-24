@@ -14,6 +14,7 @@ from temba.tests import CRUDLTestMixin, TembaTest
 
 from .models import Template, TemplateTranslation
 from .tasks import refresh_channel_templates, refresh_templates
+from .templatetags.templates import handlebars
 
 
 class TemplateTest(TembaTest):
@@ -570,3 +571,9 @@ class TemplateCRUDLTest(CRUDLTestMixin, TembaTest):
         self.assertEqual(2, mock_d3c_fetch_templates.call_count)
         self.assertEqual(2, mock_twa_fetch_templates.call_count)
         self.assertEqual(3, mock_update_local.call_count)
+
+
+class TemplateTagsTest(TembaTest):
+    def test_handlebars(self):
+        self.assertEqual("Hello", handlebars("Hello"))
+        self.assertEqual("Hello <code>{{name}}</code>", handlebars("Hello {{name}}"))
