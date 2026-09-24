@@ -1,15 +1,13 @@
 from dataclasses import dataclass
-from uuid import UUID, uuid5, NAMESPACE_URL
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 import iso8601
 
 from temba.users.models import User
 from temba.utils import dynamo
 
-# Stable namespace for deriving synthetic event UUIDs (run_ended, ticket_closed).
-# These events don't have a native UUID in the DB so we derive one deterministically
-# from the source object's UUID + a suffix string.  This keeps the result valid as a
-# UUID so the JS frontend can use it as an ?after= polling cursor without error.
+# namespace for the UUIDs given to the history events that have no row of their own (a run ending, a ticket
+# closing) when history is served from Postgres - see Event._query_history_postgres
 _SYNTH_NAMESPACE = NAMESPACE_URL
 
 
@@ -131,7 +129,9 @@ class Event:
     @classmethod
     def _query_history(cls, pk: str, *, after_sk: str, before_sk: str, limit: int, callback):
         if not dynamo.is_enabled():
-            return cls._query_history_postgres(pk, after_sk=after_sk, before_sk=before_sk, limit=limit, callback=callback)
+            return cls._query_history_postgres(
+                pk, after_sk=after_sk, before_sk=before_sk, limit=limit, callback=callback
+            )
 
         num_fetches = 0
         next_start_sk = None
@@ -169,126 +169,96 @@ class Event:
 
     @classmethod
     def _query_history_postgres(cls, pk: str, *, after_sk: str, before_sk: str, limit: int, callback):
-        """PostgreSQL fallback for contact event history when DynamoDB is disabled.
-
-        Queries msgs_msg, flows_flowrun, and tickets_ticket tables, merges them
-        into the DynamoDB event schema that _from_item and _postprocess_events expect.
-
-        Post-review fixes applied:
-        - visibility='V' filter excludes deleted/archived messages (F12)
-        - id tiebreaker for deterministic sort (F10)
-        - cross-table cursor resolution via _resolve_cursor_timestamp (F6)
-        - nested msg.uuid for read receipt linking (F8)
-        - occurred_on field in event payload (F9)
+        """
+        Serves history from Postgres when there's no DynamoDB: the contact's messages, flow runs and tickets are
+        merged and handed to the callback as items of the same shape the DynamoDB path produces, so nothing after
+        this point knows where they came from. Runs and tickets each produce two events, and the second one (the
+        run ending, the ticket closing) has no row of its own, so it gets a UUID derived from its row's.
         """
         from temba.contacts.models import Contact
-        from temba.flows.models import FlowRun
-        from temba.msgs.models import Msg
-        from temba.tickets.models import Ticket
 
-        contact_uuid = pk[4:]
-        try:
-            contact = Contact.objects.get(uuid=contact_uuid)
-        except Contact.DoesNotExist:
+        contact = Contact.objects.filter(uuid=pk[len("con#") :]).first()
+        if not contact:
             return
 
-        # Resolve cursor timestamp across ALL event source tables
-        cursor_time = None
-        if after_sk or before_sk:
-            cursor_uuid = (after_sk or before_sk)[4:]  # strip "evt#"
-            cursor_time = cls._resolve_cursor_timestamp(cursor_uuid)
-
+        cursor = after_sk or before_sk
+        cursor_time = cls._cursor_time(contact, cursor[len("evt#") :]) if cursor else None
         before_time = cursor_time if before_sk else None
         after_time = cursor_time if after_sk else None
-        descending = not after_sk
 
-        # Collect events from multiple sources
         events = []
         events.extend(cls._msgs_to_events(contact, before_time, after_time, limit))
         events.extend(cls._runs_to_events(contact, before_time, after_time, limit))
         events.extend(cls._tickets_to_events(contact, before_time, after_time, limit))
 
-        # Sort with deterministic tiebreaker to prevent pagination skips
-        events.sort(key=lambda e: (e["_sort_key"], e["_sort_id"]), reverse=descending)
+        # the id breaks ties between events with the same timestamp so paging never skips or repeats one
+        events.sort(key=lambda e: (e["_sort_key"], e["_sort_id"]), reverse=not after_sk)
 
-        # Trim to limit and feed through callback
-        for evt in events[:limit]:
-            # Strip internal tracking keys before handing to the callback
-            data = {k: v for k, v in evt.items() if not k.startswith("_sort_") and not k.startswith("_source_")}
-            item = {
-                "OrgID": contact.org_id,
-                "PK": pk,
-                "SK": f"evt#{evt['uuid']}",
-                "Data": data,
-            }
+        for event in events[:limit]:
+            data = {k: v for k, v in event.items() if not k.startswith("_sort_")}
+            item = {"OrgID": contact.org_id, "PK": pk, "SK": f"evt#{event['uuid']}", "Data": data}
             if not callback(item):
                 return
 
     @staticmethod
-    def _resolve_cursor_timestamp(cursor_uuid: str):
-        """Resolve a cursor UUID to a timestamp by checking all event source tables.
+    def _run_ended_uuid(run_uuid) -> str:
+        return str(uuid5(_SYNTH_NAMESPACE, f"{run_uuid}-end"))
 
-        Handles both native UUIDs (from msgs, flow runs, tickets) and synthetic
-        uuid5-derived UUIDs (from run_ended / ticket_closed events).
+    @staticmethod
+    def _ticket_closed_uuid(ticket_uuid) -> str:
+        return str(uuid5(_SYNTH_NAMESPACE, f"{ticket_uuid}-close"))
+
+    @classmethod
+    def _cursor_time(cls, contact, cursor_uuid: str):
+        """
+        Resolves a paging cursor - the UUID of an event the browser has already seen - to that event's time. Only
+        this contact's rows are consulted, so the derived UUIDs are matched by recomputing them over the contact's
+        exited runs and closed tickets, of which there are few.
         """
         from temba.flows.models import FlowRun
         from temba.msgs.models import Msg
         from temba.tickets.models import Ticket
 
-        # Check msgs_msg first (most common case)
-        ts = Msg.objects.filter(uuid=cursor_uuid).values_list("created_on", flat=True).first()
-        if ts:
+        if ts := Msg.objects.filter(contact=contact, uuid=cursor_uuid).values_list("created_on", flat=True).first():
+            return ts
+        if ts := FlowRun.objects.filter(contact=contact, uuid=cursor_uuid).values_list("created_on", flat=True).first():
+            return ts
+        if ts := Ticket.objects.filter(contact=contact, uuid=cursor_uuid).values_list("opened_on", flat=True).first():
             return ts
 
-        # Check flow runs by native UUID (run_started cursor)
-        ts = FlowRun.objects.filter(uuid=cursor_uuid).values_list("created_on", flat=True).first()
-        if ts:
-            return ts
-
-        # Check flow runs by synthetic run_ended UUID — reverse the uuid5 derivation
-        # by scanning all exited runs and comparing derived UUIDs.
-        # We limit to runs that have exited to keep the scan small.
-        for run_uuid, exited_on in FlowRun.objects.filter(
-            exited_on__isnull=False
-        ).values_list("uuid", "exited_on"):
-            if str(uuid5(_SYNTH_NAMESPACE, f"{run_uuid}-end")) == cursor_uuid:
+        for run_uuid, exited_on in FlowRun.objects.filter(contact=contact, exited_on__isnull=False).values_list(
+            "uuid", "exited_on"
+        ):
+            if cls._run_ended_uuid(run_uuid) == cursor_uuid:
                 return exited_on
 
-        # Check tickets by native UUID (ticket_opened cursor)
-        ts = Ticket.objects.filter(uuid=cursor_uuid).values_list("opened_on", flat=True).first()
-        if ts:
-            return ts
-
-        # Check tickets by synthetic ticket_closed UUID
-        for ticket_uuid, closed_on in Ticket.objects.filter(
-            closed_on__isnull=False
-        ).values_list("uuid", "closed_on"):
-            if str(uuid5(_SYNTH_NAMESPACE, f"{ticket_uuid}-close")) == cursor_uuid:
+        for ticket_uuid, closed_on in Ticket.objects.filter(contact=contact, closed_on__isnull=False).values_list(
+            "uuid", "closed_on"
+        ):
+            if cls._ticket_closed_uuid(ticket_uuid) == cursor_uuid:
                 return closed_on
 
-        # Cursor not found — return None (query will fetch most recent events)
-        return None
+        return None  # unknown cursor, the query starts from the newest events
+
+    @staticmethod
+    def _window(qs, field: str, before_time, after_time, limit: int):
+        """
+        Applies the paging window and order to a queryset, on the given timestamp field
+        """
+        if before_time:
+            qs = qs.filter(**{f"{field}__lt": before_time})
+        elif after_time:
+            qs = qs.filter(**{f"{field}__gt": after_time})
+
+        order = (field, "id") if after_time else (f"-{field}", "-id")
+        return qs.order_by(*order)[:limit]
 
     @classmethod
     def _msgs_to_events(cls, contact, before_time, after_time, limit):
         from temba.msgs.models import Msg
 
-        # Filter out deleted/archived messages — only show visible ones (F12)
-        qs = Msg.objects.filter(contact=contact, visibility=Msg.VISIBILITY_VISIBLE)
-        if before_time:
-            qs = qs.filter(created_on__lt=before_time)
-        elif after_time:
-            qs = qs.filter(created_on__gt=after_time)
-
-        # Deterministic sort: timestamp + id tiebreaker (F10)
-        if after_time:
-            qs = qs.order_by("created_on", "id")
-        else:
-            qs = qs.order_by("-created_on", "-id")
-        qs = qs[:limit]
-
-        # only the statuses the history UI knows about - like the DynamoDB path, a message has no status tag until
-        # it has at least been wired
+        # the statuses the history UI shows, as the DynamoDB path tags them; a message has no status until it has at
+        # least been wired
         status_map = {"W": "wired", "S": "sent", "D": "delivered", "R": "read", "E": "errored", "F": "failed"}
         reason_map = {
             Msg.FAILED_ERROR_LIMIT: "error_limit",
@@ -296,11 +266,9 @@ class Event:
             Msg.FAILED_CHANNEL_REMOVED: "channel_removed",
         }
 
+        msgs = Msg.objects.filter(contact=contact, visibility=Msg.VISIBILITY_VISIBLE).select_related("created_by")
         events = []
-        for msg in qs:
-            evt_type = cls.TYPE_MSG_RECEIVED if msg.direction == Msg.DIRECTION_IN else cls.TYPE_MSG_CREATED
-
-            # same shape as a status tag: {"status": ..., "created_on": ..., "reason": ...}
+        for msg in cls._window(msgs, "created_on", before_time, after_time, limit):
             status = None
             if msg.direction == Msg.DIRECTION_OUT and msg.status in status_map:
                 status = {
@@ -310,59 +278,46 @@ class Event:
                 if msg.failed_reason in reason_map:
                     status["reason"] = reason_map[msg.failed_reason]
 
-            events.append({
-                "uuid": str(msg.uuid),
-                "type": evt_type,
-                "created_on": msg.created_on.isoformat(),
-                "occurred_on": msg.created_on.isoformat(),
-                "msg": {
-                    "uuid": str(msg.uuid),  # Required for read receipt linking (F8)
-                    "text": msg.text,
-                    "attachments": msg.attachments or [],
-                },
-                "_status": status,
-                "_user": {"uuid": str(msg.created_by.uuid)} if msg.created_by else None,
-                "_sort_key": msg.created_on,
-                "_sort_id": msg.id,
-            })
+            events.append(
+                {
+                    "uuid": str(msg.uuid),
+                    "type": cls.TYPE_MSG_RECEIVED if msg.direction == Msg.DIRECTION_IN else cls.TYPE_MSG_CREATED,
+                    "created_on": msg.created_on.isoformat(),
+                    "occurred_on": msg.created_on.isoformat(),
+                    "msg": {"uuid": str(msg.uuid), "text": msg.text, "attachments": msg.attachments or []},
+                    "_status": status,
+                    "_user": {"uuid": str(msg.created_by.uuid)} if msg.created_by else None,
+                    "_sort_key": msg.created_on,
+                    "_sort_id": msg.id,
+                }
+            )
         return events
 
     @classmethod
     def _runs_to_events(cls, contact, before_time, after_time, limit):
         from temba.flows.models import FlowRun
 
-        qs = FlowRun.objects.filter(contact=contact).select_related("flow")
-        if before_time:
-            qs = qs.filter(created_on__lt=before_time)
-        elif after_time:
-            qs = qs.filter(created_on__gt=after_time)
-
-        if after_time:
-            qs = qs.order_by("created_on", "id")
-        else:
-            qs = qs.order_by("-created_on", "-id")
-        qs = qs[:limit]
-
+        runs = FlowRun.objects.filter(contact=contact).select_related("flow")
         events = []
-        for run in qs:
-            # Emit a run_started event
-            events.append({
-                "uuid": str(run.uuid),
-                "type": cls.TYPE_RUN_STARTED,
-                "created_on": run.created_on.isoformat(),
-                "occurred_on": run.created_on.isoformat(),
-                "flow": {"uuid": str(run.flow.uuid), "name": run.flow.name},
-                "_sort_key": run.created_on,
-                "_sort_id": run.id,
-            })
+        for run in cls._window(runs, "created_on", before_time, after_time, limit):
+            events.append(
+                {
+                    "uuid": str(run.uuid),
+                    "type": cls.TYPE_RUN_STARTED,
+                    "created_on": run.created_on.isoformat(),
+                    "occurred_on": run.created_on.isoformat(),
+                    "flow": {"uuid": str(run.flow.uuid), "name": run.flow.name},
+                    "_sort_key": run.created_on,
+                    "_sort_id": run.id,
+                }
+            )
 
-            # If the run has exited, also emit a run_ended event.
-            # We derive a stable uuid5 from the run UUID + "-end" so that the
-            # frontend can use it as a valid ?after= polling cursor.
-            if run.exited_on:
-                end_uuid = str(uuid5(_SYNTH_NAMESPACE, f"{run.uuid}-end"))
-                events.append({
-                    "uuid": end_uuid,
+        # endings are windowed on their own time, which can fall on the other side of a cursor from the start
+        ended = runs.filter(exited_on__isnull=False)
+        for run in cls._window(ended, "exited_on", before_time, after_time, limit):
+            events.append(
+                {
+                    "uuid": cls._run_ended_uuid(run.uuid),
                     "type": cls.TYPE_RUN_ENDED,
                     "created_on": run.exited_on.isoformat(),
                     "occurred_on": run.exited_on.isoformat(),
@@ -370,61 +325,45 @@ class Event:
                     "status": run.status,
                     "_sort_key": run.exited_on,
                     "_sort_id": run.id,
-                    # Store source so _resolve_cursor_timestamp can decode it
-                    "_source_run_uuid": str(run.uuid),
-                })
+                }
+            )
         return events
 
     @classmethod
     def _tickets_to_events(cls, contact, before_time, after_time, limit):
         from temba.tickets.models import Ticket
 
-        qs = Ticket.objects.filter(contact=contact).select_related("topic")
-        if before_time:
-            qs = qs.filter(opened_on__lt=before_time)
-        elif after_time:
-            qs = qs.filter(opened_on__gt=after_time)
+        def ticket_ref(ticket) -> dict:
+            return {"uuid": str(ticket.uuid), "topic": {"uuid": str(ticket.topic.uuid), "name": ticket.topic.name}}
 
-        if after_time:
-            qs = qs.order_by("opened_on", "id")
-        else:
-            qs = qs.order_by("-opened_on", "-id")
-        qs = qs[:limit]
-
+        tickets = Ticket.objects.filter(contact=contact).select_related("topic")
         events = []
-        for ticket in qs:
-            # Ticket opened event
-            events.append({
-                "uuid": str(ticket.uuid),
-                "type": cls.TYPE_TICKET_OPENED,
-                "created_on": ticket.opened_on.isoformat(),
-                "occurred_on": ticket.opened_on.isoformat(),
-                "ticket": {
+        for ticket in cls._window(tickets, "opened_on", before_time, after_time, limit):
+            events.append(
+                {
                     "uuid": str(ticket.uuid),
-                    "topic": {"uuid": str(ticket.topic.uuid), "name": ticket.topic.name},
-                },
-                "_sort_key": ticket.opened_on,
-                "_sort_id": ticket.id,
-            })
+                    "type": cls.TYPE_TICKET_OPENED,
+                    "created_on": ticket.opened_on.isoformat(),
+                    "occurred_on": ticket.opened_on.isoformat(),
+                    "ticket": ticket_ref(ticket),
+                    "_sort_key": ticket.opened_on,
+                    "_sort_id": ticket.id,
+                }
+            )
 
-            # If ticket is closed, also emit a close event.
-            # Same uuid5 derivation approach as run_ended above.
-            if ticket.closed_on:
-                close_uuid = str(uuid5(_SYNTH_NAMESPACE, f"{ticket.uuid}-close"))
-                events.append({
-                    "uuid": close_uuid,
+        closed = tickets.filter(closed_on__isnull=False)
+        for ticket in cls._window(closed, "closed_on", before_time, after_time, limit):
+            events.append(
+                {
+                    "uuid": cls._ticket_closed_uuid(ticket.uuid),
                     "type": cls.TYPE_TICKET_CLOSED,
                     "created_on": ticket.closed_on.isoformat(),
                     "occurred_on": ticket.closed_on.isoformat(),
-                    "ticket": {
-                        "uuid": str(ticket.uuid),
-                        "topic": {"uuid": str(ticket.topic.uuid), "name": ticket.topic.name},
-                    },
+                    "ticket": ticket_ref(ticket),
                     "_sort_key": ticket.closed_on,
                     "_sort_id": ticket.id,
-                    # Store source so _resolve_cursor_timestamp can decode it
-                    "_source_ticket_uuid": str(ticket.uuid),
-                })
+                }
+            )
         return events
 
     @classmethod
