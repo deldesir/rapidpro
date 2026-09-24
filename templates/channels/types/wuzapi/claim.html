@@ -1,0 +1,25 @@
+{% extends "channels/channel_claim_form.html" %}
+{% load i18n %}
+
+{% block pre-form %}
+  {% blocktrans trimmed with name=branding.name %}
+    Connect a WhatsApp account to your {{ name }} workspace through a Wuzapi bridge. The bridge links to the phone's
+    WhatsApp the same way a linked device does, so the number keeps working on the phone.
+  {% endblocktrans %}
+  <div class="card">
+    <ol class="steps">
+      <li>
+        {% blocktrans trimmed %}
+          Enter the number of the WhatsApp account to connect. It must be able to receive a WhatsApp prompt or scan a QR
+          code on the next page.
+        {% endblocktrans %}
+      </li>
+      <li>
+        {% blocktrans trimmed %}
+          Leave the token blank to let the bridge create a user for this channel, or enter the token of a user you
+          created on the bridge yourself.
+        {% endblocktrans %}
+      </li>
+    </ol>
+  </div>
+{% endblock pre-form %}

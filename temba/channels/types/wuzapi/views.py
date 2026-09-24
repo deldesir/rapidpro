@@ -1,510 +1,206 @@
-import base64
-import hashlib
-import hmac
-import json
-import logging
-import mimetypes
-import os
-import requests
-import sys
-import socket
-import time
-from uuid import uuid4
+import re
+
+from smartmin.views import SmartFormView, SmartModelActionView
 
 from django import forms
 from django.conf import settings
-from django.core.files.base import ContentFile
-from django.core.files.storage import default_storage
-from django.http import HttpResponse, HttpResponseRedirect
+from django.core.exceptions import ValidationError
+from django.http import JsonResponse
 from django.urls import reverse
 from django.utils.crypto import get_random_string
-from django.utils.decorators import method_decorator
 from django.utils.translation import gettext_lazy as _
-from django.views.decorators.csrf import csrf_exempt
-from django.views.generic import View
 
-from temba.channels.models import Channel
-from temba.channels.views import ClaimViewMixin
-from temba.contacts.models import Contact, URN
-from temba import mailroom
-from temba.msgs.models import Msg
-from temba.orgs.views.mixins import OrgPermsMixin
-from smartmin.views import SmartFormView
+from temba.orgs.views.mixins import OrgObjPermsMixin
 
-def get_server_ip():
-    """Detects the primary IP address of the server."""
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        # doesn't even have to be reachable
-        s.connect(('10.255.255.255', 1))
-        IP = s.getsockname()[0]
-    except Exception:
-        IP = '127.0.0.1'
-    finally:
-        s.close()
-    return IP
+from ...models import Channel
+from ...views import ChannelTypeMixin, ClaimViewMixin
+from .client import WuzapiClient, WuzapiError
 
-logger = logging.getLogger(__name__)
+# how the connect page describes the bridge's session to the browser
+STATUS_STARTING = "starting"  # the bridge is connecting to WhatsApp
+STATUS_PAIRING = "pairing"  # connected, waiting for a phone to scan the QR code or enter a code
+STATUS_CONNECTED = "connected"  # a phone is linked
+
 
 class ClaimView(ClaimViewMixin, SmartFormView):
-    class ClaimForm(ClaimViewMixin.Form):
+    class Form(ClaimViewMixin.Form):
         wuzapi_url = forms.CharField(
-            label=_("Wuzapi URL"),
-            initial="http://localhost:8095",
-            help_text=_("The URL where the Wuzapi service is running.")
+            label=_("Bridge URL"),
+            help_text=_("Where the Wuzapi bridge is listening, as seen from this server."),
         )
         wuzapi_token = forms.CharField(
-            label=_("Access Token"),
+            label=_("Bridge user token"),
             required=False,
-            help_text=_("The access token. Leave blank to generate a new user automatically.")
+            help_text=_("The token of an existing bridge user. Leave blank to have one created for this channel."),
         )
         phone_number = forms.CharField(
-            label=_("Phone Number"),
-            help_text=_("The phone number associated with this Wuzapi instance (e.g. 50937000000).")
+            label=_("Phone number"),
+            help_text=_("The WhatsApp number the bridge will link, with country code, e.g. 12065551212."),
         )
 
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            from django.conf import settings
-            if getattr(settings, "WUZAPI_ADMIN_TOKEN", None):
-                self.fields["wuzapi_token"].widget = forms.HiddenInput()
-                self.fields["wuzapi_token"].label = ""
-                self.fields["wuzapi_token"].help_text = ""
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
 
-    title = _("Connect Wuzapi")
-    form_class = ClaimForm
-    permission = "channels.channel_claim"
-    success_url = "uuid@wuzapi.connect"
+            self.fields["wuzapi_url"].initial = settings.WUZAPI_URL
+
+            # without an admin token the bridge user can't be created here, so the token becomes mandatory
+            if not settings.WUZAPI_ADMIN_TOKEN:
+                self.fields["wuzapi_token"].required = True
+                self.fields["wuzapi_token"].help_text = _("The token of a user on the bridge.")
+
+        def clean_wuzapi_url(self):
+            return self.cleaned_data["wuzapi_url"].strip().rstrip("/")
+
+        def clean_phone_number(self):
+            digits = re.sub(r"\D", "", self.cleaned_data["phone_number"])
+            if not 8 <= len(digits) <= 15:
+                raise ValidationError(_("Enter the number with its country code, digits only."))
+
+            for channel in Channel.objects.filter(
+                org=self.request.org, is_active=True, channel_type=self.channel_type.code
+            ):
+                if channel.address == digits:
+                    raise ValidationError(_("A channel for this number already exists in this workspace."))
+
+            return digits
+
+    form_class = Form
 
     def form_valid(self, form):
-        user = self.request.user
         org = self.request.org
-        data = form.cleaned_data
-        
-        channel_type = self.channel_type
-        address = data["phone_number"]
-        wuzapi_url = data["wuzapi_url"].rstrip('/')
-        token = data["wuzapi_token"]
+        url = form.cleaned_data["wuzapi_url"]
+        token = form.cleaned_data["wuzapi_token"]
+        address = form.cleaned_data["phone_number"]
 
-        # If token is missing, try to create a new user using the Admin API
-        if not token:
-            admin_token = getattr(settings, "WUZAPI_ADMIN_TOKEN", None)
-            
-            if admin_token:
-                try:
-                    # Create unique username based on org and user
-                    username = f"rp_{org.id}_{user.id}_{address}_{int(time.time())}"
-                    new_token = f"tk_{org.id}_{user.id}_{address}_{int(time.time())}"
-                    
-                    # Wuzapi endpoint to add user
-                    resp = requests.post(
-                        f"{wuzapi_url}/admin/users",
-                        json={
-                            "name": username, 
-                            "token": new_token,
-                            "events": "Message,ReadReceipt"
-                        },
-                        headers={"Authorization": admin_token, "Content-Type": "application/json"},
-                        timeout=10
-                    )
-                    resp.raise_for_status()
-                    token = new_token
-                    
-                except Exception as e:
-                    logger.error(f"Failed to create Wuzapi user: {e}")
-                    form.add_error(None, _("Failed to auto-create Wuzapi user. Please provide a token manually."))
-                    return self.form_invalid(form)
-            else:
-                form.add_error("wuzapi_token", _("Admin token not configured. Please provide a token manually."))
-                return self.form_invalid(form)
-        
-        # Safe to generate HMAC key
-        hmac_key = get_random_string(32)
-
-        # Native Wuzapi Channel (Go Handler)
-        channel_type = self.channel_type
-
-        # Configure Courier for Wuzapi (Native)
-        # We only need the wuzapi-specific keys. The "WZ" handler in Courier knows what to do.
-        config = {
-            "wuzapi_url": wuzapi_url,
-            "wuzapi_token": token,
-            "hmac_key": hmac_key,
-        }
-        
         try:
-            # Create the channel
+            if not token:
+                token = get_random_string(40)
+                WuzapiClient.create_user(url, settings.WUZAPI_ADMIN_TOKEN, name=f"{org.id}-{address}", token=token)
+
             self.object = Channel.create(
-                org=org,
-                user=user,
-                country=None,
-                channel_type=channel_type,
+                org,
+                self.request.user,
+                None,
+                self.channel_type,
+                name=address,
                 address=address,
-                config=config,
-                role=Channel.ROLE_SEND + Channel.ROLE_RECEIVE,
-                schemes=[URN.WHATSAPP_SCHEME]
+                config={"wuzapi_url": url, "wuzapi_token": token, "hmac_key": get_random_string(48)},
             )
-            logger.info(f"Wuzapi Channel created (Native): {self.object.uuid}")
-            
-            webhook_url = f"http://localhost:8080/c/wz/{self.object.uuid}/receive"
-            wuzapi_endpoint = f"{wuzapi_url}/webhook"
-
-            try:
-                # Configure webhook with explicit event subscription
-                response = requests.post(
-                    wuzapi_endpoint,
-                    json={
-                        "webhookurl": webhook_url,
-                        "events": ["Message", "ReadReceipt"]
-                    },
-                    headers={"Authorization": token, "Content-Type": "application/json"},
-                    timeout=10
-                )
-                response.raise_for_status()
-
-                # Configure HMAC
-                hmac_endpoint = f"{wuzapi_url}/session/hmac/config"
-                hmac_resp = requests.post(
-                     hmac_endpoint,
-                     json={"hmac_key": hmac_key},
-                     headers={"Authorization": token, "Content-Type": "application/json"},
-                     timeout=10
-                )
-                hmac_resp.raise_for_status()
-
-            except Exception as e:
-                logger.error(f"Failed to auto-configure Wuzapi webhook or HMAC: {e}")
-
-        except Exception as e:
-            logger.exception(f"Error creating Wuzapi channel: {e}")
-            form.add_error(None, f"Internal Error: {e}")
+        except WuzapiError as e:
+            form.add_error(None, _("Unable to set up the bridge: %(error)s") % {"error": e})
             return self.form_invalid(form)
 
-        
-        redirect_url = self.get_success_url()
-        
-        # Handle AJAX requests (RapidPro uses AJAX forms)
-        if self.request.META.get('HTTP_X_REQUESTED_WITH') == 'XMLHttpRequest':
-             return HttpResponse(json.dumps({'status': 302, 'location': redirect_url}), content_type='application/json')
-        
-        return HttpResponseRedirect(redirect_url)
+        return super().form_valid(form)
 
     def get_success_url(self):
-        # Use simple URL resolution
-        slug = self.channel_type.slug
-        return reverse(f"channels.types.{slug}.connect", args=[self.object.uuid])
+        return reverse("channels.types.wuzapi.connect", args=[self.object.uuid])
 
-class ConnectWuzapiView(OrgPermsMixin, SmartFormView):
-    class ConnectForm(forms.Form):
-        pass  # Just a button to finish or re-check
 
-    title = _("Scan QR Code")
-    form_class = ConnectForm
+class ChannelActionMixin(ChannelTypeMixin, OrgObjPermsMixin):
+    """
+    Base for the views that act on an existing channel of this type
+    """
+
+    model = Channel
+    slug_url_kwarg = "uuid"
+    fields = ()
+
+    def get_queryset(self):
+        return Channel.objects.filter(channel_type=self.channel_type.code, is_active=True)
+
+    def derive_menu_path(self):
+        return f"/settings/channels/{self.get_object().uuid}"
+
+    def get_client(self) -> WuzapiClient:
+        return self.channel_type.get_client(self.get_object())
+
+
+class ConnectView(ChannelActionMixin, SmartModelActionView, SmartFormView):
+    """
+    Shows the link state of the bridge's session and, until a phone is linked, the QR code to scan. The page polls
+    the status view; a submit is just a refresh.
+    """
+
+    class Form(forms.Form):
+        pass
+
+    form_class = Form
+    permission = "channels.channel_claim"
     template_name = "channels/types/wuzapi/connect.html"
-    permission = "channels.channel_claim"
+    title = _("Connect WhatsApp")
+    success_url = "uuid@channels.types.wuzapi.connect"
 
     def get_context_data(self, **kwargs):
-        # Ensure self.object is set for SmartView methods
-        self.object = Channel.objects.get(uuid=self.kwargs['uuid'], org=self.request.org)
-        
         context = super().get_context_data(**kwargs)
-        channel = self.object
-        config = channel.config
-        
-        
-        context = super().get_context_data(**kwargs)
-        channel = self.object
-        config = channel.config
+        context["status_url"] = reverse("channels.types.wuzapi.status", args=[self.object.uuid])
+        context["pair_url"] = reverse("channels.types.wuzapi.pair", args=[self.object.uuid])
+        context["disconnect_url"] = reverse("channels.types.wuzapi.disconnect", args=[self.object.uuid])
+        return context
 
-        
-        wuzapi_url = config.get("wuzapi_url")
-        token = config.get("wuzapi_token")
-        hmac_key = config.get("hmac_key")
-        
-        qr_code = None
-        pairing_code = None
-        status = "unknown"
-        
-        if wuzapi_url and token:
-            try:
-                # Courier always runs locally over plain HTTP — never use public IP or https
-                webhook_url = f"http://localhost:8080/c/wz/{channel.uuid}/receive"
-                
-                # Update Webhook (non-blocking ideally, but short timeout)
-                # Update Webhook (non-blocking ideally, but short timeout)
-                try:
-                    requests.post(
-                        f"{wuzapi_url}/webhook",
-                        json={
-                            "webhookurl": webhook_url,
-                            "events": ["Message", "ReadReceipt"]
-                        },
-                        headers={"Authorization": token, "Content-Type": "application/json"},
-                        timeout=2
-                    )
-                except Exception:
-                     pass # Webhook update is best-effort
-
-                # Self-Heal HMAC Key if missing
-                if not hmac_key:
-                    hmac_key = get_random_string(32)
-                    channel.config["hmac_key"] = hmac_key
-                    channel.save(update_fields=["config"])
-                    logger.info(f"Generated missing HMAC key for channel {channel.uuid}")
-
-                if hmac_key:
-                    try:
-                        requests.post(
-                             f"{wuzapi_url}/session/hmac/config",
-                             json={"hmac_key": hmac_key},
-                             headers={"Authorization": token, "Content-Type": "application/json"},
-                             timeout=2
-                        )
-                    except Exception:
-                        pass # HMAC config is best-effort
-            
-                    
-                # Check status
-                try:
-                    status_resp = requests.get(
-                        f"{wuzapi_url}/session/status",
-                        headers={"Authorization": token},
-                        timeout=2
-                    )
-                    if status_resp.status_code == 200:
-                        data = status_resp.json().get('data', {})
-                        
-                        if is_true(data.get("loggedIn")):
-                            status = "connected"
-                        elif is_true(data.get("connected")):
-                            status = "scancode"
-                        else:
-                            status = "connecting"
-                except Exception as e:
-                    logger.debug(f"Wuzapi status check failed: {e}")
-
-                # Fetch QR and pairing code if not yet connected
-                if status != "connected":
-                    try:
-                        # Ensure session is started
-                        requests.post(f"{wuzapi_url}/session/connect", headers={"Authorization": token}, json={}, timeout=2)
-
-                        qr_resp = requests.get(
-                            f"{wuzapi_url}/session/qr",
-                            headers={"Authorization": token},
-                            timeout=2
-                        )
-                        if qr_resp.status_code == 200:
-                            qr_data = qr_resp.json().get('data', {})
-                            qr_code = qr_data.get("QRCode")
-
-                        # Request pairing code once — WhatsApp sends the PIN prompt to the phone.
-                        # The code is passed to the template and displayed immediately so the user
-                        # never needs to click a button (which would trigger a second prompt).
-                        pair_resp = requests.post(
-                            f"{wuzapi_url}/session/pairphone",
-                            headers={"Authorization": token},
-                            json={"phone": channel.address},
-                            timeout=10
-                        )
-                        if pair_resp.status_code == 200:
-                            pair_json = pair_resp.json()
-                            pairing_code = pair_json.get("LinkingCode") or pair_json.get("data", {}).get("LinkingCode")
-
-                    except Exception as e:
-                        logger.debug(f"Wuzapi QR/pairing check failed: {e}")
-    
-            except Exception as e:
-                logger.error(f"Error updating Wuzapi status: {e}")
-
-            context['channel'] = channel
-            context['qr_code'] = qr_code
-            context['pairing_code'] = pairing_code
-            context['status'] = status
-            return context
-
-    def form_valid(self, form):
-        return HttpResponseRedirect(self.get_success_url())
-
-    def get_success_url(self):
-         from django.urls import reverse
-         # Redirect to the main channel dashboard/read view
-         # Note: 'channels.channel_read' is the standard view name for seeing channel details
-         return reverse("channels.channel_read", args=[self.kwargs['uuid']])
-
-    def get_cancel_url(self):
-        from django.urls import reverse
-        return reverse("channels.channel_read", args=[self.kwargs['uuid']])
-
-    def derive_breadcrumbs(self):
-        from django.urls import reverse
-        # Avoid SmartView auto-generating breadcrumbs for non-existent 'list' view
-        return (
-            (reverse("orgs.org_home"), _("Home")),
-            (reverse("channels.channel_read", args=[self.kwargs['uuid']]), self.object.name),
-            (None, _("Connect")),
-        )
-
-    def derive_list_url(self):
-        from django.urls import reverse
-        # Fallback to org home since no channel list exists
-        return reverse("orgs.org_home")
-
-class DashboardWuzapiView(OrgPermsMixin, View):
-    permission = "channels.channel_read"
-    
-    def get(self, request, *args, **kwargs):
-        channel = Channel.objects.get(uuid=kwargs['uuid'], org=request.org)
-        config = channel.config
-        wuzapi_url = config.get("wuzapi_url")
-        
-        if not wuzapi_url:
-             return HttpResponse("Wuzapi URL not configured", status=400)
-             
-        # Construct dashboard URL (assuming /wuzapi/dashboard/ standard path)
-        dashboard_url = f"{wuzapi_url}/dashboard/"
-        return HttpResponseRedirect(dashboard_url)
-
-class LogoutWuzapiView(OrgPermsMixin, SmartFormView):
-    class LogoutForm(forms.Form):
-        pass # Confirmation button
-
-    title = _("Disconnect Session")
-    form_class = LogoutForm
-    permission = "channels.channel_update"
-    submit_button_name = _("Disconnect")
-
-    def get_context_data(self, **kwargs):
-        # Ensure object is available for breadcrumbs
-        if 'uuid' in self.kwargs:
-            self.object = Channel.objects.get(uuid=self.kwargs['uuid'], org=self.request.org)
-        return super().get_context_data(**kwargs)
-
-    
-    def form_valid(self, form):
-        channel = Channel.objects.get(uuid=self.kwargs['uuid'], org=self.request.org)
-        config = channel.config
-        wuzapi_url = config.get("wuzapi_url")
-        token = config.get("wuzapi_token")
-        
-        if wuzapi_url and token:
-            try:
-                requests.post(
-                    f"{wuzapi_url}/session/logout",
-                    headers={"Authorization": token},
-                    timeout=5
-                )
-                logger.info(f"Wuzapi session logged out for channel {channel.uuid}")
-            except Exception as e:
-                logger.error(f"Failed to logout Wuzapi session: {e}")
-                # Don't block the UI flow, just log it
-                
-        return HttpResponseRedirect(self.get_success_url())
-
-    def get_success_url(self):
-        channel = Channel.objects.get(uuid=self.kwargs['uuid'], org=self.request.org)
-        slug = Channel.get_type_from_code(channel.channel_type).slug
-        return reverse(f"channels.types.{slug}.connect", args=[self.kwargs['uuid']])
+    def execute_action(self):
+        pass
 
 
-class WuzapiStatusView(OrgPermsMixin, View):
+class StatusView(ChannelActionMixin, SmartModelActionView):
     """
-    Lightweight endpoint for polling Wuzapi status/QR code.
-    Returns JSON: { "status": "connected"|"scancode"|"connecting", "qr": "base64...", "pairing_code": "..." }
+    JSON for the connect page: the session's state and, while pairing, the current QR code. Starts the session if
+    the bridge isn't connected to WhatsApp yet.
     """
+
     permission = "channels.channel_claim"
+    http_method_names = ["get"]
 
     def get(self, request, *args, **kwargs):
+        client = self.get_client()
+
         try:
-            channel = Channel.objects.get(uuid=kwargs['uuid'], org=request.org)
-            config = channel.config
-            wuzapi_url = config.get("wuzapi_url")
-            token = config.get("wuzapi_token")
+            connected, logged_in = client.status()
+            if logged_in:
+                return JsonResponse({"status": STATUS_CONNECTED})
+            if connected:
+                return JsonResponse({"status": STATUS_PAIRING, "qr_code": client.qr_code()})
 
-            if not wuzapi_url or not token:
-                return HttpResponse(json.dumps({"error": "Configuration missing"}), content_type="application/json", status=400)
+            client.connect()
+            return JsonResponse({"status": STATUS_STARTING})
+        except WuzapiError as e:
+            return JsonResponse({"error": str(e)}, status=502)
 
-            status = "unknown"
-            qr_code = None
-            pairing_code = None
 
-            # 1. Check Status
-            try:
-                status_resp = requests.get(
-                    f"{wuzapi_url}/session/status",
-                    headers={"Authorization": token},
-                    timeout=3
-                )
-                if status_resp.status_code == 200:
-                    data = status_resp.json().get('data', {})
-                if status_resp.status_code == 200:
-                    data = status_resp.json().get('data', {})
-                    
-                    # Robust boolean check
-                    def is_true(val):
-                         return str(val).lower() in ("true", "1", "yes", "on")
+class PairView(ChannelActionMixin, SmartModelActionView):
+    """
+    Asks WhatsApp for a linking code for the channel's number. Only ever called from the connect page's button,
+    because every request makes the phone show a prompt.
+    """
 
-                    if is_true(data.get("loggedIn")):
-                        status = "connected"
-                    elif is_true(data.get("connected")):
-                        status = "scancode"
-                    else:
-                        status = "connecting"
-            except Exception:
-                pass # Fail silently, keep status as unknown
+    permission = "channels.channel_claim"
+    http_method_names = ["post"]
 
-            # 2. Get QR/Code if needed
-            if status == "scancode":
-                try:
-                    # Refresh QR - Only if specifically requested or maybe just rely on session/qr being idempotent-ish
-                    # Actually, Wuzapi seems to rotate QR on read. 
-                    # Let's throttle it? Or just let it be for now but REMOVE PAIRING CODE.
-                    qr_resp = requests.get(
-                        f"{wuzapi_url}/session/qr",
-                        headers={"Authorization": token},
-                        timeout=3
-                    )
-                    if qr_resp.status_code == 200:
-                        qr_data = qr_resp.json().get('data', {})
-                        qr_code = qr_data.get("QRCode")
+    def post(self, request, *args, **kwargs):
+        try:
+            code = self.get_client().pair_phone(self.get_object().address)
+        except WuzapiError as e:
+            return JsonResponse({"error": str(e)}, status=502)
 
-                    if request.GET.get("gen_code"):
-                         logger.info(f"Generating pairing code for channel {channel.uuid}")
-                         try:
-                             # Ensure session exists first
-                             requests.post(
-                                 f"{wuzapi_url}/session/connect", 
-                                 headers={"Authorization": token}, 
-                                 json={}, 
-                                 timeout=30
-                             )
-                             
-                             pair_resp = requests.post(
-                                  f"{wuzapi_url}/session/pairphone",
-                                  headers={"Authorization": token},
-                                  json={"phone": channel.address},
-                                  timeout=30
-                             )
-                             logger.info(f"Pairing code response: {pair_resp.status_code} {pair_resp.text}")
-                             if pair_resp.status_code == 200:
-                                  pair_json = pair_resp.json()
-                                  pairing_code = pair_json.get("LinkingCode") or pair_json.get("data", {}).get("LinkingCode")
-                             else:
-                                  logger.error(f"Wuzapi failed to generate code: {pair_resp.text}")
-                         except Exception as e:
-                             logger.exception(f"Exception calling wuzapi pairphone: {e}")
-                    else:
-                         pairing_code = None
+        if not code:
+            return JsonResponse({"error": str(_("The bridge didn't return a code, try again."))}, status=502)
 
-                except Exception as e:
-                    logger.debug(f"QR/Pairing check error: {e}")
+        return JsonResponse({"code": code})
 
-            return HttpResponse(json.dumps({
-                "status": status,
-                "qr_code": qr_code,
-                "pairing_code": pairing_code
-            }), content_type="application/json")
 
-        except Exception as e:
-            logger.error(f"WuzapiStatusView error: {e}")
-            return HttpResponse(json.dumps({"error": str(e)}), content_type="application/json", status=500)
+class DisconnectView(ChannelActionMixin, SmartModelActionView, SmartFormView):
+    """
+    Logs the bridge's session out so the phone is unlinked; the channel stays and can be linked again
+    """
+
+    class Form(forms.Form):
+        pass
+
+    form_class = Form
+    permission = "channels.channel_update"
+    template_name = "channels/types/wuzapi/disconnect.html"
+    title = _("Disconnect WhatsApp")
+    submit_button_name = _("Disconnect")
+    success_url = "uuid@channels.types.wuzapi.connect"
+
+    def execute_action(self):
+        self.get_client().logout()

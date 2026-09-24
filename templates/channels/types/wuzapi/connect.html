@@ -1,214 +1,108 @@
-{% extends "smartmin/form.html" %}
-{% load smartmin i18n %}
-
-{% block title %}
-{% trans "Connect Wuzapi" %}
-{% endblock title %}
+{% extends "channels/channel_claim_form.html" %}
+{% load i18n %}
 
 {% block pre-form %}
-<div class="row align-items-center justify-content-center">
-  <!-- Scanner Column (Centered & Expanded) -->
-  <div class="col-md-8 col-lg-6">
-    <div class="card shadow-lg border-0 rounded-3">
-      <div class="card-body text-center p-4 p-md-5" id="status-container"
-        style="min-height: 450px; display: flex; flex-direction: column; justify-content: center;">
-
-        <h3 class="mb-4 fw-light text-primary">{% trans "Connect WhatsApp" %}</h3>
-
-        <!-- Status: Connecting/Loading -->
-        <div id="state-connecting" class="d-none">
-          <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;"></div>
-          <h5 class="fw-normal">{% trans "Connecting..." %}</h5>
-          <p class="text-muted small">{% trans "Initializing session." %}</p>
+  <p>
+    {% blocktrans trimmed with number=object.address %}
+      Link the WhatsApp account of {{ number }} to this channel. Open WhatsApp on that phone, go to Linked Devices and
+      scan the code below, or ask for a linking code to type into the phone instead.
+    {% endblocktrans %}
+  </p>
+{% endblock pre-form %}
+{% block form %}
+  <div class="card text-center" id="wz-connect">
+    <div data-status="starting">
+      <temba-loading units="6" size="8"></temba-loading>
+      <p class="mt-4">{% trans "Connecting to WhatsApp…" %}</p>
+    </div>
+    <div data-status="pairing" class="hidden">
+      <img id="wz-qr" alt="{% trans 'QR code to scan with WhatsApp' %}" class="inline-block" width="264" height="264">
+      <p class="mt-4">{% trans "Scan with WhatsApp: Settings › Linked Devices › Link a Device" %}</p>
+      <div class="mt-6">
+        <div id="wz-code" class="hidden">
+          <div class="font-mono text-3xl tracking-widest select-all"></div>
+          <p class="mt-2">{% trans "Enter this code on the phone: Link a Device › Link with phone number instead" %}</p>
         </div>
-
-        <!-- Status: QR Code -->
-        <div id="state-scan" class="d-none animate__animated animate__fadeIn">
-          <div class="position-relative d-inline-block">
-            <img id="qr-image" src="" class="img-fluid rounded border mb-3" style="max-width: 280px;"
-              alt="Scan QR Code" />
-          </div>
-          <p class="text-muted mb-4 small">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-camera me-1"
-              viewBox="0 0 16 16">
-              <path
-                d="M15 12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h1.172a3 3 0 0 0 2.12-.879l.83-.828A1 1 0 0 1 6.827 3h2.344a1 1 0 0 1 .707.293l.828.828A3 3 0 0 0 12.828 5H14a1 1 0 0 1 1 1v6zM2 4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-1.172a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 9.172 2H6.828a2 2 0 0 0-1.414.586l-.828.828A2 2 0 0 1 3.172 4H2z" />
-              <path
-                d="M8 11a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5zm0 1a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM3 6.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0z" />
-            </svg>
-            {% trans "Scan with WhatsApp (Settings > Linked Devices)" %}
-          </p>
-
-          <div id="pairing-section" class="mt-4 pt-4 border-top d-none">
-            <div id="code-display-area" class="alert alert-light border shadow-sm d-none mb-3">
-              <h1 class="display-4 font-monospace user-select-all text-primary mb-0 fw-bold" id="pairing-code"
-                style="letter-spacing: 0.15em;"></h1>
-              <div class="small text-muted mt-2">{% trans "Enter this code on your phone" %}</div>
-            </div>
-
-            <button id="btn-gen-code" type="button" class="btn btn-outline-primary rounded-pill px-4">
-              {% trans "Get Pairing Code instead" %}
-            </button>
-          </div>
-        </div>
-
-        <!-- Status: Success -->
-        <div id="state-success" class="d-none animate__animated animate__fadeIn">
-          <div class="display-4 text-success mb-3">
-            <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" fill="currentColor"
-              class="bi bi-check-circle-fill" viewBox="0 0 16 16">
-              <path
-                d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z" />
-            </svg>
-          </div>
-          <h2 class="fw-bold text-dark">{% trans "Connected" %}</h2>
-          <p class="text-muted lead fs-6">{% trans "Your channel is now active." %}</p>
-
-          <div class="d-grid gap-2 col-10 mx-auto mt-4">
-            <a href="{% url 'channels.channel_read' channel.uuid %}" class="btn btn-primary btn-lg">
-              {% trans "Go to Dashboard" %}
-            </a>
-            <a href="{% url 'channels.types.wuzapi.logout' channel.uuid %}"
-              class="btn btn-link text-danger text-decoration-none btn-sm mt-2">
-              {% trans "Disconnect Session" %}
-            </a>
-          </div>
-        </div>
+        <button type="button" id="wz-pair" class="button-light">{% trans "Get a linking code instead" %}</button>
       </div>
     </div>
-
-    <div class="text-center mt-4">
-      <a href="{% url 'channels.channel_read' channel.uuid %}" class="text-muted text-decoration-none">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-left me-1"
-          viewBox="0 0 16 16">
-          <path fill-rule="evenodd"
-            d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8z" />
-        </svg>
-        {% trans "Return to Dashboard" %}
-      </a>
+    <div data-status="connected" class="hidden">
+      <temba-icon name="check" size="4"></temba-icon>
+      <p class="mt-4">{% trans "This channel is linked and ready." %}</p>
+      <p class="mt-2">
+        <a href="{{ disconnect_url }}">{% trans "Disconnect" %}</a>
+      </p>
     </div>
-
+    <div data-status="error" class="hidden">
+      <p class="text-error" id="wz-error"></p>
+    </div>
   </div>
-</div>
-{% endblock pre-form %}
-
-{% block fields %}
-{# No fields needed #}
-{% endblock fields %}
-
-{% block extra-script %}
-{{ block.super }}
-<script>
-  document.addEventListener("DOMContentLoaded", function () {
-    const statusUrl  = "{% url 'channels.types.wuzapi.status' channel.uuid %}";
-
-    const elConnecting  = document.getElementById('state-connecting');
-    const elScan        = document.getElementById('state-scan');
-    const elSuccess     = document.getElementById('state-success');
-    const imgQr         = document.getElementById('qr-image');
-    const elPairingSec  = document.getElementById('pairing-section');
-    const elCodeArea    = document.getElementById('code-display-area');
-    const elCode        = document.getElementById('pairing-code');
-    const btnGen        = document.getElementById('btn-gen-code');
-
-    // Values injected server-side by Django — no extra network call needed.
-    const serverCode    = "{{ pairing_code|default:''|escapejs }}";
-    const initialState  = "{{ status|default:'connecting'|escapejs }}";
-
-    let stopped   = false;   // true once connected — halts polling
-    let isPolling = false;   // prevents overlapping fetch calls
-
-    function showState(state) {
-      elConnecting.classList.add('d-none');
-      elScan.classList.add('d-none');
-      elSuccess.classList.add('d-none');
-      if (state === 'connecting' || state === 'unknown') elConnecting.classList.remove('d-none');
-      if (state === 'scancode')  elScan.classList.remove('d-none');
-      if (state === 'connected') elSuccess.classList.remove('d-none');
-    }
-
-    function showCode(code) {
-      elPairingSec.classList.remove('d-none');
-      elCodeArea.classList.remove('d-none');
-      elCode.innerText = code;
-      btnGen.classList.add('d-none');   // code visible — no button needed
-    }
-
-    // Render the pairing code from server context or show the fallback button.
-    // Called once on page load and again each time poll returns 'scancode'.
-    function applyCode() {
-      if (elCode.innerText) return;     // already shown — do nothing
-      if (serverCode) {
-        showCode(serverCode);
-      } else {
-        elPairingSec.classList.remove('d-none');
-        btnGen.classList.remove('d-none');
-      }
-    }
-
-    // Status-only polling — never calls /session/pairphone.
-    // Uses isPolling guard so concurrent requests cannot overlap.
-    function poll() {
-      if (stopped || isPolling) return;
-      isPolling = true;
-
-      fetch(statusUrl)
-        .then(r => r.json())
-        .then(data => {
-          if (data.status === 'connected') {
-            stopped = true;
-            showState('connected');
-            return;
-          }
-          if (data.status === 'scancode') {
-            showState('scancode');
-            if (data.qr_code) imgQr.src = data.qr_code;
-            applyCode();
-          } else {
-            showState('connecting');
-          }
-        })
-        .catch(e => console.error("Poll error:", e))
-        .finally(() => {
-          isPolling = false;
-          if (!stopped) setTimeout(poll, 5000);
-        });
-    }
-
-    // Fallback button — only visible when server returned no pairing code.
-    // Makes exactly one gen_code call, then hides itself permanently.
-    btnGen.addEventListener('click', function () {
-      if (btnGen.disabled) return;
-      btnGen.disabled = true;
-      btnGen.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> {% trans "Generating..." %}';
-
-      fetch(statusUrl + '?gen_code=1')
-        .then(r => r.json())
-        .then(data => {
-          if (data.pairing_code) {
-            showCode(data.pairing_code);
-          } else {
-            btnGen.innerText = "{% trans 'Try Again' %}";
-            btnGen.disabled = false;
-          }
-        })
-        .catch(() => {
-          btnGen.innerText = "{% trans 'Try Again' %}";
-          btnGen.disabled = false;
-        });
-    });
-
-    // Boot: render from server state immediately (no network call), then start polling.
-    showState(initialState);
-    if (initialState === 'scancode') applyCode();
-    setTimeout(poll, 5000);
-  });
-</script>
-{% endblock extra-script %}
-
+{% endblock form %}
 {% block form-buttons %}
-<div class="form-actions">
-  <button type="submit" class="btn btn-primary">{% trans "Refresh Status" %}</button>
-  <a href="{% url 'channels.channel_read' channel.uuid %}" class="btn btn-link">{% trans "Cancel" %}</a>
-</div>
-{% endblock %}
+{% endblock form-buttons %}
+{% block extra-script %}
+  {{ block.super }}
+  <script>
+    onSpload(function() {
+      const statusUrl = "{{ status_url }}";
+      const pairUrl = "{{ pair_url }}";
+      const root = document.getElementById("wz-connect");
+      const qr = document.getElementById("wz-qr");
+      const code = document.getElementById("wz-code");
+      const pairButton = document.getElementById("wz-pair");
+      let timer = null;
+
+      function show(status) {
+        root.querySelectorAll("[data-status]").forEach(function(el) {
+          el.classList.toggle("hidden", el.dataset.status !== status);
+        });
+      }
+
+      function poll() {
+        fetch(statusUrl, { credentials: "same-origin", headers: { "X-Requested-With": "XMLHttpRequest" } })
+          .then(function(response) { return response.json(); })
+          .then(function(data) {
+            if (data.error) {
+              document.getElementById("wz-error").textContent = data.error;
+              show("error");
+            } else {
+              show(data.status);
+              if (data.qr_code) {
+                qr.src = data.qr_code;
+              }
+            }
+            if (data.status !== "connected") {
+              timer = window.setTimeout(poll, 5000);
+            }
+          })
+          .catch(function() {
+            timer = window.setTimeout(poll, 5000);
+          });
+      }
+
+      pairButton.addEventListener("click", function() {
+        pairButton.disabled = true;
+        fetch(pairUrl, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "X-CSRFToken": getCookie("csrftoken"), "X-Requested-With": "XMLHttpRequest" }
+        })
+          .then(function(response) { return response.json(); })
+          .then(function(data) {
+            if (data.code) {
+              code.querySelector("div").textContent = data.code;
+              code.classList.remove("hidden");
+              pairButton.classList.add("hidden");
+            } else {
+              document.getElementById("wz-error").textContent = data.error;
+              show("error");
+            }
+          })
+          .finally(function() { pairButton.disabled = false; });
+      });
+
+      poll();
+      document.addEventListener("temba-spa-ready", function() { window.clearTimeout(timer); }, { once: true });
+    });
+  </script>
+{% endblock extra-script %}

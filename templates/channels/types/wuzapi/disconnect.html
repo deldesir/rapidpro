@@ -1,0 +1,11 @@
+{% extends "channels/channel_claim_form.html" %}
+{% load i18n %}
+
+{% block pre-form %}
+  <p>
+    {% blocktrans trimmed with number=object.address %}
+      This logs the bridge out of the WhatsApp account of {{ number }}. The channel is kept, and can be linked to a
+      phone again from its connection page.
+    {% endblocktrans %}
+  </p>
+{% endblock pre-form %}
