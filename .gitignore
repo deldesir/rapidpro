@@ -37,3 +37,6 @@ manage.sh
 rp.sh
 /media/emails/
 /media/orgs/
+
+# the goflow docs mailroom serves (fetched by the deployment)
+/docs/
