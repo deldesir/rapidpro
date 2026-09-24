@@ -10,8 +10,7 @@ def delete_rolled_up_archives(apps, schema_editor):
     Archive = apps.get_model("archives", "Archive")
     try:
         s3_client = storages["archives"].connection.meta.client
-    except AttributeError:
-        print("Skipping rolled up archive deletion (not on S3)")
+    except AttributeError:  # archives aren't on S3 here, there's nothing to delete
         return
 
     purged_rollups = Archive.objects.filter(needs_deletion=False).exclude(rollup=None)

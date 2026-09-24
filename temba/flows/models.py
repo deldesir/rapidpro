@@ -1734,14 +1734,9 @@ class FlowStart(LegacyIDMixin, models.Model):
         Requests a preview of the recipients of a start created with the given inclusions/exclusions, returning a tuple
         of the canonical query and the total count of contacts.
         """
-        try:
-            preview = mailroom.get_client().flow_start_preview(flow.org, flow, include=include, exclude=exclude)
-            return preview.query, preview.total
-        except Exception:
-            import logging
+        preview = mailroom.get_client().flow_start_preview(flow.org, flow, include=include, exclude=exclude)
 
-            logging.getLogger(__name__).warning("Flow start preview unavailable (ES disabled?), returning 0")
-            return "", 0
+        return preview.query, preview.total
 
     def is_starting(self) -> bool:
         return self.status in (self.STATUS_PENDING, self.STATUS_STARTED)

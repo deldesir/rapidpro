@@ -105,7 +105,7 @@ class TicketsOpenedNotificationType(NotificationType):
     slug = "tickets:opened"
 
     def get_target_url(self, notification) -> str:
-        return reverse("tickets.ticket_folder", kwargs={"folder": "unassigned", "status": "open"})
+        return f"{reverse('tickets.ticket_list')}unassigned/"
 
 
 class TicketActivityNotificationType(NotificationType):
@@ -116,7 +116,7 @@ class TicketActivityNotificationType(NotificationType):
     slug = "tickets:activity"
 
     def get_target_url(self, notification) -> str:
-        return reverse("tickets.ticket_folder", kwargs={"folder": "mine", "status": "open"})
+        return f"{reverse('tickets.ticket_list')}mine/"
 
 
 class InvitationAcceptedNotificationType(NotificationType):

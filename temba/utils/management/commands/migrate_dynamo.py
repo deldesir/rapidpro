@@ -52,6 +52,10 @@ class Command(BaseCommand):
         parser.add_argument("--testing", action="store_true")
 
     def handle(self, testing: bool, *args, **kwargs):
+        if not dynamo.is_enabled():
+            self.stdout.write("DynamoDB isn't configured (DYNAMO_TABLE_PREFIX is empty), nothing to migrate")
+            return
+
         self.client = dynamo.get_client()
 
         # during tests settings.TESTING is true so table prefix is "Test" - but this command is run with
@@ -85,10 +89,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(" OK"))
 
             if ttlSpec:
-                try:
-                    self.client.meta.client.update_time_to_live(TableName=real_name, TimeToLiveSpecification=ttlSpec)
-                except Exception:
-                    self.stdout.write(f"Skipping TTL for {real_name} (not supported by backend)")
+                self.client.meta.client.update_time_to_live(TableName=real_name, TimeToLiveSpecification=ttlSpec)
 
                 self.stdout.write(f"Updated TTL for {real_name}")
         else:
