@@ -22,7 +22,7 @@ from django.contrib.postgres.fields import ArrayField
 from django.contrib.postgres.indexes import OpClass
 from django.contrib.postgres.validators import ArrayMinLengthValidator
 from django.core.files import File
-from django.core.files.storage import default_storage
+from django.core.files.storage import FileSystemStorage, default_storage, storages
 from django.db import models, transaction
 from django.db.models import Count, Exists, Prefetch, Q
 from django.utils import timezone
@@ -1643,17 +1643,16 @@ class Export(TembaUUIDMixin, models.Model):
         Gets the raw storage URL
         """
 
-        filename = self._get_download_filename()
-        try:
-            url = default_storage.url(
-                self.path,
-                parameters=dict(ResponseContentDisposition=f"attachment;filename={filename}"),
-                http_method="GET",
-            )
-        except TypeError:
-            url = default_storage.url(self.path)
+        # local storage has no signed parameters, the download view sets the filename on its response instead
+        if isinstance(storages["default"], FileSystemStorage):
+            return default_storage.url(self.path)
 
-        return url
+        filename = self._get_download_filename()
+        return default_storage.url(
+            self.path,
+            parameters=dict(ResponseContentDisposition=f"attachment;filename={filename}"),
+            http_method="GET",
+        )
 
     def _get_download_filename(self):
         """

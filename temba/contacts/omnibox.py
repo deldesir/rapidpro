@@ -1,5 +1,4 @@
 import json
-import logging
 
 from django.db.models.functions import Lower
 
@@ -82,8 +81,6 @@ def _mixed_search(org, search: str, types: str) -> tuple:
             )
         except mailroom.QueryValidationException:
             pass
-        except Exception as e:
-            logging.getLogger(__name__).warning("Mailroom omnibox search unavailable: %s", e)
 
     return groups, contacts
 

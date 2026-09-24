@@ -139,7 +139,7 @@
             {% if team %}
             var name = escapeHtml(user.name);
             {% else %}
-            var name = '<a href="{% url "tickets.ticket_folder" "all" %}?assignee=' + user.uuid + '">' + escapeHtml(user.name) + '</a>';
+            var name = '<a href="{% url "tickets.ticket_list" %}all/?assignee=' + user.uuid + '">' + escapeHtml(user.name) + '</a>';
             {% endif %}
             return '<tr><td>' + name + '</td><td>' + user.replies.toLocaleString() + '</td></tr>';
           }).join("");

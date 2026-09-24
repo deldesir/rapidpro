@@ -1,11 +1,9 @@
 import logging
-
-from django.conf import settings
 import time
 
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponseRedirect
-from django.urls import resolve
+from django.urls import get_script_prefix, resolve
 
 logger = logging.getLogger(__name__)
 
@@ -48,16 +46,12 @@ class Formax:
         self.org = self.request.org
 
     def add_section(self, name, url, icon, action="formax", button="Save", nobutton=False, dependents=None, wide=False):
-        # ensure we strip the script prefix if present because resolve expects a path relative to the root
-        script_prefix = getattr(settings, "FORCE_SCRIPT_NAME", "/")
-        if script_prefix and script_prefix != "/" and url.startswith(script_prefix):
-             resolve_url = url[len(script_prefix):]
-             if not resolve_url.startswith("/"):
-                 resolve_url = "/" + resolve_url
-        else:
-             resolve_url = url
+        # section URLs come from reverse() and so carry the script prefix, which resolve() doesn't expect
+        prefix = get_script_prefix()
+        if prefix != "/" and url.startswith(prefix):
+            url = "/" + url[len(prefix) :]
 
-        resolver = resolve(resolve_url)
+        resolver = resolve(url)
         self.request.META["HTTP_X_FORMAX"] = 1
         self.request.META["HTTP_X_FORMAX_ACTION"] = action
 

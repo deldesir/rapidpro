@@ -254,12 +254,7 @@ class ContactCRUDL(SmartCRUDL):
                 return blocker
 
             query = self.request.GET.get("s")
-            try:
-                total = mailroom.get_client().contact_export_preview(self.request.org, self.group, query)
-            except Exception as e:
-                logger.warning("Mailroom export preview unavailable: %s", e)
-                total = self.group.get_member_count()
-
+            total = mailroom.get_client().contact_export_preview(self.request.org, self.group, query)
             if total > self.size_limit:
                 return "too-big"
 
@@ -388,24 +383,11 @@ class ContactCRUDL(SmartCRUDL):
                 request.org, request.user, self.get_object(), text, [str(a) for a in attachments], [], ticket
             )
 
-            # Mailroom client may return raw message or event wrapper
-            if "event" in resp:
-                event = resp["event"]
-            else:
-                # Wrap raw message in msg_created event structure
-                event = {
-                    "type": "msg_created",
-                    "uuid": resp.get("uuid"),
-                    "occurred_on": resp.get("created_on"),
-                    "created_on": resp.get("created_on"),
-                    "msg": resp,
-                }
+            # update user ref with avatar
+            if resp["event"].get("_user"):
+                resp["event"]["_user"] = request.user.as_chat_ref()
 
-            # inject user ref for the UI
-            if isinstance(event, dict):
-                event["_user"] = request.user.as_chat_ref()
-
-            return JsonResponse({"event": event})
+            return JsonResponse({"event": resp["event"]})
 
         def _get_uuid_param(self, name: str) -> UUID:
             try:
@@ -426,11 +408,7 @@ class ContactCRUDL(SmartCRUDL):
                 return JsonResponse({"results": []})
 
             contact = self.get_object()
-            try:
-                results = mailroom.get_client().msg_search(request.org, text, contact=contact)
-            except Exception as e:
-                logger.warning("Mailroom message search unavailable: %s", e)
-                return JsonResponse({"results": []})
+            results = mailroom.get_client().msg_search(request.org, text, contact=contact)
 
             return JsonResponse({"results": [event for _, event in results]})
 
@@ -457,9 +435,6 @@ class ContactCRUDL(SmartCRUDL):
                 }
             except mailroom.QueryValidationException as e:
                 return JsonResponse({"total": 0, "sample": [], "query": "", "error": str(e)})
-            except Exception as e:
-                logger.warning("Mailroom contact search unavailable: %s", e)
-                return JsonResponse({"total": 0, "sample": [], "query": "", "error": _("Search is temporarily unavailable")})
 
             # serialize our contact sample
             json_contacts = []
@@ -517,9 +492,6 @@ class ContactCRUDL(SmartCRUDL):
                     self.search_is_saveable = parsed.metadata.allow_as_group
                 except mailroom.QueryValidationException as e:
                     self.search_error = str(e)
-                except Exception as e:
-                    logger.warning("Mailroom query parse unavailable: %s", e)
-                    self.search_error = _("Search is temporarily unavailable")
 
             if self.has_org_perm("contacts.contactgroup_create") and self.search_is_saveable:
                 menu.add_modax(

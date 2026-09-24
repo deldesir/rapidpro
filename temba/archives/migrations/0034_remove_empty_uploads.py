@@ -11,8 +11,7 @@ def clear_empty_archive_uploads(apps, schema_editor):
     Archive = apps.get_model("archives", "Archive")
     try:
         s3_client = storages["archives"].connection.meta.client
-    except AttributeError:
-        print("Skipping empty archive upload deletion (not on S3)")
+    except AttributeError:  # archives aren't on S3 here, there's nothing to delete
         return
     num_updated = 0
 

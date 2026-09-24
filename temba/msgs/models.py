@@ -282,14 +282,9 @@ class Broadcast(LegacyIDMixin, models.Model):
         Requests a preview of the recipients of a broadcast created with the given inclusions/exclusions, returning a
         tuple of the canonical query and the total count of contacts.
         """
-        try:
-            preview = mailroom.get_client().msg_broadcast_preview(org, include=include, exclude=exclude)
-            return preview.query, preview.total
-        except Exception:
-            import logging
+        preview = mailroom.get_client().msg_broadcast_preview(org, include=include, exclude=exclude)
 
-            logging.getLogger(__name__).warning("Broadcast preview unavailable (ES disabled?), returning 0")
-            return "", 0
+        return preview.query, preview.total
 
     def has_pending_fire(self):  # pragma: needs cover
         return self.schedule and self.schedule.next_fire is not None

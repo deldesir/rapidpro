@@ -6,7 +6,6 @@ from urllib.parse import quote, urlencode
 from smartmin.views import SmartFormView, SmartModelActionView, SmartModelFormView
 
 from django import forms
-from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
@@ -353,9 +352,7 @@ class SpaMixin:
 
     def derive_menu_path(self):
         if hasattr(self, "menu_path"):
-            prefix = getattr(settings, "FORCE_SCRIPT_NAME", "") or ""
-            path = self.menu_path
-            return path if path.startswith(prefix) else prefix + path
+            return self.menu_path
         return self.request.path
 
     def render_to_response(self, context, **response_kwargs):

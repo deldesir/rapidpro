@@ -1197,16 +1197,7 @@ class Contact(LegacyIDMixin, LegacyUUIDMixin, SmartModel):
 
         # do de-indexing first so if it fails for some reason, we don't go through with the delete
         if deindex:
-            try:
-                mailroom.get_client().contact_deindex(self.org, [self])
-            except Exception:
-                # In nanorp mode (no ES), deindex will fail — safe to proceed with deletion
-                # since there's nothing to deindex
-                import logging
-
-                logging.getLogger(__name__).warning(
-                    "Contact deindex skipped (ES unavailable), proceeding with deletion: contact=%s", self.uuid
-                )
+            mailroom.get_client().contact_deindex(self.org, [self])
 
         with transaction.atomic():
             # prep our urns for deletion so our old path creates a new urn

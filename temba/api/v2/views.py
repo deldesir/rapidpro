@@ -12,8 +12,8 @@ from rest_framework.response import Response
 from rest_framework.reverse import reverse
 from smartmin.views import SmartTemplateView
 
-from django.conf import settings
 from django.db.models import OuterRef, Prefetch, Q, Sum
+from django.urls import get_script_prefix
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 
@@ -149,18 +149,6 @@ class ExplorerView(OrgPermsMixin, SmartTemplateView):
             UsersEndpoint.get_read_explorer(),
             WorkspaceEndpoint.get_read_explorer(),
         ]
-
-        # Ensure all endpoints have the correct script prefix
-        prefix = getattr(settings, "FORCE_SCRIPT_NAME", None)
-        if prefix:
-             prefix = prefix.rstrip("/")
-             for endpoint in context["endpoints"]:
-                 if endpoint.get("url") and not endpoint["url"].startswith(prefix):
-                     if endpoint["url"].startswith("/"):
-                         endpoint["url"] = f"{prefix}{endpoint['url']}"
-                     else:
-                         endpoint["url"] = f"{prefix}/{endpoint['url']}"
-
         return context
 
 
@@ -286,16 +274,15 @@ class RootView(BaseEndpoint):
 
     def get_view_description(self, html=False):
         description = super().get_view_description(html)
-        prefix = getattr(settings, "FORCE_SCRIPT_NAME", None)
+
+        # the docstring links to the endpoints by their root paths, which is wrong when served under a sub-path
+        prefix = get_script_prefix().rstrip("/")
         if prefix:
-             clean_prefix = prefix.rstrip('/')
-             description = description.replace('href="/api/v2/', f'href="{clean_prefix}/api/v2/')
-             description = description.replace('>/api/v2/', f'>{clean_prefix}/api/v2/')
-             description = description.replace('"/api/v2/', f'"{clean_prefix}/api/v2/')
-        
-        if html:
-            return mark_safe(description)
-        return description
+            description = description.replace('"/api/v2/', f'"{prefix}/api/v2/').replace(
+                ">/api/v2/", f">{prefix}/api/v2/"
+            )
+
+        return mark_safe(description) if html else description
 
     def get_view_name(self):
         return self.request.branding["name"] + " API v2"
@@ -1601,6 +1588,7 @@ class FlowsEndpoint(ListAPIMixin, BaseEndpoint):
     A **GET** returns the list of flows for your organization, in the order of last created.
 
      * **uuid** - the UUID of the flow (string), filterable as `uuid`.
+     * **name** - the name of the flow to fetch, case insensitive (string, optional)
      * **name** - the name of the flow (string).
      * **type** - the type of the flow (one of "message", "voice", "survey"), filterable as `type`.
      * **archived** - whether this flow is archived (boolean), filterable as `archived`.
@@ -1666,7 +1654,7 @@ class FlowsEndpoint(ListAPIMixin, BaseEndpoint):
         if uuid := self.get_uuid_param("uuid"):
             queryset = queryset.filter(uuid=uuid)
 
-        # filter by name (optional) — used by CRM Ops flow lookup
+        # filter by name (optional)
         if name := params.get("name"):
             queryset = queryset.filter(name__iexact=name)
 
@@ -1995,6 +1983,7 @@ class GroupsEndpoint(ListAPIMixin, WriteAPIMixin, DeleteAPIMixin, BaseEndpoint):
             "slug": "group-list",
             "params": [
                 {"name": "uuid", "required": False, "help": "A contact group UUID to filter by"},
+                {"name": "name", "required": False, "help": "A flow name to filter by (case insensitive)"},
                 {"name": "name", "required": False, "help": "A contact group name to filter by"},
             ],
         }

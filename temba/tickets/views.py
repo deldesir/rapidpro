@@ -257,7 +257,7 @@ class TicketCRUDL(SmartCRUDL):
                         "name": folder.name,
                         "icon": folder.get_icon(counts[folder.slug]),
                         "count": counts[folder.slug],
-                        "href": f"{(settings.FORCE_SCRIPT_NAME or '').rstrip('/')}/ticket/{folder.slug}/",
+                        "href": f"{reverse('tickets.ticket_list')}{folder.slug}/",
                     }
                 )
 
@@ -270,7 +270,7 @@ class TicketCRUDL(SmartCRUDL):
                     "name": topic.name,
                     "icon": "topic",
                     "count": counts[topic],
-                    "href": f"{(settings.FORCE_SCRIPT_NAME or '').rstrip('/')}/ticket/{topic.uuid}/",
+                    "href": f"{reverse('tickets.ticket_list')}{topic.uuid}/",
                 }
                 for topic in topics
             ]

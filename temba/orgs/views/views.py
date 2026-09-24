@@ -21,6 +21,7 @@ from django.contrib import messages
 from django.contrib.auth import logout
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from django.core.files.storage import FileSystemStorage, storages
 from django.db.models import F, Prefetch, Q
 from django.db.models.functions import Lower
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
@@ -617,7 +618,7 @@ class OrgCRUDL(SmartCRUDL):
                                 menu_id="logout",
                                 name=_("Sign Out"),
                                 icon="logout",
-                                href=f"{(settings.FORCE_SCRIPT_NAME or '').rstrip('/')}/accounts/logout/",
+                                href=reverse("account_logout"),
                                 posterize=True,
                             ),
                             self.create_space(),
@@ -1409,7 +1410,7 @@ class OrgCRUDL(SmartCRUDL):
 
     class Workspace(SpaMixin, FormaxMixin, ContextMenuMixin, InferOrgMixin, OrgPermsMixin, SmartReadView):
         title = _("Workspace")
-        menu_path = "/org/workspace"
+        menu_path = "/settings/workspace"
 
         def derive_formax_sections(self, formax, context):
             if self.has_org_perm("orgs.org_edit"):
@@ -1756,7 +1757,7 @@ class ExportCRUDL(SmartCRUDL):
 
     class Download(SpaMixin, ContextMenuMixin, OrgObjPermsMixin, SmartReadView):
         slug_url_kwarg = "uuid"
-        menu_path = "/org/workspace"
+        menu_path = "/settings/workspace"
         title = _("Export")
 
         def get(self, request, *args, **kwargs):
@@ -1765,9 +1766,9 @@ class ExportCRUDL(SmartCRUDL):
 
                 url = export.get_raw_url()
 
-                # if our URL doesn't have the content disposition set (local storage), we can set it ourselves
-                # using X-Accel-Redirect
-                if "ResponseContentDisposition" not in url:
+                # an S3 URL carries the download filename as a signed parameter; a file on local storage can't, so
+                # we set it on the response and let the web server in front of us send the file
+                if isinstance(storages["default"], FileSystemStorage):
                     response = HttpResponse()
                     response["X-Accel-Redirect"] = url
                     response["Content-Disposition"] = f'attachment; filename="{export._get_download_filename()}"'
