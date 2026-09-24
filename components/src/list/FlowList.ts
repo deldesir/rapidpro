@@ -1,4 +1,5 @@
 import { css, html, TemplateResult } from 'lit';
+import { rootUrl } from '../root';
 import { msg } from '@lit/localize';
 import { ContentList, ContentListColumn } from './ContentList';
 import { Icon } from '../Icons';
@@ -273,7 +274,7 @@ export class FlowList extends ContentList<Flow> {
     // Stop the click from bubbling to the row's navigation handler.
     event.stopPropagation();
     if (!label?.uuid) return;
-    const href = `/flow/filter/${label.uuid}/`;
+    const href = rootUrl(`/flow/filter/${label.uuid}/`);
     // Guard the JSON-driven href against open-redirect, same as the
     // row-click path in ContentList.handleRowClick.
     if (!this.isSafeHref(href)) return;

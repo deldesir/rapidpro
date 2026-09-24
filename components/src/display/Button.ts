@@ -1,4 +1,5 @@
 import { LitElement, TemplateResult, html, css } from 'lit';
+import { rootUrl } from '../root';
 import { getClasses } from '../utils';
 
 import { property } from 'lit/decorators.js';
@@ -238,7 +239,7 @@ export class Button extends LitElement {
     }
 
     if (this.href && !this.disabled) {
-      this.ownerDocument.location.href = this.href;
+      this.ownerDocument.location.href = rootUrl(this.href);
       evt.preventDefault();
       evt.stopPropagation();
     }

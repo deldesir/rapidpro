@@ -98,8 +98,29 @@ function checkInner(event) {
   }
 }
 
+// The app can be served under a sub-path (window.URLS.root, published by the frame). Anything that navigates or
+// fetches with a root-absolute app path goes through here, so a "/contact/…" from a component or a template lands
+// under that root; absolute URLs, relative paths and paths already under the root pass through unchanged.
+function appUrl(url) {
+  var root = (window.URLS && window.URLS.root) || '/';
+  if (!root.endsWith('/')) {
+    root = root + '/';
+  }
+  if (
+    root === '/' ||
+    !url ||
+    typeof url !== 'string' ||
+    !url.startsWith('/') ||
+    url.startsWith('//') ||
+    url.startsWith(root)
+  ) {
+    return url;
+  }
+  return root + url.substring(1);
+}
+
 function gotoLink(href) {
-  document.location.href = href;
+  document.location.href = appUrl(href);
 }
 
 function setCookie(name, value, path) {

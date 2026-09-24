@@ -1,4 +1,5 @@
 import { createStore, StoreApi } from 'zustand/vanilla';
+import { rootUrl } from '../root';
 import { generateUUID } from '../utils';
 import { getLanguageName } from '../languages';
 import {
@@ -340,7 +341,7 @@ export const zustand = createStore<AppState>()(
           id = 'latest';
         }
         const response = await fetch(
-          `${endpoint}/${id}/?version=${FLOW_SPEC_VERSION}`
+          rootUrl(`${endpoint}/${id}/?version=${FLOW_SPEC_VERSION}`)
         );
 
         if (!response.ok) {
@@ -397,7 +398,7 @@ export const zustand = createStore<AppState>()(
       },
 
       fetchWorkspace: async (endpoint) => {
-        const response = await fetch(endpoint);
+        const response = await fetch(rootUrl(endpoint));
         if (!response.ok) {
           throw new Error('Network response was not ok');
         }
@@ -411,7 +412,7 @@ export const zustand = createStore<AppState>()(
 
       fetchActivity: async (endpoint: string) => {
         try {
-          const response = await fetch(endpoint);
+          const response = await fetch(rootUrl(endpoint));
           if (!response.ok) {
             return;
           }

@@ -1,4 +1,5 @@
 import { css, html, TemplateResult } from 'lit';
+import { rootUrl } from '../root';
 import { msg } from '@lit/localize';
 import { ContentList, ContentListColumn } from './ContentList';
 import { Icon } from '../Icons';
@@ -234,7 +235,7 @@ export class MsgList extends ContentList<Msg> {
           ? html`<temba-label
               type="flow"
               icon=${Icon.flow}
-              href="/flow/editor/${item.flow.uuid}/"
+              href="${rootUrl(`/flow/editor/${item.flow.uuid}/`)}"
               onclick="goto(event)"
               clickable
               >${item.flow.name}</temba-label
@@ -245,7 +246,7 @@ export class MsgList extends ContentList<Msg> {
             <temba-label
               type="label"
               icon=${Icon.label}
-              href="/msg/filter/${l.uuid}/"
+              href="${rootUrl(`/msg/filter/${l.uuid}/`)}"
               onclick="goto(event)"
               clickable
               >${l.name}</temba-label

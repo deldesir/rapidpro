@@ -1,4 +1,5 @@
 import { css, html, PropertyValueMap, TemplateResult } from 'lit';
+import { rootUrl } from '../root';
 import { property, state } from 'lit/decorators.js';
 import {
   CustomEventType,
@@ -855,7 +856,10 @@ export class ContactTimeline extends EndpointMonitorElement {
           <div class="empty-title">${this.lang_empty}</div>
           <div class="empty-extras">
             <div class="empty-help">${this.lang_empty_help}</div>
-            <a class="empty-link" href="/campaign/" onclick="goto(event, this)"
+            <a
+              class="empty-link"
+              href="${rootUrl('/campaign/')}"
+              onclick="goto(event, this)"
               >${this.lang_campaigns_link}</a
             >
           </div>

@@ -93,6 +93,7 @@ function goto(event, ele) {
   }
 
   if (href) {
+    href = appUrl(href);
     if (event.metaKey) {
       window.open(href, '_blank');
     } else {
@@ -203,6 +204,8 @@ function spaRequest(url, options) {
     return;
   }
 
+  url = appUrl(url);
+
   showLoading();
 
   var refererPath = window.location.pathname;
@@ -295,7 +298,7 @@ function fetchAjax(url, options, fullPage = false) {
   pendingRequests.push(controller);
   options['signal'] = controller.signal;
   options['redirect'] = 'follow';
-  var toFetch = url;
+  var toFetch = appUrl(url);
 
   return fetch(toFetch, options)
     .then(function (response) {
@@ -514,7 +517,7 @@ function showModax(header, endpoint, modaxOptions) {
 
     modax.headers = { 'X-Temba-Spa': 1 };
     modax.header = header;
-    modax.endpoint = endpoint;
+    modax.endpoint = appUrl(endpoint);
     modax.originX = options.originX != null ? options.originX : null;
     modax.originY = options.originY != null ? options.originY : null;
 

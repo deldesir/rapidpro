@@ -1,4 +1,5 @@
 import { isRightClick } from './utils';
+import { rootUrl } from '../root';
 import { Counter } from '../display/Counter';
 
 export type TargetFace = 'top' | 'left' | 'right';
@@ -1124,7 +1125,9 @@ export class Plumber {
     try {
       const [exitUuid, destinationUuid] = activityKey.split(':');
       const endpoint = `/flow/recent_contacts/${flowUuid}/${exitUuid}/${destinationUuid}/`;
-      const response = await fetch(endpoint, { signal: controller.signal });
+      const response = await fetch(rootUrl(endpoint), {
+        signal: controller.signal
+      });
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);

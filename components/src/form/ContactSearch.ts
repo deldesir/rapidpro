@@ -1,4 +1,5 @@
 import { TemplateResult, html, css, PropertyValueMap } from 'lit';
+import { rootUrl } from '../root';
 import { unsafeHTML } from 'lit-html/directives/unsafe-html.js';
 import { property } from 'lit/decorators.js';
 import {
@@ -568,7 +569,9 @@ export class ContactSearch extends FieldElement {
             <a
               class="linked"
               target="_"
-              href="/contact/?search=${encodeURIComponent(this.summary.query)}"
+              href="${rootUrl(
+                `/contact/?search=${encodeURIComponent(this.summary.query)}`
+              )}"
             >
               ${formatCount(count)}
             </a>

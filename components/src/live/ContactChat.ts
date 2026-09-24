@@ -7,6 +7,7 @@ import {
   PropertyValues,
   TemplateResult
 } from 'lit';
+import { rootUrl } from '../root';
 import { property } from 'lit/decorators.js';
 import { msg, str } from '@lit/localize';
 import {
@@ -2235,8 +2236,9 @@ export class ContactChat extends ContactStoreElement {
                             ? html`<div class="current-flow">
                                 <a
                                   class="flow-link"
-                                  href="/flow/editor/${this.currentContact.flow
-                                    .uuid}/"
+                                  href="${rootUrl(
+                                    `/flow/editor/${this.currentContact.flow.uuid}/`
+                                  )}"
                                   onclick="goto(event, this)"
                                   title=${this.currentContact.flow.name}
                                 >

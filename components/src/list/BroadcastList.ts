@@ -1,4 +1,5 @@
 import { css, html, PropertyValues, TemplateResult } from 'lit';
+import { rootUrl } from '../root';
 import { msg } from '@lit/localize';
 import { property, state } from 'lit/decorators.js';
 import { ContentList, ContentListColumn } from './ContentList';
@@ -490,6 +491,7 @@ export class BroadcastList extends ContentList<Broadcast> {
     // Guard the JSON-driven href against open-redirect, same as the
     // row-click path in ContentList.handleRowClick.
     if (!href || !this.isSafeHref(href)) return;
+    href = rootUrl(href);
     if (event.metaKey || event.ctrlKey) {
       window.open(href, '_blank');
       return;

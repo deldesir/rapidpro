@@ -1,4 +1,5 @@
 import { html, TemplateResult } from 'lit';
+import { rootUrl } from '../root';
 import { ifDefined } from 'lit-html/directives/if-defined.js';
 import {
   AirtimeCreatedEvent,
@@ -109,7 +110,7 @@ const renderEntityPill = (
   // into block-level children, underlining the pill text.
   return opts.href
     ? html`<a
-        href=${opts.href}
+        href=${rootUrl(opts.href)}
         onclick="goto(event, this)"
         style="vertical-align: middle; display: inline-flex; min-width: 0; max-width: 100%; text-decoration: none;"
         >${pill}</a
@@ -221,7 +222,7 @@ const attributePill = (
   >`;
   return opts.href
     ? html`<a
-        href=${opts.href}
+        href=${rootUrl(opts.href)}
         onclick="goto(event, this)"
         style="vertical-align: middle;"
         >${pill}</a
@@ -447,7 +448,7 @@ export const renderTicketOpened = (event: TicketEvent): TemplateResult => {
 
   return html`<div style=${eventLineStyle}>
     <a
-      href=${`/ticket/all/open/${event.ticket.uuid}/`}
+      href=${rootUrl(`/ticket/all/open/${event.ticket.uuid}/`)}
       onclick="goto(event, this)"
       style="vertical-align: middle;"
       >${pill}</a

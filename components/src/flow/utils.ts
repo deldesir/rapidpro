@@ -1,3 +1,4 @@
+import { Icon } from '../Icons';
 import { html, TemplateResult } from 'lit-html';
 import { iconToPillType } from '../styles/pillVariants';
 import { Action, NamedObject, FlowPosition } from '../store/flow-definition';
@@ -218,7 +219,8 @@ export const getLlmIcon = (name: string): string | null => {
   for (const [pattern, icon] of LLM_ICON_MAP) {
     if (pattern.test(name)) return icon;
   }
-  return null;
+  // a provider we have no brand icon for, e.g. a custom OpenAI-compatible endpoint, gets the generic one
+  return Icon.ai;
 };
 
 /**

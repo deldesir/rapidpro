@@ -1,4 +1,5 @@
 import { css, html, TemplateResult } from 'lit';
+import { rootUrl } from '../root';
 import { msg } from '@lit/localize';
 import { ContentList, ContentListColumn } from './ContentList';
 import { Icon } from '../Icons';
@@ -101,7 +102,7 @@ export class CampaignList extends ContentList<Campaign> {
     // Stop the click from bubbling to the row's navigation handler.
     event.stopPropagation();
     if (!group?.uuid) return;
-    const href = `/contact/group/${group.uuid}/`;
+    const href = rootUrl(`/contact/group/${group.uuid}/`);
     // Guard the JSON-driven href against open-redirect, same as the
     // row-click path in ContentList.handleRowClick.
     if (!this.isSafeHref(href)) return;
