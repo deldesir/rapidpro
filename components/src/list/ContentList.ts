@@ -4,6 +4,7 @@ import { property, state } from 'lit/decorators.js';
 import { RapidElement } from '../RapidElement';
 import { Icon } from '../Icons';
 import { CustomEventType, ObjectReference } from '../interfaces';
+import { rootUrl } from '../root';
 import { formatCount, getUrl, postJSON, postUrl } from '../utils';
 import { designTokens } from '../styles/designTokens';
 
@@ -2406,7 +2407,7 @@ export class ContentList<T = any> extends RapidElement {
       return;
     }
     const rowHref = this.getRowHref(item);
-    const href = rowHref && this.isSafeHref(rowHref) ? rowHref : null;
+    const href = rowHref && this.isSafeHref(rowHref) ? rootUrl(rowHref) : null;
     // Meta/ctrl-click opens a new tab, matching ordinary links. Skip
     // RowClick entirely — host pages navigate on it unconditionally,
     // which would also swap out the current page.

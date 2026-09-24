@@ -1,4 +1,5 @@
 import { css, html, PropertyValues, TemplateResult } from 'lit';
+import { rootUrl } from '../root';
 import { msg } from '@lit/localize';
 import { property } from 'lit/decorators.js';
 import { Checkbox } from '../form/Checkbox';
@@ -287,7 +288,9 @@ export class RunList extends TembaList {
               ''}
               urn=${this.selectedRun.contact?.urn || ''}
               onclick="goto(event, this)"
-              href="/contact/read/${this.selectedRun.contact?.uuid || ''}/"
+              href="${rootUrl(
+                `/contact/read/${this.selectedRun.contact?.uuid || ''}/`
+              )}"
             ></temba-contact-name>
             <div
               style="display:flex;margin-left:-0.2em;margin-top:0.25em;font-size: 0.65em"

@@ -1,4 +1,5 @@
 import { css, html, PropertyValues, TemplateResult } from 'lit';
+import { rootUrl } from '../root';
 import { msg, str } from '@lit/localize';
 import { property, state } from 'lit/decorators.js';
 import { Icon } from '../Icons';
@@ -721,7 +722,7 @@ export class ContactDetails extends ContactStoreElement {
           (group) =>
             html`<temba-label
               onclick="goto(event)"
-              href="/contact/group/${group.uuid}/"
+              href="${rootUrl(`/contact/group/${group.uuid}/`)}"
               icon=${Icon.group_smart}
               type="group"
               clickable
@@ -997,7 +998,7 @@ export class ContactDetails extends ContactStoreElement {
                 (group) =>
                   html`<temba-label
                     onclick="goto(event)"
-                    href="/contact/group/${group.uuid}/"
+                    href="${rootUrl(`/contact/group/${group.uuid}/`)}"
                     icon=${group.is_dynamic ? Icon.group_smart : Icon.group}
                     type="group"
                     clickable

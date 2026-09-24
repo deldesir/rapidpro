@@ -1,4 +1,5 @@
 import { html, TemplateResult } from 'lit-html';
+import { rootUrl } from '../root';
 import { css, PropertyValues } from 'lit';
 import { msg, str } from '@lit/localize';
 import { property, state } from 'lit/decorators.js';
@@ -696,7 +697,7 @@ export class AutoTranslate extends RapidElement {
             ${msg('You need to add an AI model before you can auto translate.')}
           </p>
           <p>
-            <a href="${ADD_MODEL_URL}" target="_blank" rel="noopener"
+            <a href="${rootUrl(ADD_MODEL_URL)}" target="_blank" rel="noopener"
               >${msg('Manage AI models')}</a
             >
           </p>

@@ -1,4 +1,5 @@
 import { css, html, PropertyValues, TemplateResult } from 'lit';
+import { rootUrl } from '../root';
 import { msg } from '@lit/localize';
 import { state } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
@@ -372,6 +373,7 @@ export class TriggerList extends ContentList<Trigger> {
     // Guard the JSON-driven href against open-redirect, same as the
     // row-click path in ContentList.handleRowClick.
     if (!href || !this.isSafeHref(href)) return;
+    href = rootUrl(href);
     // Meta/ctrl-click opens a new tab, matching ordinary links and
     // the row-click behavior.
     if (event.metaKey || event.ctrlKey) {

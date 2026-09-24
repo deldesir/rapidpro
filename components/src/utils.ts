@@ -1,3 +1,4 @@
+import { rootUrl } from './root';
 /* eslint-disable @typescript-eslint/no-this-alias */
 import { html, TemplateResult } from 'lit-html';
 import { property } from 'lit/decorators.js';
@@ -131,11 +132,14 @@ export const getHeaders = (headers: any = {}) => {
   return fetchHeaders;
 };
 
+export { getAppRoot, rootUrl } from './root';
+
 export const getUrl = (
   url: string,
   controller: AbortController = null,
   headers: { [key: string]: string } = {}
 ): Promise<WebResponse> => {
+  url = rootUrl(url);
   return new Promise<WebResponse>((resolve, reject) => {
     const options = {
       method: 'GET',
@@ -287,6 +291,7 @@ export const postUrl = (
   headers: any = {},
   contentType = null
 ): Promise<WebResponse> => {
+  url = rootUrl(url);
   const fetchHeaders = getHeaders(headers);
 
   if (contentType) {
@@ -342,7 +347,7 @@ export const postJSON = (url: string, payload: any): Promise<WebResponse> => {
 };
 
 export const deleteRequest = (url: string): Promise<Response> => {
-  return fetch(url, { method: 'DELETE', headers: getHeaders() });
+  return fetch(rootUrl(url), { method: 'DELETE', headers: getHeaders() });
 };
 
 export const postFormData = (

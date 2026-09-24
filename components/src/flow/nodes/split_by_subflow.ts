@@ -1,4 +1,5 @@
 import { ACTION_GROUPS, FormData, NodeConfig, FlowTypes } from '../types';
+import { rootUrl } from '../../root';
 import { Node, SetRunResult } from '../../store/flow-definition';
 import { generateUUID } from '../../utils';
 import { html } from 'lit';
@@ -107,7 +108,9 @@ export const split_by_subflow: NodeConfig = {
     if (flow.parent_refs) return formData;
 
     try {
-      const response = await fetch(`/api/v2/flows.json?uuid=${flow.uuid}`);
+      const response = await fetch(
+        rootUrl(`/api/v2/flows.json?uuid=${flow.uuid}`)
+      );
       const data = await response.json();
       const flowData = data.results?.[0];
       if (flowData?.parent_refs) {
