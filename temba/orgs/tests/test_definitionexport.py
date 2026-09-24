@@ -43,7 +43,7 @@ class DefinitionExportTest(TembaTest, CRUDLTestMixin):
     def test_trigger_dependency(self):
         # tests the case of us doing an export of only a single flow (despite dependencies) and making sure we
         # don't include the triggers of our dependent flows (which weren't exported)
-        self.import_file("test_flows/parent_child_trigger.json")
+        self.import_file("flows/parent_child_trigger.json")
 
         parent = Flow.objects.filter(name="Parent Flow").first()
 
@@ -55,7 +55,7 @@ class DefinitionExportTest(TembaTest, CRUDLTestMixin):
         self.assertFalse(exported["triggers"])
 
     def test_subflow_dependencies(self):
-        self.import_file("test_flows/subflow.json")
+        self.import_file("flows/subflow.json")
 
         parent = Flow.objects.filter(name="Parent Flow").first()
         child = Flow.objects.filter(name="Child Flow").first()
@@ -98,10 +98,10 @@ class DefinitionExportTest(TembaTest, CRUDLTestMixin):
 
         # a file which can be migrated forwards - migration itself is goflow's job, but the import consumes the
         # migrated flow, so stub a real current-spec definition
-        mr_mocks.flow_migrate(self.load_json("test_flows/favorites.json")["flows"][0])
+        mr_mocks.flow_migrate(self.load_json("flows/favorites.json")["flows"][0])
         response = self.client.post(
             create_url,
-            {"file": open("%s/test_flows/legacy/migrations/favorites_v4.json" % settings.MEDIA_ROOT, "rb")},
+            {"file": open(f"{settings.TESTDATA_DIR}/flows/legacy/migrations/favorites_v4.json", "rb")},
         )
         self.assertEqual(302, response.status_code)
 
@@ -144,7 +144,7 @@ class DefinitionExportTest(TembaTest, CRUDLTestMixin):
         self.login(self.admin)
 
         # the_clinic has 8 flows which won't fit, and an import is all or nothing so it's refused outright
-        with open("media/test_flows/the_clinic.json", "rb") as f:
+        with open("test-data/flows/the_clinic.json", "rb") as f:
             response = self.client.post(create_url, {"file": f})
 
         self.assertFormError(
@@ -159,7 +159,7 @@ class DefinitionExportTest(TembaTest, CRUDLTestMixin):
         # simulate an unexpected exception during import
         with patch("temba.triggers.models.Trigger.import_triggers") as validate:
             validate.side_effect = Exception("Unexpected Error")
-            post_data = dict(file=open("%s/test_flows/new_mother.json" % settings.MEDIA_ROOT, "rb"))
+            post_data = dict(file=open(f"{settings.TESTDATA_DIR}/flows/new_mother.json", "rb"))
             self.client.post(reverse("orgs.orgimport_create"), post_data)
 
             org_import = OrgImport.objects.filter(org=self.org).last()
@@ -170,7 +170,7 @@ class DefinitionExportTest(TembaTest, CRUDLTestMixin):
 
     @patch("temba.mailroom.client.client.MailroomClient.campaign_schedule")
     def test_import_campaign_with_translations(self, mock_schedule):
-        self.import_file("test_flows/campaign_import_with_translations.json")
+        self.import_file("flows/campaign_import_with_translations.json")
 
         campaign = Campaign.objects.all().first()
         event = campaign.events.all().first()
@@ -183,7 +183,7 @@ class DefinitionExportTest(TembaTest, CRUDLTestMixin):
 
     @patch("temba.mailroom.client.client.MailroomClient.campaign_schedule")
     def test_reimport(self, mock_schedule):
-        self.import_file("test_flows/survey_campaign.json")
+        self.import_file("flows/survey_campaign.json")
 
         campaign = Campaign.objects.filter(is_active=True).last()
         event = campaign.events.filter(is_active=True).last()
@@ -193,7 +193,7 @@ class DefinitionExportTest(TembaTest, CRUDLTestMixin):
         campaign.group.contacts.add(sally)
 
         # importing it again shouldn't result in failures
-        self.import_file("test_flows/survey_campaign.json")
+        self.import_file("flows/survey_campaign.json")
 
         # get our latest campaign and event
         new_campaign = Campaign.objects.filter(is_active=True).last()
@@ -204,7 +204,7 @@ class DefinitionExportTest(TembaTest, CRUDLTestMixin):
         self.assertNotEqual(event.id, new_event.id)
 
     def test_import_flow_dependency_graph(self):
-        self.import_file("test_flows/flow_dependency_graph.json")
+        self.import_file("flows/flow_dependency_graph.json")
 
         group = ContactGroup.objects.get(name="Survey Audience")
         child = Flow.objects.get(name="New Child")
@@ -222,7 +222,7 @@ class DefinitionExportTest(TembaTest, CRUDLTestMixin):
         self.assertEqual(dep_graph[parent], {child})
 
     def test_import_dependency_types(self):
-        self.import_file("test_flows/all_dependency_types.json")
+        self.import_file("flows/all_dependency_types.json")
 
         parent = Flow.objects.get(name="All Dep Types")
         child = Flow.objects.get(name="New Child")
@@ -252,7 +252,7 @@ class DefinitionExportTest(TembaTest, CRUDLTestMixin):
         # final call is after new flows and dependencies have been committed so mailroom can see them
         mr_mocks.flow_inspect(dependencies=[{"key": "age", "name": "", "type": "field", "missing": False}])
 
-        self.import_file("test_flows/color.json")
+        self.import_file("flows/color.json")
 
         flow = Flow.objects.get()
 
@@ -260,7 +260,7 @@ class DefinitionExportTest(TembaTest, CRUDLTestMixin):
 
     def test_import_missing_flow_dependency(self):
         # in production this would blow up validating the flow but we can't do that during tests
-        self.import_file("test_flows/parent_without_its_child.json")
+        self.import_file("flows/parent_without_its_child.json")
 
         parent = Flow.objects.get(name="Single Parent")
         self.assertEqual(set(parent.flow_dependencies.all()), set())
@@ -268,7 +268,7 @@ class DefinitionExportTest(TembaTest, CRUDLTestMixin):
         # create child with that name and re-import
         child1 = Flow.create(self.org, self.admin, "New Child", Flow.TYPE_MESSAGE)
 
-        self.import_file("test_flows/parent_without_its_child.json")
+        self.import_file("flows/parent_without_its_child.json")
         self.assertEqual(set(parent.flow_dependencies.all()), {child1})
 
         # create child with that UUID and re-import
@@ -276,7 +276,7 @@ class DefinitionExportTest(TembaTest, CRUDLTestMixin):
             self.org, self.admin, "New Child 2", Flow.TYPE_MESSAGE, uuid="a925453e-ad31-46bd-858a-e01136732181"
         )
 
-        self.import_file("test_flows/parent_without_its_child.json")
+        self.import_file("flows/parent_without_its_child.json")
         self.assertEqual(set(parent.flow_dependencies.all()), {child2})
 
     def validate_flow_dependencies(self, definition):
@@ -303,7 +303,7 @@ class DefinitionExportTest(TembaTest, CRUDLTestMixin):
         """
         Tests importing flow definitions without fields and groups included in the export
         """
-        data = self.load_json("test_flows/cataclysm.json")
+        data = self.load_json("flows/cataclysm.json")
 
         del data["fields"]
         del data["groups"]
@@ -325,7 +325,7 @@ class DefinitionExportTest(TembaTest, CRUDLTestMixin):
         """
         Tests importing flow definitions with groups included in the export but not fields
         """
-        data = self.load_json("test_flows/cataclysm.json")
+        data = self.load_json("flows/cataclysm.json")
         del data["fields"]
 
         mr_mocks.contact_parse_query("facts_per_day = 1", fields=["facts_per_day"])
@@ -368,7 +368,7 @@ class DefinitionExportTest(TembaTest, CRUDLTestMixin):
         mr_mocks.contact_parse_query("facts_per_day = 1", fields=["facts_per_day"])
         mr_mocks.contact_parse_query("likes_cats = true", cleaned='likes_cats = "true"', fields=["likes_cats"])
 
-        self.import_file("test_flows/cataclysm.json")
+        self.import_file("flows/cataclysm.json")
 
         flow = Flow.objects.get(name="Cataclysmic")
         self.validate_flow_dependencies(flow.get_definition())
@@ -413,7 +413,7 @@ class DefinitionExportTest(TembaTest, CRUDLTestMixin):
             self.org, self.admin, Trigger.TYPE_KEYWORD, flow2, keywords=["rating"], match_type=Trigger.MATCH_FIRST_WORD
         )
 
-        data = self.load_json("test_flows/rating_10.json")
+        data = self.load_json("flows/rating_10.json")
 
         self.org.import_app(data, self.admin, site="http://rapidpro.io")
 
@@ -435,7 +435,7 @@ class DefinitionExportTest(TembaTest, CRUDLTestMixin):
         flow_trigger.archive(self.admin)
 
         # re import again will restore the trigger
-        data = self.load_json("test_flows/rating_10.json")
+        data = self.load_json("flows/rating_10.json")
         self.org.import_app(data, self.admin, site="http://rapidpro.io")
 
         flow_trigger.refresh_from_db()
@@ -474,7 +474,7 @@ class DefinitionExportTest(TembaTest, CRUDLTestMixin):
             )
 
         # import all our bits
-        self.import_file("test_flows/the_clinic.json")
+        self.import_file("flows/the_clinic.json")
 
         confirm_appointment = Flow.objects.get(name="Confirm Appointment")
         self.assertEqual(4320, confirm_appointment.expires_after_minutes)
@@ -491,7 +491,7 @@ class DefinitionExportTest(TembaTest, CRUDLTestMixin):
         trigger.save()
 
         # now reimport
-        self.import_file("test_flows/the_clinic.json")
+        self.import_file("flows/the_clinic.json")
 
         # our flow should get reset from the import
         confirm_appointment.refresh_from_db()

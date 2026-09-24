@@ -105,7 +105,7 @@ class DefinitionsEndpointTest(APITest):
         )
 
         # test that flows are migrated
-        self.import_file("test_flows/favorites_v13.json")
+        self.import_file("flows/favorites_v13.json")
 
         flow = Flow.objects.get(name="Favorites")
         self.assertGet(

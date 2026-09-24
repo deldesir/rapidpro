@@ -318,32 +318,32 @@ class KnowledgeSourceCRUDLTest(TembaTest, CRUDLTestMixin):
         for source in (website, self.system_helpdesk):
             response = self.client.post(
                 reverse("knowledge.knowledgesource_upload", args=[source.uuid]),
-                {"file": self.upload(f"{settings.MEDIA_ROOT}/test_media/simple.pdf", "application/pdf")},
+                {"file": self.upload(f"{settings.TESTDATA_DIR}/media/simple.pdf", "application/pdf")},
             )
             self.assertEqual({"error": "Files can only be added to document sets."}, response.json())
 
         # can't upload a file type we don't support (sniffed, not the browser supplied type)
         response = self.client.post(
-            upload_url, {"file": self.upload(f"{settings.MEDIA_ROOT}/test_media/klab.png", "application/pdf")}
+            upload_url, {"file": self.upload(f"{settings.TESTDATA_DIR}/media/klab.png", "application/pdf")}
         )
         self.assertEqual({"error": "Unsupported file type"}, response.json())
 
         # can't upload a file that's too big
         with patch("temba.knowledge.models.KnowledgeItem.MAX_UPLOAD_SIZE", 10):
             response = self.client.post(
-                upload_url, {"file": self.upload(f"{settings.MEDIA_ROOT}/test_media/simple.pdf", "application/pdf")}
+                upload_url, {"file": self.upload(f"{settings.TESTDATA_DIR}/media/simple.pdf", "application/pdf")}
             )
             self.assertEqual({"error": "Limit for file uploads is 9.5367431640625e-06 MB"}, response.json())
 
         # can't exceed the documents limit
         with patch("temba.knowledge.models.KnowledgeItem.MAX_DOCUMENTS", 0):
             response = self.client.post(
-                upload_url, {"file": self.upload(f"{settings.MEDIA_ROOT}/test_media/simple.pdf", "application/pdf")}
+                upload_url, {"file": self.upload(f"{settings.TESTDATA_DIR}/media/simple.pdf", "application/pdf")}
             )
             self.assertEqual({"error": "Limit of 0 documents reached."}, response.json())
 
         response = self.client.post(
-            upload_url, {"file": self.upload(f"{settings.MEDIA_ROOT}/test_media/simple.pdf", "application/pdf")}
+            upload_url, {"file": self.upload(f"{settings.TESTDATA_DIR}/media/simple.pdf", "application/pdf")}
         )
 
         item = docs.items.get()

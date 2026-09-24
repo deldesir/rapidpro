@@ -1,5 +1,5 @@
 import { isRightClick } from './utils';
-import { formatCount } from '../utils';
+import { Counter } from '../display/Counter';
 
 export type TargetFace = 'top' | 'left' | 'right';
 
@@ -1034,7 +1034,7 @@ export class Plumber {
           this.canvas.appendChild(overlayEl);
           this.overlays.set(exitId, overlayEl);
         } else {
-          overlayEl.textContent = formatCount(count);
+          (overlayEl.firstElementChild as Counter).value = count;
           overlayEl.setAttribute('data-activity-key', activityKey);
         }
 
@@ -1057,8 +1057,12 @@ export class Plumber {
   ): HTMLElement {
     const el = document.createElement('div');
     el.className = 'activity-overlay';
-    el.textContent = formatCount(count);
     el.setAttribute('data-activity-key', activityKey);
+
+    // the count is a rolling counter so that changes are seen to happen
+    const counter = document.createElement('temba-counter') as Counter;
+    counter.value = count;
+    el.appendChild(counter);
 
     el.addEventListener('mouseenter', () => {
       const flowUuid = this.getFlowUuid();

@@ -17,7 +17,7 @@ class MediaTest(TembaTest):
         media = Media.from_upload(
             self.org,
             self.admin,
-            self.upload(f"{settings.MEDIA_ROOT}/test_media/steve marten.jpg", "image/jpeg"),
+            self.upload(f"{settings.TESTDATA_DIR}/media/steve marten.jpg", "image/jpeg"),
             process=False,
         )
 
@@ -38,7 +38,7 @@ class MediaTest(TembaTest):
         media = Media.from_upload(
             self.org,
             self.admin,
-            self.upload(f"{settings.MEDIA_ROOT}/test_media/klab.png", "image/png", name="../../../etc/passwd"),
+            self.upload(f"{settings.TESTDATA_DIR}/media/klab.png", "image/png", name="../../../etc/passwd"),
             process=False,
         )
 
@@ -49,7 +49,7 @@ class MediaTest(TembaTest):
         media = Media.from_upload(
             self.org,
             self.admin,
-            self.upload(f"{settings.MEDIA_ROOT}/test_media/klab.png", "image/png"),
+            self.upload(f"{settings.TESTDATA_DIR}/media/klab.png", "image/png"),
         )
         media.refresh_from_db()
 
@@ -62,7 +62,7 @@ class MediaTest(TembaTest):
     @mock_uuids
     def test_process_audio_wav(self):
         media = Media.from_upload(
-            self.org, self.admin, self.upload(f"{settings.MEDIA_ROOT}/test_media/allo.wav", "audio/wav")
+            self.org, self.admin, self.upload(f"{settings.TESTDATA_DIR}/media/allo.wav", "audio/wav")
         )
         media.refresh_from_db()
 
@@ -103,7 +103,7 @@ class MediaTest(TembaTest):
     @mock_uuids
     def test_process_audio_m4a(self):
         media = Media.from_upload(
-            self.org, self.admin, self.upload(f"{settings.MEDIA_ROOT}/test_media/bubbles.m4a", "audio/mp4")
+            self.org, self.admin, self.upload(f"{settings.TESTDATA_DIR}/media/bubbles.m4a", "audio/mp4")
         )
         media.refresh_from_db()
 
@@ -131,7 +131,7 @@ class MediaTest(TembaTest):
     @mock_uuids
     def test_process_video_mp4(self):
         media = Media.from_upload(
-            self.org, self.admin, self.upload(f"{settings.MEDIA_ROOT}/test_media/snow.mp4", "video/mp4")
+            self.org, self.admin, self.upload(f"{settings.TESTDATA_DIR}/media/snow.mp4", "video/mp4")
         )
         media.refresh_from_db()
 
@@ -159,7 +159,7 @@ class MediaTest(TembaTest):
     @mock_uuids
     def test_process_unsupported(self):
         media = Media.from_upload(
-            self.org, self.admin, self.upload(f"{settings.MEDIA_ROOT}/test_imports/simple.xlsx", "audio/m4a")
+            self.org, self.admin, self.upload(f"{settings.TESTDATA_DIR}/imports/simple.xlsx", "audio/m4a")
         )
         media.refresh_from_db()
 

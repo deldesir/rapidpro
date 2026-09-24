@@ -92,7 +92,7 @@ class FlowMigrationTest(TembaTest):
         return self.get_flow(f"legacy/migrations/{filename}", substitutions=substitutions, name=name)
 
     def load_flow_def(self, filename: str, substitutions=None):
-        return self.load_json(f"test_flows/legacy/migrations/{filename}.json", substitutions=substitutions)["flows"][0]
+        return self.load_json(f"flows/legacy/migrations/{filename}.json", substitutions=substitutions)["flows"][0]
 
     def migrate_flow(self, flow, to_version=None):
         if not to_version:
@@ -272,7 +272,7 @@ class FlowMigrationTest(TembaTest):
             self.assertTrue(Label.objects.filter(uuid=uuid, name=name).exists(), msg="Label UUID mismatch")
 
     def test_migrate_to_11_10(self):
-        import_def = self.load_json("test_flows/legacy/migrations/migrate_to_11_10.json")
+        import_def = self.load_json("flows/legacy/migrations/migrate_to_11_10.json")
         migrated_import = migrate_export_to_version_11_10(import_def, self.org)
 
         migrated = migrated_import["flows"][1]
@@ -334,7 +334,7 @@ class FlowMigrationTest(TembaTest):
         self.create_flow("Invalid2")
         Flow.objects.filter(name="Invalid2").update(uuid="136cdab3-e9d1-458c-b6eb-766afd92b478", is_active=False)
 
-        import_def = self.load_json("test_flows/legacy/migrations/migrate_to_11_9.json")
+        import_def = self.load_json("flows/legacy/migrations/migrate_to_11_9.json")
         flow_def = import_def["flows"][-1]
 
         self.assertEqual(len(flow_def["rule_sets"]), 4)
@@ -801,7 +801,7 @@ class FlowMigrationTest(TembaTest):
             label_id=label.pk,
         )
 
-        exported_json = self.load_json("test_flows/legacy/migrations/migrate_to_9.json", substitutions)
+        exported_json = self.load_json("flows/legacy/migrations/migrate_to_9.json", substitutions)
         exported_json = migrate_export_to_version_9(exported_json, self.org, True)
 
         # our campaign events shouldn't have ids
@@ -863,23 +863,23 @@ class FlowMigrationTest(TembaTest):
         self.assertNotIn("id", flow_json["metadata"])
 
         # import the same thing again, should have the same uuids
-        new_exported_json = self.load_json("test_flows/legacy/migrations/migrate_to_9.json", substitutions)
+        new_exported_json = self.load_json("flows/legacy/migrations/migrate_to_9.json", substitutions)
         new_exported_json = migrate_export_to_version_9(new_exported_json, self.org, True)
         self.assertEqual(flow_json["metadata"]["uuid"], new_exported_json["flows"][0]["metadata"]["uuid"])
 
         # but when done as a different site, it should be unique
-        new_exported_json = self.load_json("test_flows/legacy/migrations/migrate_to_9.json", substitutions)
+        new_exported_json = self.load_json("flows/legacy/migrations/migrate_to_9.json", substitutions)
         new_exported_json = migrate_export_to_version_9(new_exported_json, self.org, False)
         self.assertNotEqual(flow_json["metadata"]["uuid"], new_exported_json["flows"][0]["metadata"]["uuid"])
 
         # can also just import a single flow
-        exported_json = self.load_json("test_flows/legacy/migrations/migrate_to_9.json", substitutions)
+        exported_json = self.load_json("flows/legacy/migrations/migrate_to_9.json", substitutions)
         flow_json = migrate_to_version_9(exported_json["flows"][0], start_flow)
         self.assertIn("uuid", flow_json["metadata"])
         self.assertNotIn("id", flow_json["metadata"])
 
         # try it with missing metadata
-        flow_json = self.load_json("test_flows/legacy/migrations/migrate_to_9.json", substitutions)["flows"][0]
+        flow_json = self.load_json("flows/legacy/migrations/migrate_to_9.json", substitutions)["flows"][0]
         del flow_json["metadata"]
         flow_json = migrate_to_version_9(flow_json, start_flow)
         self.assertEqual(1, flow_json["metadata"]["revision"])

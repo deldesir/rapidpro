@@ -1,3 +1,34 @@
+v26.3.111 (2026-09-23)
+-------------------------
+ * Move template tag tests out of templatetags packages
+
+v26.3.110 (2026-09-23)
+-------------------------
+ * Show flow start progress in the flow editor, updated over the flow socket, with activity counts that roll like an odometer
+ * Keep start progress monotonic and withdraw stale completion estimates
+ * Use status slugs rather than display labels in JSON
+ * Resume each batch from the last when trimming flow sessions and increase its lock timeout to 30 minutes
+ * Create the help sites certificates table in migrate_dynamo
+ * Refresh supported LLM models and remove the Google LLM type
+ * Consolidate test-only files under test-data/ and components/test/ and remove unused ones
+
+v26.3.109 (2026-09-22)
+-------------------------
+ * Render published help site articles at publish time and proxy help site previews to the help sites service
+ * Keep rendered articles free of palette colors and storage addresses
+ * Keep links to other articles as article: links when rendering without a map to resolve them
+
+v26.3.108 (2026-09-22)
+-------------------------
+ * Fix attachments in the webchat client and add an emoji picker
+ * Claim every file drag over the webchat panel
+ * Fix deletion of released orgs failing when a team still has members
+ * Remove unused django.contrib.gis from INSTALLED_APPS
+ * Rename the Knowledge navigation item to Knowledge Base
+ * Rework the helpdesk section cards' headers
+ * Give the markdown editor's column padding options icons that show padding
+ * Stop the verified domain card underlining its text on hover
+
 v26.3.107 (2026-09-21)
 -------------------------
  * Switch template formatting from djlint to djangofmt and check it in code_check.py

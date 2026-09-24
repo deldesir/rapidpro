@@ -67,7 +67,7 @@ const FIELDS = [
 // that refetch so it confirms (rather than reverts) the optimistic update,
 // the way the real server would
 const mockFieldsRefresh = (featured: string[]) => {
-  mockGET(/test-assets\/store\/fields\.json/, {
+  mockGET(/test\/assets\/store\/fields\.json/, {
     next: null,
     previous: null,
     results: FIELDS.map((f) => ({

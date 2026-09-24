@@ -781,6 +781,7 @@ class FlowCRUDL(SmartCRUDL):
                     _("Start"),
                     "start-flow",
                     f"{reverse('flows.flow_start', args=[])}?flow={obj.id}",
+                    on_submit="handleFlowStarted()",
                     primary=True,
                     as_button=True,
                     disabled=True,
@@ -1677,6 +1678,11 @@ class FlowStartCRUDL(SmartCRUDL):
             if id:
                 qs = qs.filter(id=id)
 
+            # the flow editor asks for the latest start a user made of its flow
+            flow = self.request.GET.get("flow", None)
+            if flow:
+                qs = qs.filter(flow__uuid=flow, created_by__isnull=False)
+
             status = self.request.GET.get("status", None)
             if status:
                 qs = qs.filter(status=status)
@@ -1693,7 +1699,8 @@ class FlowStartCRUDL(SmartCRUDL):
                 results.append(
                     {
                         "id": obj.id,
-                        "status": obj.get_status_display(),
+                        "uuid": str(obj.uuid),
+                        "status": FlowStart.STATUS_SLUGS[obj.status],
                         "created_on": obj.created_on.isoformat(),
                         "modified_on": obj.modified_on.isoformat(),
                         "flow": {

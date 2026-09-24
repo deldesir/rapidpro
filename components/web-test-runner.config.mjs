@@ -114,7 +114,7 @@ const TEMBA_COMPONENTS_VERSION = JSON.parse(
   fs.readFileSync(path.resolve('./package.json'), 'utf-8')
 ).version;
 
-const SCREENSHOTS = 'screenshots';
+const SCREENSHOTS = 'test/screenshots';
 const DIFF = 'diff';
 const TEST = 'test';
 const TRUTH = 'truth';
@@ -526,7 +526,7 @@ export default {
           return {
             body: context.body.replace(
               /<head>/,
-              `<head><link rel="stylesheet" href="/test-assets/temba-components.css"/><link rel="stylesheet" href="/test-assets/style.css"/>`
+              `<head><link rel="stylesheet" href="/test/assets/temba-components.css"/><link rel="stylesheet" href="/test/assets/style.css"/>`
             )
           };
         }

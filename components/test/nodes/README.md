@@ -64,8 +64,8 @@ describe('node_config node config', () => {
 
 Screenshots are automatically generated and stored in:
 
-- `screenshots/nodes/{node_name}/render/{test_name}.png` - Flow editor rendering
-- `screenshots/nodes/{node_name}/editor/{test_name}.png` - Node editor dialog
+- `test/screenshots/truth/nodes/{node_name}/render/{test_name}.png` - Flow editor rendering
+- `test/screenshots/truth/nodes/{node_name}/editor/{test_name}.png` - Node editor dialog
 
 ## Running Tests
 

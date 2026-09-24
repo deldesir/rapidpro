@@ -37,9 +37,9 @@ the real temba endpoints, so demos show whatever data the logged-in user has.
 
 ## Testing
 
-All tests live under [/test](test). When running tests, some tests capture screenshots for pixel
-comparision under [/screenshots](screenshots/truth). Running tests requires that you have Chromium
-installed.
+Everything for the test suite lives under [/test](test): the tests, the fixtures they load from
+[/test/assets](test/assets) and the truth images that pixel comparison tests are checked against under
+[/test/screenshots](test/screenshots/truth). Running tests requires that you have Chromium installed.
 
 ```bash
 % bun run test

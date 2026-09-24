@@ -801,7 +801,7 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
 
         # make a flow that looks like a legacy flow
         flow = self.create_flow("Color Legacy")
-        original_def = self.load_json("test_flows/legacy/color_v11.json")["flows"][0]
+        original_def = self.load_json("flows/legacy/color_v11.json")["flows"][0]
 
         flow.version_number = "11.12"
         flow.save(update_fields=("version_number",))
@@ -832,7 +832,7 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         revisions_url = reverse("flows.flow_revisions", args=[flow.uuid])
 
         # rewind the flow's revision to a legacy spec
-        original_def = self.load_json("test_flows/legacy/color_v11.json")["flows"][0]
+        original_def = self.load_json("flows/legacy/color_v11.json")["flows"][0]
         revision = flow.revisions.get()
         revision.definition = original_def
         revision.spec_version = "11.12"
@@ -842,7 +842,7 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         # add a second, current-spec revision directly - creating one through migration is goflow's job
         FlowRevision.objects.create(
             flow=flow,
-            definition=self.load_json("test_flows/color.json")["flows"][0],
+            definition=self.load_json("flows/color.json")["flows"][0],
             spec_version=Flow.CURRENT_SPEC_VERSION,
             revision=2,
             changes={"tags": ["routing", "spec"]},

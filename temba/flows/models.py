@@ -441,7 +441,7 @@ class Flow(AssetNameMixin, LegacyIDMixin, TembaModel, DependencyMixin):
 
     def get_active_start(self):
         """
-        Returns whether this flow is already being started by a user
+        Returns the start of this flow by a user that is still in progress, if any
         """
         a_week_ago = timezone.now() - timedelta(days=7)
         return (
@@ -1658,6 +1658,16 @@ class FlowStart(LegacyIDMixin, models.Model):
         (STATUS_FAILED, "Failed"),
         (STATUS_INTERRUPTED, "Interrupted"),
     )
+
+    # slugs used for statuses in JSON, since the choice labels are for display
+    STATUS_SLUGS = {
+        STATUS_PENDING: "pending",
+        STATUS_QUEUED: "queued",
+        STATUS_STARTED: "started",
+        STATUS_COMPLETED: "completed",
+        STATUS_FAILED: "failed",
+        STATUS_INTERRUPTED: "interrupted",
+    }
 
     TYPE_MANUAL = "M"
     TYPE_API = "A"
