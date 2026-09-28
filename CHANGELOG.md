@@ -1,3 +1,10 @@
+v26.3.114 (2026-09-28)
+-------------------------
+ * Split LLM engine role into generation and classification, and rename editing role to translation
+ * Publish group creations on the workspace socket and keep contact group names and types current
+ * Classify a contact's groups again once the store has loaded them
+ * Derive test bucket and table names from the configured prefixes so runs sharing S3 or DynamoDB don't collide
+
 v26.3.113 (2026-09-24)
 -------------------------
  * Request knowledge indexing from mailroom when knowledge content changes
