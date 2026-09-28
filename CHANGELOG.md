@@ -1,3 +1,10 @@
+v26.3.115 (2026-09-28)
+-------------------------
+ * Remove text search fallback from help site search
+ * Remove legacy LLM role names from internal API
+ * Give each test process its own claimed valkey database, tables and buckets
+ * Point new store tests at the relocated test/assets fixtures
+
 v26.3.114 (2026-09-28)
 -------------------------
  * Split LLM engine role into generation and classification, and rename editing role to translation
