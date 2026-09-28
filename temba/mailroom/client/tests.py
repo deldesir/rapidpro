@@ -1056,6 +1056,7 @@ class MailroomClientTest(TembaTest):
             "http://localhost:8090/mi/org/publish",
             headers={"User-Agent": "Temba", "Authorization": "Token sesame"},
             json={"org_id": self.org.id, "event": event},
+            timeout=5,
         )
 
     @patch("requests.post")
