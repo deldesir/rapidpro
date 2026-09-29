@@ -1,3 +1,8 @@
+## v26.3.117 (2026-09-29)
+ * Show attachments on send message and broadcast nodes in the flow editor
+ * Add email and email_verified_on fields to contacts
+ * Auto-scroll a sortable list's scrolling container when a drag nears its edge
+
 ## v26.3.116 (2026-09-29)
  * Redirect ticket URLs that still include an open/closed status segment
  * Claim test valkey databases through the coordinated pool shared with other projects' tests
