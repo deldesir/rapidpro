@@ -90,6 +90,28 @@ export class ImagePicker extends FieldElement {
         display: none;
       }
 
+      .toggle-wrapper {
+        position: relative;
+        display: inline-block;
+      }
+
+      .clear {
+        position: absolute;
+        top: -8px;
+        right: -8px;
+        border-radius: 50%;
+        padding: 4px;
+        background: rgba(240, 240, 240, 1);
+        box-shadow: rgba(0, 0, 0, 0.2) 0px 1px 2px 0px;
+        color: rgba(0, 0, 0, 0.5);
+        cursor: pointer;
+      }
+
+      .clear:hover {
+        background: #fff;
+        color: var(--color-primary-dark);
+      }
+
       .controls temba-icon {
         margin: 0em 0.75em;
         background: rgba(255, 255, 255, 0.8);
@@ -137,6 +159,10 @@ export class ImagePicker extends FieldElement {
   @property({ type: Boolean, attribute: false })
   showCroppie = false;
 
+  // whether the image can be removed - which is posted as the <name>-clear flag Django's ClearableFileInput reads
+  @property({ type: Boolean })
+  clearable = false;
+
   uploadReader = new FileReader();
   croppie: any;
 
@@ -154,7 +180,11 @@ export class ImagePicker extends FieldElement {
   public updated(changed: Map<string, any>): void {
     super.updated(changed);
     if (changed.has('url')) {
-      this.setAttribute('url', this.url);
+      if (this.url) {
+        this.setAttribute('url', this.url);
+      } else {
+        this.removeAttribute('url');
+      }
     }
   }
 
@@ -215,6 +245,14 @@ export class ImagePicker extends FieldElement {
       });
   }
 
+  private handleClearClicked(evt: Event) {
+    evt.stopPropagation();
+    const fd = new FormData();
+    fd.append(`${this.name}-clear`, 'on');
+    this.url = null;
+    this.value = fd;
+  }
+
   private handleToggleClicked() {
     const fileInput = this.shadowRoot.querySelector('#file');
     (fileInput as any).click();
@@ -234,14 +272,26 @@ export class ImagePicker extends FieldElement {
         <input class='hidden' type="file" accept="image/*" capture="camera" id="file" name="file" @change=${
           this.handleFileChanged
         }/>
-        <div class='toggle ${this.url ? 'set' : ''}  ${
-          this.showCroppie ? 'hidden' : ''
-        }' @click=${this.handleToggleClicked} style="background: ${
-          this.url
-            ? `url('${this.url}') center / contain no-repeat`
-            : 'rgba(0, 0, 0, 0.1)'
-        }">
-          <temba-icon name=${Icon.upload_image} size="1.5"></temba-icon>
+        <div class='toggle-wrapper'>
+          <div class='toggle ${this.url ? 'set' : ''}  ${
+            this.showCroppie ? 'hidden' : ''
+          }' @click=${this.handleToggleClicked} style="background: ${
+            this.url
+              ? `url('${this.url}') center / contain no-repeat`
+              : 'rgba(0, 0, 0, 0.1)'
+          }">
+            <temba-icon name=${Icon.upload_image} size="1.5"></temba-icon>
+          </div>
+          ${
+            this.clearable && this.url && !this.showCroppie
+              ? html`<temba-icon
+                  class="clear"
+                  name=${Icon.close}
+                  size="0.9"
+                  @click=${this.handleClearClicked}
+                ></temba-icon>`
+              : null
+          }
         </div>
         
         <temba-mask ?show=${this.showCroppie} class="${

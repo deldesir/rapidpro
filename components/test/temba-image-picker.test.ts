@@ -104,6 +104,48 @@ describe('temba-image-picker', () => {
     });
   });
 
+  describe('clearing', () => {
+    const clearButton = (picker: ImagePicker) =>
+      picker.shadowRoot.querySelector('.clear') as HTMLElement;
+
+    it('only offers to clear a set image when clearable', async () => {
+      let picker = await createPicker('url="http://example.com/a.png"');
+      expect(clearButton(picker)).to.equal(null);
+
+      picker = await createPicker('clearable');
+      expect(clearButton(picker)).to.equal(null);
+
+      picker = await createPicker('clearable url="http://example.com/a.png"');
+      expect(clearButton(picker)).to.not.equal(null);
+    });
+
+    it('clears the image and flags it for the form', async () => {
+      const picker = await createPicker(
+        'clearable url="http://example.com/a.png"'
+      );
+      let opened = false;
+      fileInput(picker).click = () => {
+        opened = true;
+      };
+
+      clearButton(picker).click();
+      await picker.updateComplete;
+
+      // the picker goes back to its placeholder, without opening the file dialog
+      expect(opened).to.equal(false);
+      expect(picker.url).to.equal(null);
+      expect(picker.hasAttribute('url')).to.equal(false);
+      expect(toggle(picker).classList.contains('set')).to.equal(false);
+      expect(clearButton(picker)).to.equal(null);
+
+      // and posts the flag Django's ClearableFileInput reads
+      expect(picker.value).to.be.instanceOf(FormData);
+      expect([...(picker.value as FormData).entries()]).to.deep.equal([
+        ['avatar-clear', 'on']
+      ]);
+    });
+  });
+
   describe('choosing a file', () => {
     it('opens the file dialog when the toggle is clicked', async () => {
       const picker = await createPicker();

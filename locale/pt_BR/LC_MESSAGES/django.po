@@ -2818,6 +2818,10 @@ msgstr "Corpo"
 msgid "Description"
 msgstr "Descrição"
 
+#, python-format
+msgid "Limit for file uploads is %s MB"
+msgstr "O limite para envio de arquivos é de %s MB"
+
 msgid "The name of your help site, shown in its header."
 msgstr "O nome do seu site de ajuda, exibido no cabeçalho."
 
@@ -2874,10 +2878,6 @@ msgstr "Não é uma cor válida."
 
 msgid "Unsupported file type"
 msgstr "Tipo de arquivo não suportado"
-
-#, python-format
-msgid "Limit for file uploads is %s MB"
-msgstr "O limite para envio de arquivos é de %s MB"
 
 msgid "Domain"
 msgstr "Domínio"

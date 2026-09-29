@@ -1444,18 +1444,22 @@ class HelpSite(models.Model):
 
     def set_favicon(self, file):
         """
-        Stores an uploaded image as the site's favicon, replacing any it had. Each is saved under a new key, so no
-        browser or cache holds on to the old one.
+        Stores an uploaded image as the site's favicon, replacing any it had - or with None, goes back to the default.
+        Each is saved under a new key, so no browser or cache holds on to the old one.
         """
-        assert file.content_type in self.FAVICON_CONTENT_TYPES, "unsupported content type"
-
         old_path = self.config.get(self.CONFIG_FAVICON)
-        extension = mimetypes.guess_extension(file.content_type) or ".bin"  # see get_article_image_path
-        path = public_file_storage.save(
-            f"orgs/{self.source.org_id}/knowledge/{self.source.uuid}/site/favicon-{uuid4()}{extension}", file
-        )
 
-        self.config = {**self.config, self.CONFIG_FAVICON: path}
+        if file:
+            assert file.content_type in self.FAVICON_CONTENT_TYPES, "unsupported content type"
+
+            extension = mimetypes.guess_extension(file.content_type) or ".bin"  # see get_article_image_path
+            path = public_file_storage.save(
+                f"orgs/{self.source.org_id}/knowledge/{self.source.uuid}/site/favicon-{uuid4()}{extension}", file
+            )
+            self.config = {**self.config, self.CONFIG_FAVICON: path}
+        else:
+            self.config = {k: v for k, v in self.config.items() if k != self.CONFIG_FAVICON}
+
         self.save(update_fields=("config", "modified_on"))
 
         if old_path:

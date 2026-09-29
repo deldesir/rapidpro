@@ -2800,6 +2800,10 @@ msgstr ""
 msgid "Description"
 msgstr ""
 
+#, python-format
+msgid "Limit for file uploads is %s MB"
+msgstr ""
+
 msgid "The name of your help site, shown in its header."
 msgstr ""
 
@@ -2855,10 +2859,6 @@ msgid "Not a valid color."
 msgstr ""
 
 msgid "Unsupported file type"
-msgstr ""
-
-#, python-format
-msgid "Limit for file uploads is %s MB"
 msgstr ""
 
 msgid "Domain"

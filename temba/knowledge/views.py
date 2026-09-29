@@ -809,8 +809,10 @@ class HelpSiteCRUDL(SmartCRUDL):
         def post_save(self, obj):
             obj = super().post_save(obj)
             obj.set_bubbles({key: self.form.cleaned_data[f"bubble_{key}"] for key in HelpSite.BUBBLE_KEYS})
-            if favicon := self.form.cleaned_data["favicon"]:
-                obj.set_favicon(favicon)
+            # None is no change, False is the picker cleared back to the default
+            favicon = self.form.cleaned_data["favicon"]
+            if favicon is not None:
+                obj.set_favicon(favicon or None)
             return obj
 
     class Domain(InferSite, BaseUpdateModal):

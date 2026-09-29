@@ -197,12 +197,12 @@ class HelpSiteCRUDLTest(TembaTest, CRUDLTestMixin):
                 object_unchanged=site,
             )
 
-        # and not too big
+        # and not too big - which is checked before it's opened as an image, so a big non-image is too big
         with patch("temba.knowledge.models.HelpSite.MAX_FAVICON_SIZE", 10):
             self.assertUpdateSubmit(
                 update_url,
                 self.admin,
-                {**data, "favicon": self.upload(f"{settings.TESTDATA_DIR}/media/klab.png", "image/png")},
+                {**data, "favicon": self.upload(f"{settings.TESTDATA_DIR}/media/simple.pdf", "image/png")},
                 form_errors={"favicon": "Limit for file uploads is 0 MB"},
                 object_unchanged=site,
             )
@@ -241,9 +241,27 @@ class HelpSiteCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertTrue(public_file_storage.exists(second))
         self.assertFalse(public_file_storage.exists(first))
 
-        # and it goes with the helpdesk
-        self.helpdesk.delete()
+        # clearing the picker goes back to the default
+        self.assertUpdateSubmit(update_url, self.admin, {**data, "favicon-clear": "on"})
+        site.refresh_from_db()
+        self.assertNotIn(HelpSite.CONFIG_FAVICON, site.config)
+        self.assertIsNone(site.favicon_url)
         self.assertFalse(public_file_storage.exists(second))
+
+        response = self.requestView(update_url, self.admin)
+        self.assertNotIn("url", response.context["form"].fields["favicon"].widget.attrs)
+
+        # and a favicon goes with the helpdesk
+        self.assertUpdateSubmit(
+            update_url,
+            self.admin,
+            {**data, "favicon": self.upload(f"{settings.TESTDATA_DIR}/media/klab.png", "image/png")},
+        )
+        site.refresh_from_db()
+        third = site.config[HelpSite.CONFIG_FAVICON]
+
+        self.helpdesk.delete()
+        self.assertFalse(public_file_storage.exists(third))
 
     def test_domain(self):
         domain_url = reverse("knowledge.helpsite_domain")

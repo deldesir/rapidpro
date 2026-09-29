@@ -166,6 +166,19 @@ class SectionForm(forms.ModelForm):
         labels = {"title": _("Title")}
 
 
+class FaviconField(forms.ImageField):
+    """
+    An image upload that's turned away on size before Pillow is asked to open it.
+    """
+
+    def to_python(self, data):
+        if data and data.size > HelpSite.MAX_FAVICON_SIZE:
+            raise forms.ValidationError(
+                _("Limit for file uploads is %s MB") % (HelpSite.MAX_FAVICON_SIZE // (1024 * 1024))
+            )
+        return super().to_python(data)
+
+
 class HelpSiteForm(forms.ModelForm):
     """
     The help site's settings - what it says about itself, whether it's up, where it lives, and its few colors.
@@ -193,11 +206,12 @@ class HelpSiteForm(forms.ModelForm):
         help_text=_("Shown at the bottom of every page."),
         widget=InputWidget(),
     )
-    favicon = forms.ImageField(
+    # cleared, it's False - the site goes back to the default
+    favicon = FaviconField(
         required=False,
         label=_("Icon"),
         help_text=_("Shown in the browser tab. An open book if you don't choose one."),
-        widget=ImagePickerWidget(),
+        widget=ImagePickerWidget(attrs={"clearable": True}),
     )
     chat_channel = forms.ChoiceField(
         required=False,
@@ -246,14 +260,10 @@ class HelpSiteForm(forms.ModelForm):
         return value
 
     def clean_favicon(self):
+        # the content type is Pillow's, from the image itself
         file = self.cleaned_data.get("favicon")
-        if file:
-            if file.content_type not in HelpSite.FAVICON_CONTENT_TYPES:
-                raise forms.ValidationError(_("Unsupported file type"))
-            if file.size > HelpSite.MAX_FAVICON_SIZE:
-                raise forms.ValidationError(
-                    _("Limit for file uploads is %s MB") % (HelpSite.MAX_FAVICON_SIZE // (1024 * 1024))
-                )
+        if file and file.content_type not in HelpSite.FAVICON_CONTENT_TYPES:
+            raise forms.ValidationError(_("Unsupported file type"))
         return file
 
     def clean_primary_color(self):
