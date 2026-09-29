@@ -1,12 +1,14 @@
 from unittest.mock import patch
 
+from django.conf import settings
 from django.test.utils import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from temba.knowledge.models import HelpSite, KnowledgeSource
 from temba.orgs.models import Org
-from temba.tests import CRUDLTestMixin, TembaTest
+from temba.tests import CRUDLTestMixin, TembaTest, cleanup
+from temba.utils.s3 import public_file_storage
 
 
 class HelpSiteCRUDLTest(TembaTest, CRUDLTestMixin):
@@ -41,6 +43,7 @@ class HelpSiteCRUDLTest(TembaTest, CRUDLTestMixin):
                 "title": "Nyaruka",
                 "tagline": "",
                 "footer": "",
+                "favicon": None,
                 "chat_channel": "",
                 "primary_color": HelpSite.DEFAULT_PRIMARY_COLOR,
                 "header_color": HelpSite.DEFAULT_HEADER_COLOR,
@@ -160,6 +163,87 @@ class HelpSiteCRUDLTest(TembaTest, CRUDLTestMixin):
         # a channel that's since been removed leaves the site without chat
         webchat.release(self.admin)
         self.assertIsNone(site.chat_channel)
+
+    @cleanup(s3=True)
+    def test_update_favicon(self):
+        update_url = reverse("knowledge.helpsite_update")
+        self.enable_agents(self.org)
+        site = HelpSite.get_or_create(self.helpdesk, self.admin)
+
+        data = {"title": "Nyaruka Help", "primary_color": "#ff6600", "header_color": "#ffffff"}
+
+        # without its own favicon, there's none to show in the picker
+        response = self.requestView(update_url, self.admin)
+        self.assertNotIn("url", response.context["form"].fields["favicon"].widget.attrs)
+
+        # has to be an image, whatever it says it is
+        self.assertUpdateSubmit(
+            update_url,
+            self.admin,
+            {**data, "favicon": self.upload(f"{settings.TESTDATA_DIR}/media/simple.pdf", "image/png")},
+            form_errors={
+                "favicon": "Upload a valid image. The file you uploaded was either not an image or a corrupted image."
+            },
+            object_unchanged=site,
+        )
+
+        # of a type we'll serve
+        with patch("temba.knowledge.models.HelpSite.FAVICON_CONTENT_TYPES", ("image/gif",)):
+            self.assertUpdateSubmit(
+                update_url,
+                self.admin,
+                {**data, "favicon": self.upload(f"{settings.TESTDATA_DIR}/media/klab.png", "image/png")},
+                form_errors={"favicon": "Unsupported file type"},
+                object_unchanged=site,
+            )
+
+        # and not too big
+        with patch("temba.knowledge.models.HelpSite.MAX_FAVICON_SIZE", 10):
+            self.assertUpdateSubmit(
+                update_url,
+                self.admin,
+                {**data, "favicon": self.upload(f"{settings.TESTDATA_DIR}/media/klab.png", "image/png")},
+                form_errors={"favicon": "Limit for file uploads is 0 MB"},
+                object_unchanged=site,
+            )
+
+        self.assertUpdateSubmit(
+            update_url,
+            self.admin,
+            {**data, "favicon": self.upload(f"{settings.TESTDATA_DIR}/media/klab.png", "image/png")},
+        )
+
+        site.refresh_from_db()
+        first = site.config[HelpSite.CONFIG_FAVICON]
+        self.assertTrue(first.startswith(f"orgs/{self.org.id}/knowledge/{self.helpdesk.uuid}/site/favicon-"))
+        self.assertTrue(first.endswith(".png"))
+        self.assertTrue(public_file_storage.exists(first))
+        self.assertEqual(public_file_storage.url(first), site.favicon_url)
+
+        # which the picker shows
+        response = self.requestView(update_url, self.admin)
+        self.assertEqual(site.favicon_url, response.context["form"].fields["favicon"].widget.attrs["url"])
+
+        # saving without choosing another keeps it
+        self.assertUpdateSubmit(update_url, self.admin, data)
+        site.refresh_from_db()
+        self.assertEqual(first, site.config[HelpSite.CONFIG_FAVICON])
+
+        # choosing another replaces it, under a new key
+        self.assertUpdateSubmit(
+            update_url,
+            self.admin,
+            {**data, "favicon": self.upload(f"{settings.TESTDATA_DIR}/media/klab.png", "image/png")},
+        )
+        site.refresh_from_db()
+        second = site.config[HelpSite.CONFIG_FAVICON]
+        self.assertNotEqual(first, second)
+        self.assertTrue(public_file_storage.exists(second))
+        self.assertFalse(public_file_storage.exists(first))
+
+        # and it goes with the helpdesk
+        self.helpdesk.delete()
+        self.assertFalse(public_file_storage.exists(second))
 
     def test_domain(self):
         domain_url = reverse("knowledge.helpsite_domain")

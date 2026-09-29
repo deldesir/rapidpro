@@ -475,10 +475,12 @@ export const serialize = function (form: any) {
   for (let i = 0; i < form.elements.length; i++) {
     const field = form.elements[i];
 
-    // Don't serialize fields without a name, submits, buttons, file and reset inputs, and disabled fields
+    // Don't serialize fields without a name, submits, buttons, file and reset inputs, and disabled fields - nor a
+    // component holding a file, which can only be posted as multipart, see serializeFiles
     if (
       !field.name ||
       field.disabled ||
+      field.value instanceof FormData ||
       field.type === 'file' ||
       field.type === 'reset' ||
       field.type === 'submit' ||
@@ -518,6 +520,22 @@ export const serialize = function (form: any) {
     }
   }
   return serialized.join('&');
+};
+
+/**
+ * The files held by a form's components, e.g. an image picker's chosen image, which serialize leaves out - or null if
+ * there are none, and the form can be posted as serialized.
+ */
+export const serializeFiles = function (form: any): FormData | null {
+  let files: FormData = null;
+  for (let i = 0; i < form.elements.length; i++) {
+    const field = form.elements[i];
+    if (field.name && !field.disabled && field.value instanceof FormData) {
+      files = files || new FormData();
+      field.value.forEach((value: any, key: string) => files.append(key, value));
+    }
+  }
+  return files;
 };
 
 export const getScrollParent = (node: any): any => {

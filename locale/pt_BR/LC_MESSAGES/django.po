@@ -2833,6 +2833,12 @@ msgstr "Rodapé"
 msgid "Shown at the bottom of every page."
 msgstr "Exibido no final de cada página."
 
+msgid "Icon"
+msgstr "Ícone"
+
+msgid "Shown in the browser tab. An open book if you don't choose one."
+msgstr "Exibido na aba do navegador. Um livro aberto se você não escolher um."
+
 msgid "Chat"
 msgstr "Chat"
 
@@ -2865,6 +2871,13 @@ msgstr "Bolha 3"
 
 msgid "Not a valid color."
 msgstr "Não é uma cor válida."
+
+msgid "Unsupported file type"
+msgstr "Tipo de arquivo não suportado"
+
+#, python-format
+msgid "Limit for file uploads is %s MB"
+msgstr "O limite para envio de arquivos é de %s MB"
 
 msgid "Domain"
 msgstr "Domínio"
@@ -2941,13 +2954,6 @@ msgstr "Arquivos só podem ser adicionados a conjuntos de documentos."
 #, python-format
 msgid "Limit of %d documents reached."
 msgstr "O limite de %d documentos foi atingido."
-
-msgid "Unsupported file type"
-msgstr "Tipo de arquivo não suportado"
-
-#, python-format
-msgid "Limit for file uploads is %s MB"
-msgstr "O limite para envio de arquivos é de %s MB"
 
 msgid "New Section"
 msgstr "Nova seção"

@@ -2829,6 +2829,12 @@ msgstr "Pie de página"
 msgid "Shown at the bottom of every page."
 msgstr "Se muestra al final de cada página."
 
+msgid "Icon"
+msgstr "Icono"
+
+msgid "Shown in the browser tab. An open book if you don't choose one."
+msgstr "Se muestra en la pestaña del navegador. Un libro abierto si no eliges uno."
+
 msgid "Chat"
 msgstr "Chat"
 
@@ -2861,6 +2867,13 @@ msgstr "Burbuja 3"
 
 msgid "Not a valid color."
 msgstr "No es un color válido."
+
+msgid "Unsupported file type"
+msgstr "Tipo de archivo no admitido"
+
+#, python-format
+msgid "Limit for file uploads is %s MB"
+msgstr "El límite para la subida de archivos es de %s MB"
 
 msgid "Domain"
 msgstr "Dominio"
@@ -2937,13 +2950,6 @@ msgstr "Los archivos solo se pueden añadir a conjuntos de documentos."
 #, python-format
 msgid "Limit of %d documents reached."
 msgstr "Se alcanzó el límite de %d documentos."
-
-msgid "Unsupported file type"
-msgstr "Tipo de archivo no admitido"
-
-#, python-format
-msgid "Limit for file uploads is %s MB"
-msgstr "El límite para la subida de archivos es de %s MB"
 
 msgid "New Section"
 msgstr "Nueva sección"
