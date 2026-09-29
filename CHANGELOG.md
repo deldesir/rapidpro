@@ -1,3 +1,6 @@
+## v26.3.118 (2026-09-29)
+ * Add support for Claude Sonnet 5.5
+
 ## v26.3.117 (2026-09-29)
  * Show attachments on send message and broadcast nodes in the flow editor
  * Add email and email_verified_on fields to contacts
