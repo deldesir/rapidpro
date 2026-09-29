@@ -1,3 +1,8 @@
+v26.3.116 (2026-09-29)
+-------------------------
+ * Redirect ticket URLs that still include an open/closed status segment
+ * Claim test valkey databases through the coordinated pool shared with other projects' tests
+
 v26.3.115 (2026-09-28)
 -------------------------
  * Remove text search fallback from help site search
