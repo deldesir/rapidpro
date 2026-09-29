@@ -193,6 +193,59 @@ describe('temba-sortable-list', () => {
     });
   });
 
+  it('scrolls its container when dragged to the edge', async () => {
+    const scroller = document.createElement('div');
+    scroller.setAttribute(
+      'style',
+      'width: 100px; height: 60px; overflow-y: auto;'
+    );
+    const list = (await fixture(
+      html`
+        <temba-sortable-list>
+          <style>
+            .sortable {
+              height: 20px;
+            }
+          </style>
+          ${['a', 'b', 'c', 'd', 'e', 'f'].map(
+            (id) => html`<div class="sortable" id=${id}>${id}</div>`
+          )}
+        </temba-sortable-list>
+      `,
+      { parentNode: scroller }
+    )) as SortableList;
+
+    const bounds = scroller.getBoundingClientRect();
+    expect(scroller.scrollTop).to.equal(0);
+
+    // pick up the first item and hold it at the bottom edge
+    await moveMouse(bounds.left + 20, bounds.top + 10);
+    await mouseDown();
+    await moveMouse(bounds.left + 20, bounds.top + 30);
+    await moveMouse(bounds.left + 20, bounds.bottom - 2);
+
+    // the container scrolls frame by frame until it runs out of room
+    clock.tick(1000);
+    expect(scroller.scrollTop).to.equal(
+      scroller.scrollHeight - scroller.clientHeight
+    );
+
+    // what's now in view under the pointer is where it lands
+    scroller.dispatchEvent(new Event('scroll'));
+    const orderChanged = oneEvent(list, CustomEventType.OrderChanged, false);
+    await mouseUp();
+    clock.runAll();
+
+    expect((await orderChanged).detail).to.deep.equal({ swap: [0, 5] });
+
+    // and the scrolling stops with the drag
+    const scrolled = scroller.scrollTop;
+    scroller.scrollTop = 0;
+    clock.tick(1000);
+    expect(scroller.scrollTop).to.equal(0);
+    expect(scrolled).to.be.greaterThan(0);
+  });
+
   it('detects external drag when dragging outside container', async () => {
     const list: SortableList = await createSorter(BORING_LIST);
     list.externalDrag = true;

@@ -13,6 +13,13 @@ const DRAG_THRESHOLD = 2;
 // padding around container for external drag detection
 const EXTERNAL_DRAG_PADDING = 50;
 
+// how close (px) to the edge of the scrolling container a drag has to come
+// before the container starts scrolling to reveal what's beyond it
+const AUTO_SCROLL_EDGE = 48;
+
+// fastest the container scrolls (px per frame), reached at the edge itself
+const AUTO_SCROLL_MAX_SPEED = 16;
+
 export class SortableList extends RapidElement {
   originalDownDisplay: string;
   static get styles() {
@@ -133,6 +140,13 @@ export class SortableList extends RapidElement {
   pendingInsertAfter: boolean = null;
   isExternalDrag = false;
 
+  // the pointer as of the last move, so a scroll under a still pointer can
+  // re-judge the drop against where the items have moved to
+  private lastClientX = 0;
+  private lastClientY = 0;
+  private scrollContainer: Element = null;
+  private autoScrollFrame = 0;
+
   private clickBlocker: ((e: MouseEvent) => void) | null = null;
 
   public constructor() {
@@ -143,6 +157,115 @@ export class SortableList extends RapidElement {
     this.handleTouchMove = this.handleTouchMove.bind(this);
     this.handleTouchEnd = this.handleTouchEnd.bind(this);
     this.handleTouchStart = this.handleTouchStart.bind(this);
+    this.handleScroll = this.handleScroll.bind(this);
+    this.autoScroll = this.autoScroll.bind(this);
+  }
+
+  /** The nearest ancestor - across shadow boundaries - that actually
+   * scrolls, or the document itself. */
+  private findScrollContainer(): Element {
+    let node: Node = this.parentNode;
+    for (; node; node = node.parentNode || (node as ShadowRoot).host) {
+      if (node instanceof Element) {
+        const overflowY = window.getComputedStyle(node).overflowY;
+        if (
+          (overflowY === 'auto' || overflowY === 'scroll') &&
+          node.scrollHeight > node.clientHeight
+        ) {
+          return node;
+        }
+      }
+    }
+    return document.scrollingElement;
+  }
+
+  /** How fast (px per frame, negative is up) the container should scroll
+   * for a drag at clientY - faster the deeper into the edge, and flat out
+   * once past it. */
+  private getAutoScrollSpeed(clientY: number): number {
+    const container = this.scrollContainer;
+    if (!container) return 0;
+
+    const { top, bottom } =
+      container === document.scrollingElement
+        ? { top: 0, bottom: window.innerHeight }
+        : container.getBoundingClientRect();
+
+    // a short scrollport can't give up much of itself to the edges
+    const edge = Math.min(AUTO_SCROLL_EDGE, (bottom - top) / 4);
+    if (edge <= 0) return 0;
+
+    if (clientY < top + edge) {
+      return (
+        -AUTO_SCROLL_MAX_SPEED * Math.min(1, (top + edge - clientY) / edge)
+      );
+    }
+    if (clientY > bottom - edge) {
+      return (
+        AUTO_SCROLL_MAX_SPEED * Math.min(1, (clientY - bottom + edge) / edge)
+      );
+    }
+    return 0;
+  }
+
+  private updateAutoScroll(): void {
+    if (
+      !this.autoScrollFrame &&
+      this.getAutoScrollSpeed(this.lastClientY) !== 0
+    ) {
+      this.autoScrollFrame = requestAnimationFrame(this.autoScroll);
+    }
+  }
+
+  private autoScroll(): void {
+    this.autoScrollFrame = 0;
+    if (!this.ghostElement) return;
+
+    const speed = this.getAutoScrollSpeed(this.lastClientY);
+    if (!speed) return;
+
+    const container = this.scrollContainer;
+    const before = container.scrollTop;
+    container.scrollTop = before + speed;
+
+    // keep going until the pointer leaves the edge or there's no further
+    // to go - the scroll event re-judges the drop along the way
+    if (container.scrollTop !== before) {
+      this.autoScrollFrame = requestAnimationFrame(this.autoScroll);
+    }
+  }
+
+  /** The container scrolled mid-drag - by us or the user's wheel - so the
+   * items moved under a pointer that didn't. */
+  private handleScroll(): void {
+    if (this.ghostElement) {
+      this.processDragMove(this.lastClientX, this.lastClientY);
+    }
+  }
+
+  private getScrollEventTarget(): EventTarget {
+    return this.scrollContainer === document.scrollingElement
+      ? window
+      : this.scrollContainer;
+  }
+
+  private stopAutoScroll(): void {
+    if (this.autoScrollFrame) {
+      cancelAnimationFrame(this.autoScrollFrame);
+      this.autoScrollFrame = 0;
+    }
+    if (this.scrollContainer) {
+      this.getScrollEventTarget().removeEventListener(
+        'scroll',
+        this.handleScroll
+      );
+      this.scrollContainer = null;
+    }
+  }
+
+  public disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.stopAutoScroll();
   }
 
   private getSortableElements(): Element[] {
@@ -709,6 +832,9 @@ export class SortableList extends RapidElement {
    * Shared drag-move logic for both mouse and touch.
    */
   private processDragMove(clientX: number, clientY: number) {
+    this.lastClientX = clientX;
+    this.lastClientY = clientY;
+
     if (
       !this.ghostElement &&
       this.downEle &&
@@ -781,6 +907,11 @@ export class SortableList extends RapidElement {
         // Use capture phase to intercept clicks before they reach any elements
         document.addEventListener('click', this.clickBlocker, true);
       }
+
+      // dragging toward the edge of whatever scrolls us brings the items
+      // scrolled out of view within reach
+      this.scrollContainer = this.findScrollContainer();
+      this.getScrollEventTarget().addEventListener('scroll', this.handleScroll);
     }
 
     if (this.ghostElement) {
@@ -895,6 +1026,8 @@ export class SortableList extends RapidElement {
           mouseY: clientY
         });
       }
+
+      this.updateAutoScroll();
     }
   }
 
@@ -914,6 +1047,8 @@ export class SortableList extends RapidElement {
    * Shared drag-end logic for both mouse and touch.
    */
   private processDragEnd(clientX: number, clientY: number) {
+    this.stopAutoScroll();
+
     if (this.draggingId && this.ghostElement) {
       // Remove the ghost clone from document.body
       if (this.ghostElement) {
