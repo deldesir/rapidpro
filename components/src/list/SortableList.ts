@@ -181,7 +181,8 @@ export class SortableList extends RapidElement {
 
   /** How fast (px per frame, negative is up) the container should scroll
    * for a drag at clientY - faster the deeper into the edge, and flat out
-   * once past it. */
+   * once past it. Vertical only: a horizontal list in a sideways-scrolling
+   * container doesn't auto-scroll. */
   private getAutoScrollSpeed(clientY: number): number {
     const container = this.scrollContainer;
     if (!container) return 0;
