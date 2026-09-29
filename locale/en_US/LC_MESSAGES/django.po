@@ -2997,7 +2997,11 @@ msgstr ""
 msgid "Using ~ with URN requires value of at least %(min_value_length)s characters."
 msgstr ""
 
-msgid "Can only use ~ with name or URN values."
+#, python-format
+msgid "Using ~ with email requires value of at least %(min_value_length)s characters."
+msgstr ""
+
+msgid "Can only use ~ with name, email or URN values."
 msgstr ""
 
 #, python-format

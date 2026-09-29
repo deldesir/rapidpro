@@ -1355,11 +1355,19 @@ class QueryExceptionTest(TembaTest):
             ),
             (
                 QueryValidationException(
-                    "contains conditions can only be used with name or URN values",
+                    "contains operator on email requires value of minimum length 3",
+                    "invalid_partial_email",
+                    {"min_value_length": "3"},
+                ),
+                "Using ~ with email requires value of at least 3 characters.",
+            ),
+            (
+                QueryValidationException(
+                    "contains conditions can only be used with name, email or URN values",
                     "unsupported_contains",
                     {"property": "uuid"},
                 ),
-                "Can only use ~ with name or URN values.",
+                "Can only use ~ with name, email or URN values.",
             ),
             (
                 QueryValidationException(
