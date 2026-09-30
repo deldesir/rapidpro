@@ -1,3 +1,6 @@
+## v26.3.119 (2026-09-30)
+ * Add email to the contact search index and query error messages
+
 ## v26.3.118 (2026-09-29)
  * Add support for Claude Sonnet 5.5
 
