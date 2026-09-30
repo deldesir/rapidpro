@@ -3011,8 +3011,12 @@ msgstr "El uso de ~ con el nombre requiere un token de al menos %(min_token_leng
 msgid "Using ~ with URN requires value of at least %(min_value_length)s characters."
 msgstr "El uso de ~ con URN requiere un valor de al menos %(min_value_length)s caracteres."
 
-msgid "Can only use ~ with name or URN values."
-msgstr "Solo se puede usar ~ con valores de nombre o URN."
+#, python-format
+msgid "Using ~ with email requires value of at least %(min_value_length)s characters."
+msgstr "El uso de ~ con correo electrónico requiere un valor de al menos %(min_value_length)s caracteres."
+
+msgid "Can only use ~ with name, email or URN values."
+msgstr "Solo se puede usar ~ con valores de nombre, correo electrónico o URN."
 
 #, python-format
 msgid "Can only use %(operator)s with number or date values."
