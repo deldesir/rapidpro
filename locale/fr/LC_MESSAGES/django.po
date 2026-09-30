@@ -2814,6 +2814,10 @@ msgstr "Corps"
 msgid "Description"
 msgstr "Description"
 
+#, python-format
+msgid "Limit for file uploads is %s MB"
+msgstr "La limite pour les envois de fichiers est de %s Mo"
+
 msgid "The name of your help site, shown in its header."
 msgstr "Le nom de votre site d'aide, affiché dans son en-tête."
 
@@ -2828,6 +2832,12 @@ msgstr "Pied de page"
 
 msgid "Shown at the bottom of every page."
 msgstr "Affiché en bas de chaque page."
+
+msgid "Icon"
+msgstr "Icône"
+
+msgid "Shown in the browser tab. An open book if you don't choose one."
+msgstr "Affichée dans l'onglet du navigateur. Un livre ouvert si vous n'en choisissez pas."
 
 msgid "Chat"
 msgstr "Discussion"
@@ -2861,6 +2871,9 @@ msgstr "Bulle 3"
 
 msgid "Not a valid color."
 msgstr "Ce n'est pas une couleur valide."
+
+msgid "Unsupported file type"
+msgstr "Type de fichier non pris en charge"
 
 msgid "Domain"
 msgstr "Domaine"
@@ -2937,13 +2950,6 @@ msgstr "Les fichiers ne peuvent être ajoutés qu'à des ensembles de documents.
 #, python-format
 msgid "Limit of %d documents reached."
 msgstr "La limite de %d documents est atteinte."
-
-msgid "Unsupported file type"
-msgstr "Type de fichier non pris en charge"
-
-#, python-format
-msgid "Limit for file uploads is %s MB"
-msgstr "La limite pour les envois de fichiers est de %s Mo"
 
 msgid "New Section"
 msgstr "Nouvelle section"

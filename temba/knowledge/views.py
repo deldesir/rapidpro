@@ -778,7 +778,7 @@ class HelpSiteCRUDL(SmartCRUDL):
 
     class Update(InferSite, BaseUpdateModal):
         """
-        The site's settings - what it says about itself, whether it's up, and its colors.
+        The site's settings - what it says about itself, whether it's up, its icon and its colors.
         """
 
         form_class = HelpSiteForm
@@ -809,6 +809,10 @@ class HelpSiteCRUDL(SmartCRUDL):
         def post_save(self, obj):
             obj = super().post_save(obj)
             obj.set_bubbles({key: self.form.cleaned_data[f"bubble_{key}"] for key in HelpSite.BUBBLE_KEYS})
+            # None is no change, False is the picker cleared back to the default
+            favicon = self.form.cleaned_data["favicon"]
+            if favicon is not None:
+                obj.set_favicon(favicon or None)
             return obj
 
     class Domain(InferSite, BaseUpdateModal):

@@ -770,8 +770,8 @@ class KnowledgeSource(TembaModel):
 
     def _purge(self):
         """
-        Removes this source's chunks, items, articles and article images. Rows go first; storage objects are only
-        removed once their rows are gone.
+        Removes this source's chunks, items, articles, article images and site. Rows go first; storage objects are
+        only removed once their rows are gone.
         """
         # collect storage keys before the rows that name them disappear - two different buckets
         item_paths = list(self.items.exclude(path=None).values_list("path", flat=True))
@@ -782,8 +782,10 @@ class KnowledgeSource(TembaModel):
         delete_in_batches(ArticleImage.objects.filter(article__source=self))
         delete_in_batches(ArticleCount.objects.filter(article__source=self))
 
-        # the helpdesk's public site goes with its articles
+        # the helpdesk's public site goes with its articles, and its favicon with the article images
         for site in HelpSite.objects.filter(source=self):
+            if favicon := site.config.get(HelpSite.CONFIG_FAVICON):
+                image_paths.append(favicon)
             site.delete()
 
         # parent is PROTECT so flatten the article tree before deleting it
@@ -1249,6 +1251,10 @@ class HelpSite(models.Model):
     CONFIG_PRIMARY_COLOR = "primary_color"  # links, buttons, accents
     CONFIG_HEADER_COLOR = "header_color"  # the header's background
     CONFIG_CHAT_CHANNEL = "chat_channel"  # the uuid of the WebChat channel whose widget the site embeds, if any
+    CONFIG_FAVICON = "favicon"  # the key in public storage of the site's own favicon, if it has one
+
+    FAVICON_CONTENT_TYPES = ("image/gif", "image/jpeg", "image/png", "image/webp")
+    MAX_FAVICON_SIZE = 1024 * 1024  # 1MB
 
     DEFAULT_PRIMARY_COLOR = "#2f6fed"
     DEFAULT_HEADER_COLOR = "#ffffff"
@@ -1427,6 +1433,37 @@ class HelpSite(models.Model):
         What's legible on the header - the page's own dark text on a light header, white on a dark one.
         """
         return "#ffffff" if is_dark_color(self.header_color) else "#1f2430"
+
+    @property
+    def favicon_url(self) -> str | None:
+        """
+        Where the site's own favicon is served from, if it has one - otherwise pages use the default.
+        """
+        path = self.config.get(self.CONFIG_FAVICON)
+        return public_file_storage.url(path) if path else None
+
+    def set_favicon(self, file):
+        """
+        Stores an uploaded image as the site's favicon, replacing any it had - or with None, goes back to the default.
+        Each is saved under a new key, so no browser or cache holds on to the old one.
+        """
+        old_path = self.config.get(self.CONFIG_FAVICON)
+
+        if file:
+            assert file.content_type in self.FAVICON_CONTENT_TYPES, "unsupported content type"
+
+            extension = mimetypes.guess_extension(file.content_type) or ".bin"  # see get_article_image_path
+            path = public_file_storage.save(
+                f"orgs/{self.source.org_id}/knowledge/{self.source.uuid}/site/favicon-{uuid4()}{extension}", file
+            )
+            self.config = {**self.config, self.CONFIG_FAVICON: path}
+        else:
+            self.config = {k: v for k, v in self.config.items() if k != self.CONFIG_FAVICON}
+
+        self.save(update_fields=("config", "modified_on"))
+
+        if old_path:
+            on_transaction_commit(lambda: public_file_storage.delete(old_path))
 
     @classmethod
     def get_chat_channels(cls, org):

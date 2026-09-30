@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 import requests
 
+from django.conf import settings
 from django.test.utils import override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -75,6 +76,14 @@ class SiteViewsTest(TembaTest):
         self.assertContains(response, f"--primary: {HelpSite.DEFAULT_PRIMARY_COLOR};")
         self.assertContains(response, f"--header-bg: {HelpSite.DEFAULT_HEADER_COLOR};")
         self.assertContains(response, "--header-text: #1f2430;")
+
+        # an open book for its icon until it has its own
+        self.assertContains(response, f'<link rel="icon" href="{settings.STATIC_URL}images/helpsite-favicon.svg">')
+
+        self.site.set_config(self.admin, favicon="orgs/1/favicon.webp")
+        response = self.public("/")
+        self.assertContains(response, 'orgs/1/favicon.webp">')
+        self.assertNotContains(response, "helpsite-favicon.svg")
 
         self.site.set_config(self.admin, primary_color="#ff6600", header_color="#1f2937")
         response = self.public("/")

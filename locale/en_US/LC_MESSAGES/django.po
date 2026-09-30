@@ -2800,6 +2800,10 @@ msgstr ""
 msgid "Description"
 msgstr ""
 
+#, python-format
+msgid "Limit for file uploads is %s MB"
+msgstr ""
+
 msgid "The name of your help site, shown in its header."
 msgstr ""
 
@@ -2813,6 +2817,12 @@ msgid "Footer"
 msgstr ""
 
 msgid "Shown at the bottom of every page."
+msgstr ""
+
+msgid "Icon"
+msgstr ""
+
+msgid "Shown in the browser tab. An open book if you don't choose one."
 msgstr ""
 
 msgid "Chat"
@@ -2846,6 +2856,9 @@ msgid "Bubble 3"
 msgstr ""
 
 msgid "Not a valid color."
+msgstr ""
+
+msgid "Unsupported file type"
 msgstr ""
 
 msgid "Domain"
@@ -2922,13 +2935,6 @@ msgstr ""
 
 #, python-format
 msgid "Limit of %d documents reached."
-msgstr ""
-
-msgid "Unsupported file type"
-msgstr ""
-
-#, python-format
-msgid "Limit for file uploads is %s MB"
 msgstr ""
 
 msgid "New Section"
