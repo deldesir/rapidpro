@@ -1,3 +1,7 @@
+## v26.3.120 (2026-09-30)
+ * Let a help site have its own favicon, defaulting to an open book
+ * Let a site's favicon be cleared back to the default, and check its size before Pillow opens it
+
 ## v26.3.119 (2026-09-30)
  * Add email to the contact search index and query error messages
 
