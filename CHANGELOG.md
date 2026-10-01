@@ -1,3 +1,8 @@
+## v26.3.121 (2026-10-01)
+ * Show and edit contact email in the contact details pane
+ * Give members of a workspace's admin groups access to all of its tickets
+ * Bump urllib3 and pyjwt dependencies
+
 ## v26.3.120 (2026-09-30)
  * Let a help site have its own favicon, defaulting to an open book
  * Let a site's favicon be cleared back to the default, and check its size before Pillow opens it
