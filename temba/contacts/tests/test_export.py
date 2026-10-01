@@ -69,6 +69,7 @@ class ContactExportTest(TembaTest):
         urns.append("mailto:adam@sumner.com")
         urns.append("telegram:1234")
         contact2.modify(self.admin, contact2.update_urns(urns))
+        Contact.objects.filter(id=contact2.id).update(email="adam@sumner.com")
 
         group1 = self.create_group("Poppin Tags", [contact, contact2])
         group2 = self.create_group("Dynamic", query="tel is 1234")
@@ -97,6 +98,7 @@ class ContactExportTest(TembaTest):
                         "Contact UUID",
                         "Name",
                         "Language",
+                        "Email",
                         "Status",
                         "Created On",
                         "Last Seen On",
@@ -112,6 +114,7 @@ class ContactExportTest(TembaTest):
                     [
                         contact.uuid,
                         "Ben Haggerty",
+                        "",
                         "",
                         "Active",
                         contact.created_on,
@@ -129,6 +132,7 @@ class ContactExportTest(TembaTest):
                         contact2.uuid,
                         "Adam Sumner",
                         "eng",
+                        "adam@sumner.com",
                         "Active",
                         contact2.created_on,
                         "",
@@ -166,6 +170,7 @@ class ContactExportTest(TembaTest):
                         "Contact UUID",
                         "Name",
                         "Language",
+                        "Email",
                         "Status",
                         "Created On",
                         "Last Seen On",
@@ -181,6 +186,7 @@ class ContactExportTest(TembaTest):
                     [
                         contact.uuid,
                         "Ben Haggerty",
+                        "",
                         "",
                         "Active",
                         contact.created_on,
@@ -198,6 +204,7 @@ class ContactExportTest(TembaTest):
                         contact2.uuid,
                         "Adam Sumner",
                         "eng",
+                        "adam@sumner.com",
                         "Active",
                         contact2.created_on,
                         "",
@@ -232,6 +239,7 @@ class ContactExportTest(TembaTest):
                         "Contact UUID",
                         "Name",
                         "Language",
+                        "Email",
                         "Status",
                         "Created On",
                         "Last Seen On",
@@ -248,6 +256,7 @@ class ContactExportTest(TembaTest):
                     [
                         contact.uuid,
                         "Ben Haggerty",
+                        "",
                         "",
                         "Active",
                         contact.created_on,
@@ -266,6 +275,7 @@ class ContactExportTest(TembaTest):
                         contact2.uuid,
                         "Adam Sumner",
                         "eng",
+                        "adam@sumner.com",
                         "Active",
                         contact2.created_on,
                         "",
@@ -283,6 +293,7 @@ class ContactExportTest(TembaTest):
                         contact3.uuid,
                         "Luol Deng",
                         "",
+                        "",
                         "Active",
                         contact3.created_on,
                         "",
@@ -299,6 +310,7 @@ class ContactExportTest(TembaTest):
                     [
                         contact4.uuid,
                         "Stephen",
+                        "",
                         "",
                         "Active",
                         contact4.created_on,
@@ -329,6 +341,7 @@ class ContactExportTest(TembaTest):
                         "Contact UUID",
                         "Name",
                         "Language",
+                        "Email",
                         "Status",
                         "Created On",
                         "Last Seen On",
@@ -345,6 +358,7 @@ class ContactExportTest(TembaTest):
                     [
                         contact.uuid,
                         "Ben Haggerty",
+                        "",
                         "",
                         "Active",
                         contact.created_on,
@@ -363,6 +377,7 @@ class ContactExportTest(TembaTest):
                         contact2.uuid,
                         "Adam Sumner",
                         "eng",
+                        "adam@sumner.com",
                         "Active",
                         contact2.created_on,
                         "",
@@ -393,6 +408,7 @@ class ContactExportTest(TembaTest):
                     "Contact UUID",
                     "Name",
                     "Language",
+                    "Email",
                     "Status",
                     "Created On",
                     "Last Seen On",
@@ -409,6 +425,7 @@ class ContactExportTest(TembaTest):
                 [
                     contact5.uuid,
                     "George",
+                    "",
                     "",
                     "Stopped",
                     contact5.created_on,
@@ -440,6 +457,7 @@ class ContactExportTest(TembaTest):
                         "Contact UUID",
                         "Name",
                         "Language",
+                        "Email",
                         "Status",
                         "Created On",
                         "Last Seen On",
@@ -457,6 +475,7 @@ class ContactExportTest(TembaTest):
                         contact2.uuid,
                         "Adam Sumner",
                         "eng",
+                        "adam@sumner.com",
                         "Active",
                         contact2.created_on,
                         "",
@@ -473,6 +492,7 @@ class ContactExportTest(TembaTest):
                     [
                         contact3.uuid,
                         "Luol Deng",
+                        "",
                         "",
                         "Active",
                         contact3.created_on,
@@ -504,6 +524,7 @@ class ContactExportTest(TembaTest):
                         "Contact UUID",
                         "Name",
                         "Language",
+                        "Email",
                         "Status",
                         "Created On",
                         "Last Seen On",
@@ -520,6 +541,7 @@ class ContactExportTest(TembaTest):
                     [
                         contact.uuid,
                         "Ben Haggerty",
+                        "",
                         "",
                         "Active",
                         contact.created_on,

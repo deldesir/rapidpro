@@ -1944,6 +1944,8 @@ class ContactExport(ExportType):
                 dict(label="Scheme", key="scheme", field=None, urn_scheme=None),
             ]
             fields = fields[0:1] + extra + fields[1:]
+        else:  # like URNs, email identifies the contact so isn't exported for anon orgs
+            fields.insert(3, dict(label="Email", key="email", field=None, urn_scheme=None))
 
         scheme_counts = dict()
         if not export.org.is_anon:
@@ -2063,6 +2065,8 @@ class ContactExport(ExportType):
             return contact.uuid
         elif field["key"] == "language":
             return contact.language
+        elif field["key"] == "email":
+            return contact.email
         elif field["key"] == "status":
             return contact.get_status_display()
         elif field["key"] == "created_on":
@@ -2296,7 +2300,7 @@ class ContactImport(SmartModel):
                 attribute = header_name.lower()
                 attribute = attribute.removeprefix("contact ")  # header "contact uuid" -> "uuid" etc
 
-                if attribute in ("uuid", "name", "language", "status"):
+                if attribute in ("uuid", "name", "language", "email", "status"):
                     mapping = {"type": "attribute", "name": attribute}
             elif header_prefix == "urn" and header_name:
                 mapping = {"type": "scheme", "scheme": header_name.lower()}

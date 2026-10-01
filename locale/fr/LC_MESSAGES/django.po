@@ -5288,6 +5288,12 @@ msgstr "Langue du contact"
 msgid "Only valid <a href=\"https://en.wikipedia.org/wiki/ISO_639-3\" target=\"_new\">ISO639-3</a> codes supported."
 msgstr "Seuls les codes <a href=\"https://en.wikipedia.org/wiki/ISO_639-3\" target=\"_new\">ISO639-3</a> valides sont pris en charge."
 
+msgid "Contact email"
+msgstr "E-mail du contact"
+
+msgid "Imported addresses are unverified."
+msgstr "Les adresses importées ne sont pas vérifiées."
+
 #, python-format
 msgid "Numbers without a country code will be treated as local numbers in %(country)s."
 msgstr "Les numéros sans code de pays seront traités comme des numéros locaux en %(country)s."

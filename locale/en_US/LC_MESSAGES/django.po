@@ -5272,6 +5272,12 @@ msgstr ""
 msgid "Only valid <a href=\"https://en.wikipedia.org/wiki/ISO_639-3\" target=\"_new\">ISO639-3</a> codes supported."
 msgstr ""
 
+msgid "Contact email"
+msgstr ""
+
+msgid "Imported addresses are unverified."
+msgstr ""
+
 #, python-format
 msgid "Numbers without a country code will be treated as local numbers in %(country)s."
 msgstr ""
