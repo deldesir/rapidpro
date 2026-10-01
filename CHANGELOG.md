@@ -1,3 +1,11 @@
+## v26.3.122 (2026-10-01)
+ * Add set_contact_email action to the flow editor
+ * Build call_classifier nodes natively in the Split by AI editor
+ * Stop offering Open Ticket in voice and background flows
+ * Remove Start Flow from the ticket menu
+ * Include contact email in exports and imports
+ * Bump flow spec version to 14.6.0
+
 ## v26.3.121 (2026-10-01)
  * Show and edit contact email in the contact details pane
  * Give members of a workspace's admin groups access to all of its tickets
