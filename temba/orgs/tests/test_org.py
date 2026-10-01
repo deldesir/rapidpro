@@ -90,6 +90,39 @@ class OrgTest(TembaTest):
         self.assertEqual([self.admin, admin3], list(self.org.get_admins().order_by("id")))
         self.assertEqual([self.admin, self.admin2], list(self.org2.get_admins().order_by("id")))
 
+    def test_get_membership(self):
+        group_admin = self.create_user("gad@textit.com")
+        self.create_admin_group("Global Admins", orgs=[self.org], users=[group_admin, self.agent])
+
+        org = Org.objects.get(id=self.org.id)
+
+        # a regular member's membership is the same either way, fetched along with the admin group check
+        with self.assertNumQueries(1):
+            membership = org.get_membership(self.editor, explicit_only=True)
+            self.assertEqual(OrgRole.EDITOR, membership.role)
+            self.assertEqual(membership, org.get_membership(self.editor))
+            self.assertEqual(OrgRole.EDITOR, org.get_user_role(self.editor))
+
+        # admin group members are administrators, even if they have an explicit membership
+        with self.assertNumQueries(1):
+            self.assertEqual(OrgRole.AGENT, org.get_membership(self.agent, explicit_only=True).role)
+            membership = org.get_membership(self.agent)
+            self.assertIsNone(membership.id)
+            self.assertEqual(OrgRole.ADMINISTRATOR, membership.role)
+            self.assertIsNone(membership.team)
+            self.assertTrue(membership.can_assign)
+            self.assertTrue(membership.can_reply_non_own)
+            self.assertEqual(OrgRole.ADMINISTRATOR, org.get_user_role(self.agent))
+
+        self.assertIsNone(org.get_membership(group_admin, explicit_only=True))
+        self.assertEqual(OrgRole.ADMINISTRATOR, org.get_membership(group_admin).role)
+        self.assertEqual(OrgRole.ADMINISTRATOR, org.get_user_role(group_admin))
+
+        # users with no access to the org have no membership either way
+        self.assertIsNone(org.get_membership(self.admin2, explicit_only=True))
+        self.assertIsNone(org.get_membership(self.admin2))
+        self.assertIsNone(org.get_user_role(self.admin2))
+
     def test_get_owner(self):
         self.org.created_by = self.agent
         self.org.save(update_fields=("created_by",))

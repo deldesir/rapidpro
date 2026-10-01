@@ -106,9 +106,10 @@ class Topic(TembaModel, DependencyMixin):
     def get_restriction(cls, org, user):
         """
         Returns the topics the given user is restricted to in the org, or None if they can access all of the org's
-        topics. Staff and members whose team grants all topics are unrestricted; a member on a topic-limited team is
-        restricted to that team's topics; a user with no membership in the org can access nothing. This is the single
-        source of truth for team topic access, shared by everything that scopes topics or tickets to a user.
+        topics. Staff, members of the org's admin groups and members whose team grants all topics are unrestricted; a
+        member on a topic-limited team is restricted to that team's topics; any other user with no membership in the
+        org can access nothing. This is the single source of truth for team topic access, shared by everything that
+        scopes topics or tickets to a user.
         """
         if user.is_staff:
             return None

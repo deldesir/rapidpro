@@ -218,7 +218,8 @@ class TeamCRUDL(SmartCRUDL):
 
 class TeamScopedMixin:
     """
-    Mixin for analytics views which agent users see scoped to their team. Other users see the whole workspace.
+    Mixin for analytics views which agent users see scoped to their team. Other users, including members of the
+    workspace's admin groups, see the whole workspace.
     """
 
     @cached_property

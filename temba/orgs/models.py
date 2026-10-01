@@ -897,9 +897,11 @@ class Org(LegacyIDMixin, SmartModel):
         # default to user that created this org (converting to our User proxy model)
         return User.objects.get(id=self.created_by_id)
 
-    def get_membership(self, user: User):
+    def get_membership(self, user: User, *, explicit_only: bool = False):
         """
-        Gets the membership of the given user in this org (if any).
+        Gets the membership of the given user in this org (if any). Members of the org's admin groups get an unsaved
+        administrator membership which takes precedence over any explicit membership, unless explicit_only is set for
+        places that need the actual membership record.
         """
 
         def get():
@@ -915,6 +917,10 @@ class Org(LegacyIDMixin, SmartModel):
 
         if user not in self._membership_cache:
             self._membership_cache[user] = get()
+
+        if not explicit_only and self.has_group_admin(user):
+            return OrgMembership(org=self, user=user, role_code=OrgRole.ADMINISTRATOR.code)
+
         return self._membership_cache[user]
 
     def has_group_admin(self, user: User) -> bool:
@@ -932,11 +938,7 @@ class Org(LegacyIDMixin, SmartModel):
         administrator role regardless of any explicit membership.
         """
 
-        membership = self.get_membership(user)  # fetched first as it also caches the admin group check
-
-        if self.has_group_admin(user):
-            return OrgRole.ADMINISTRATOR
-
+        membership = self.get_membership(user)
         return membership.role if membership else None
 
     def create_sample_flows(self, api_url):
