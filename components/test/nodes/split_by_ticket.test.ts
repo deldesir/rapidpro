@@ -17,6 +17,10 @@ describe('split_by_ticket node config', () => {
       expect(split_by_ticket.name).to.equal('Open Ticket');
     });
 
+    it('is only available in messaging flows', () => {
+      expect(split_by_ticket.flowTypes).to.deep.equal(['message']);
+    });
+
     it('enables expression completion on the note field', () => {
       expect((split_by_ticket.form!.note as any).evaluated).to.equal(true);
     });
