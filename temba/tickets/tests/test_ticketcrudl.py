@@ -88,7 +88,7 @@ class TicketCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual(str(ticket.uuid), response.context["nextUUID"])
 
         # we have a specific ticket so we should show context menu for it
-        self.assertContentMenu(deep_link, self.admin, ["Add Note", "Start Flow"])
+        self.assertContentMenu(deep_link, self.admin, ["Add Note"])
 
         with self.assertNumQueries(10):
             self.client.get(deep_link)
@@ -126,7 +126,7 @@ class TicketCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual(str(ticket.uuid), response.context["uuid"])
 
         # and again we have a specific ticket so we should show context menu for it
-        self.assertContentMenu(deep_link, self.admin, ["Add Note", "Start Flow"])
+        self.assertContentMenu(deep_link, self.admin, ["Add Note"])
 
         # deep link with assignee filter on all folder passes assignee_uuid to context
         assignee_link = f"{list_url}all/?assignee={self.admin.uuid}"
@@ -161,13 +161,7 @@ class TicketCRUDLTest(TembaTest, CRUDLTestMixin):
         )
         self.assertEqual(("tickets", "mine", str(ticket.uuid)), response.context["temba_referer"])
 
-        # contacts in a flow still get a start flow option - the start modal handles confirming
-        # the interruption
-        flow = self.create_flow("Test")
-        self.contact.current_flow = flow
-        self.contact.save()
         deep_link = f"{list_url}all/{str(ticket.uuid)}/"
-        self.assertContentMenu(deep_link, self.admin, ["Add Note", "Start Flow"])
 
         # closed tickets don't get extra menu options
         ticket.status = Ticket.STATUS_CLOSED
