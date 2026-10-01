@@ -48,6 +48,11 @@
           {% endblocktrans %}
         </td>
       </tr>
+      <tr>
+        <td class="whitespace-nowrap">Email</td>
+        <td class="whitespace-nowrap">{% trans "Contact email" %}</td>
+        <td>{% trans "Imported addresses are unverified." %}</td>
+      </tr>
       {% for scheme in urn_schemes %}
         <tr>
           <td>URN:{{ scheme.0 }}</td>
