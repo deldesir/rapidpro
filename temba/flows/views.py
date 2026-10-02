@@ -56,6 +56,7 @@ from temba.utils.fields import (
     SelectWidget,
     TembaChoiceField,
 )
+from temba.utils.uuid import UUID_REGEX
 from temba.utils.views.mixins import ContextMenuMixin, ModalFormMixin, SpaMixin
 
 from .models import (
@@ -712,7 +713,7 @@ class FlowCRUDL(SmartCRUDL):
 
         @classmethod
         def derive_url_pattern(cls, path, action):
-            return r"^%s/%s/(?P<label_uuid>[0-9a-f-]+)/$" % (path, action)
+            return rf"^{path}/{action}/(?P<label_uuid>{UUID_REGEX.pattern})/$"
 
         def derive_title(self, *args, **kwargs):
             return self.label.name
@@ -722,7 +723,7 @@ class FlowCRUDL(SmartCRUDL):
 
         @cached_property
         def label(self):
-            return FlowLabel.objects.get(uuid=self.kwargs["label_uuid"], org=self.request.org)
+            return get_object_or_404(self.request.org.flow_labels, uuid=self.kwargs["label_uuid"])
 
         def get_queryset(self, **kwargs):
             qs = super().get_queryset(**kwargs)
