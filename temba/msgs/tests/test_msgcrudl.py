@@ -358,6 +358,18 @@ class MsgCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual(f"/api/internal/messages.json?label={label1.uuid}", new_response.context["list_url"])
         self.assertIn("label1", new_response.context["list_subtitle"])
 
+        # labels from other workspaces or which have been deleted are a 404
+        other_label = self.create_label("Other", org=self.org2)
+        response = self.client.get(reverse("msgs.msg_filter", args=[other_label.uuid]))
+        self.assertEqual(404, response.status_code)
+
+        label1.release(self.admin)
+        response = self.client.get(label1_url)
+        self.assertEqual(404, response.status_code)
+
+        response = self.client.get("/msg/filter/abc/")
+        self.assertEqual(404, response.status_code)
+
     def test_export(self):
         export_url = reverse("msgs.msg_export")
 

@@ -713,6 +713,19 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         response = self.client.get(reverse("flows.flow_filter", args=[label2.uuid]))
         self.assertEqual(f"/flow/labels/{label2.uuid}", response.headers.get(TEMBA_MENU_SELECTION))
 
+        # labels from other workspaces or which have been deleted are a 404
+        other_label = FlowLabel.create(self.org2, self.admin2, "Other")
+        response = self.client.get(reverse("flows.flow_filter", args=[other_label.uuid]))
+        self.assertEqual(404, response.status_code)
+
+        label2_uuid = label2.uuid
+        label2.delete()
+        response = self.client.get(reverse("flows.flow_filter", args=[label2_uuid]))
+        self.assertEqual(404, response.status_code)
+
+        response = self.client.get("/flow/filter/abc/")
+        self.assertEqual(404, response.status_code)
+
     def test_list_component(self):
         flow1 = self.create_flow("Flow 1")
         flow2 = self.create_flow("Flow 2")
