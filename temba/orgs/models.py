@@ -13,7 +13,6 @@ from urllib.parse import urlparse
 import pycountry
 from django_valkey import get_valkey_connection
 from packaging.version import Version
-from smartmin.models import SmartModel
 from timezone_field import TimeZoneField
 
 from django.conf import settings
@@ -38,7 +37,14 @@ from temba.users.models import User
 from temba.utils import json, languages, on_transaction_commit
 from temba.utils.dates import datetime_to_str
 from temba.utils.email import EmailSender
-from temba.utils.models import LegacyIDMixin, UUIDMixin, delete_in_batches
+from temba.utils.models import (
+    CreatedByMixin,
+    LegacyIDMixin,
+    ModifiedByMixin,
+    SoftDeleteMixin,
+    UUIDMixin,
+    delete_in_batches,
+)
 from temba.utils.models.counts import BaseDailyCount, BaseScopedCount
 from temba.utils.text import generate_secret
 from temba.utils.timezones import timezone_to_country_code
@@ -192,7 +198,7 @@ class OrgRole(Enum):
         return self.has_perm(permission) or permission in self.api_permissions
 
 
-class Org(LegacyIDMixin, SmartModel):
+class Org(LegacyIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     """
     An Org can have several users and is the main component that holds all Flows, Messages, Contacts, etc.
 
@@ -1290,7 +1296,7 @@ def get_import_upload_path(instance: Any, filename: str):
     return f"orgs/{instance.org_id}/org_imports/{instance.uuid}{ext}"
 
 
-class OrgImport(SmartModel):
+class OrgImport(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     STATUS_PENDING = "P"
     STATUS_PROCESSING = "O"
     STATUS_COMPLETE = "C"
@@ -1336,7 +1342,7 @@ class OrgImport(SmartModel):
             self.save(update_fields=("status", "modified_on"))
 
 
-class Invitation(SmartModel):
+class Invitation(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     """
     An invitation to an e-mail address to join an org as a specific role.
     """

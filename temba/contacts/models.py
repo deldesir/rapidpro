@@ -11,7 +11,6 @@ import iso8601
 import phonenumbers
 import regex
 from openpyxl import load_workbook
-from smartmin.models import SmartModel
 
 from django.conf import settings
 from django.contrib.humanize.templatetags.humanize import intcomma
@@ -32,7 +31,16 @@ from temba.orgs.models import DependencyMixin, Export, ExportType, Org, OrgRole
 from temba.orgs.realtime import AssetMixin
 from temba.utils import dynamo, format_number, on_transaction_commit
 from temba.utils.export import MultiSheetExporter
-from temba.utils.models import JSONField, LegacyIDMixin, LegacyUUIDMixin, TembaModel, delete_in_batches
+from temba.utils.models import (
+    CreatedByMixin,
+    JSONField,
+    LegacyIDMixin,
+    LegacyUUIDMixin,
+    ModifiedByMixin,
+    SoftDeleteMixin,
+    TembaModel,
+    delete_in_batches,
+)
 from temba.utils.models.counts import BaseSquashableCount
 from temba.utils.text import obfuscate, unsnakify
 from temba.utils.urns import ParsedURN, parse_number, parse_urn
@@ -560,7 +568,7 @@ class ContactField(TembaModel, DependencyMixin):
         self.save(update_fields=("name", "is_active", "modified_on", "modified_by"))
 
 
-class Contact(LegacyIDMixin, LegacyUUIDMixin, SmartModel):
+class Contact(LegacyIDMixin, LegacyUUIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     """
     A contact represents an individual with which we can communicate and collect data
     """
@@ -2106,7 +2114,7 @@ def get_import_upload_path(instance: Any, filename: str):
     return f"orgs/{instance.org_id}/contact_imports/{instance.uuid}{ext}"
 
 
-class ContactImport(SmartModel):
+class ContactImport(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     MAX_RECORDS = 25_000
     BATCH_SIZE = 100
     URN_VALIDATION_CHUNK = 1000  # how many URNs we ask mailroom to validate per request
