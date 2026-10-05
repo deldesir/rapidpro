@@ -1,3 +1,4 @@
+from allauth.account.adapter import get_adapter
 from allauth.account.forms import AddEmailForm, ChangePasswordForm, LoginForm, SignupForm
 
 from django import forms
@@ -45,6 +46,13 @@ class TembaSignupForm(InviteFormMixin, SignupForm):
             self.fields["email"].widget = forms.widgets.HiddenInput()
 
     def clean_email(self):
+        email = self.invite.email if self.invite else self.cleaned_data.get("email")
+
+        # users whose email domain requires SSO have to signup that way too
+        sso_only_message = get_adapter().get_sso_only_message(email)
+        if sso_only_message:
+            raise forms.ValidationError(sso_only_message)
+
         if self.invite:
             return self.invite.email
 

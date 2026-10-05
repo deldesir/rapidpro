@@ -1,9 +1,11 @@
+from unittest.mock import Mock
 from urllib.parse import urlencode
 
+from allauth.account.adapter import get_adapter
 from allauth.account.models import EmailAddress
 
 from django.conf import settings
-from django.test import override_settings
+from django.test import RequestFactory, override_settings
 from django.urls import reverse
 from django.utils.functional import lazystr
 
@@ -103,6 +105,34 @@ class UserAuthTest(TembaTest):
         response = self.client.get(login_url)
         self.assertContains(response, "Use &lt;b&gt;Sign In with SSO Corp&lt;/b&gt; instead.")
         self.assertNotIn("_auth_user_id", self.client.session)
+
+        # and keeps where they were going
+        response = self.client.post(f"{login_url}?next=/msg/", {"login": user.email, "password": self.default_password})
+        self.assertEqual(f"{login_url}?next=%2Fmsg%2F", response.url)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+        # whereas a social login for the same user is allowed through
+        adapter = get_adapter()
+        request = RequestFactory().get("/")
+        response = adapter.pre_login(
+            request,
+            user,
+            email_verification="none",
+            signal_kwargs={"sociallogin": Mock()},
+            email=None,
+            signup=False,
+            redirect_url=None,
+        )
+        self.assertIsNone(response)
+
+        # and an invited user from that domain can't signup with a password
+        invitation = Invitation.create(self.org, self.admin, "sid@sso-corp.com", OrgRole.EDITOR)
+        response = self.client.post(
+            f"{reverse('account_signup')}?invite={invitation.secret}",
+            {"first_name": "Sid", "last_name": "Sso", "email": "sid@sso-corp.com", "password1": "arstqwfp"},
+        )
+        self.assertFormError(response.context["form"], "email", "Use <b>Sign In with SSO Corp</b> instead.")
+        self.assertFalse(User.objects.filter(email="sid@sso-corp.com").exists())
 
     def test_signup(self):
         signup_url = reverse("account_signup")
