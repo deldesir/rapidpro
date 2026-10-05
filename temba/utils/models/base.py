@@ -239,7 +239,7 @@ class OrgLimitMixin:
         return False
 
 
-class TembaModel(UUIDMixin, NameMixin, SoftDeleteMixin, CreatedByMixin, ModifiedByMixin, OrgLimitMixin):
+class TembaModel(UUIDMixin, NameMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin, OrgLimitMixin):
     """
     Base for models which have UUID, name, soft deletion and auditing fields
     """

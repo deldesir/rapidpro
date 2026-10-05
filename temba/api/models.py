@@ -105,7 +105,7 @@ class SSLPermission(BasePermission):  # pragma: no cover
             return True
 
 
-class Resthook(SoftDeleteMixin, CreatedByMixin, ModifiedByMixin):
+class Resthook(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     """
     Represents a hook that a user creates on an organization. Outside apps can integrate by subscribing
     to this particular resthook.
@@ -157,7 +157,7 @@ class Resthook(SoftDeleteMixin, CreatedByMixin, ModifiedByMixin):
         return str(self.slug)
 
 
-class ResthookSubscriber(SoftDeleteMixin, CreatedByMixin, ModifiedByMixin):
+class ResthookSubscriber(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     """
     Represents a subscriber on a specific resthook within one of our flows.
     """

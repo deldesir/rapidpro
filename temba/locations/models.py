@@ -150,7 +150,7 @@ class AdminBoundary(MPTTModel, models.Model):
         indexes = [models.Index(Upper("name"), name="adminboundaries_by_name")]
 
 
-class BoundaryAlias(SoftDeleteMixin, CreatedByMixin, ModifiedByMixin):
+class BoundaryAlias(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     """
     An org specific alias for a boundary name
     """

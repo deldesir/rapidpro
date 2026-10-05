@@ -198,7 +198,7 @@ class OrgRole(Enum):
         return self.has_perm(permission) or permission in self.api_permissions
 
 
-class Org(LegacyIDMixin, SoftDeleteMixin, CreatedByMixin, ModifiedByMixin):
+class Org(LegacyIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     """
     An Org can have several users and is the main component that holds all Flows, Messages, Contacts, etc.
 
@@ -1296,7 +1296,7 @@ def get_import_upload_path(instance: Any, filename: str):
     return f"orgs/{instance.org_id}/org_imports/{instance.uuid}{ext}"
 
 
-class OrgImport(SoftDeleteMixin, CreatedByMixin, ModifiedByMixin):
+class OrgImport(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     STATUS_PENDING = "P"
     STATUS_PROCESSING = "O"
     STATUS_COMPLETE = "C"
@@ -1342,7 +1342,7 @@ class OrgImport(SoftDeleteMixin, CreatedByMixin, ModifiedByMixin):
             self.save(update_fields=("status", "modified_on"))
 
 
-class Invitation(SoftDeleteMixin, CreatedByMixin, ModifiedByMixin):
+class Invitation(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     """
     An invitation to an e-mail address to join an org as a specific role.
     """

@@ -568,7 +568,7 @@ class ContactField(TembaModel, DependencyMixin):
         self.save(update_fields=("name", "is_active", "modified_on", "modified_by"))
 
 
-class Contact(LegacyIDMixin, LegacyUUIDMixin, SoftDeleteMixin, CreatedByMixin, ModifiedByMixin):
+class Contact(LegacyIDMixin, LegacyUUIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     """
     A contact represents an individual with which we can communicate and collect data
     """
@@ -2114,7 +2114,7 @@ def get_import_upload_path(instance: Any, filename: str):
     return f"orgs/{instance.org_id}/contact_imports/{instance.uuid}{ext}"
 
 
-class ContactImport(SoftDeleteMixin, CreatedByMixin, ModifiedByMixin):
+class ContactImport(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     MAX_RECORDS = 25_000
     BATCH_SIZE = 100
     URN_VALIDATION_CHUNK = 1000  # how many URNs we ask mailroom to validate per request

@@ -71,7 +71,7 @@ class ChannelTriggerType(TriggerType):
     export_fields = TriggerType.export_fields + ("channel",)
 
 
-class Trigger(UUIDMixin, OrgLimitMixin, SoftDeleteMixin, CreatedByMixin, ModifiedByMixin):
+class Trigger(UUIDMixin, OrgLimitMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     """
     A Trigger is used to start a user in a flow based on an event. For example, triggers might fire for missed calls,
     inbound messages starting with a keyword, or on a repeating schedule.

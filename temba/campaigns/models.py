@@ -326,7 +326,7 @@ class Campaign(TembaModel):
         verbose_name_plural = _("Campaigns")
 
 
-class CampaignEvent(UUIDMixin, SoftDeleteMixin, CreatedByMixin, ModifiedByMixin):
+class CampaignEvent(UUIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     """
     An event within a campaign that can send a message to a contact or start them in a flow
     """
