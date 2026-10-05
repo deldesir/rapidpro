@@ -1062,9 +1062,8 @@ SOCIALACCOUNT_PROVIDERS = {}
 SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
 SOCIALACCOUNT_LOGIN_ON_GET = True
 
-# maps email domains whose users should be logging in with SSO to the (translatable) warning shown to those still
-# logging in with a password
-SSO_LOGIN_WARNING_DOMAINS = {}
+# maps email domains whose users can only login with SSO to the (translatable) error shown when they try another way
+SSO_ONLY_DOMAINS = {}
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 
 ACCOUNT_LOGIN_METHODS = ("email",)

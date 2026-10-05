@@ -5490,12 +5490,6 @@ msgstr "Workspace cambiado"
 msgid "You are no longer logged in to this workspace in this browser. To continue, please refresh your browser."
 msgstr "Ya no tiene una sesión iniciada en este workspace en este navegador. Para continuar, actualice su navegador."
 
-msgid "Use Single Sign-On"
-msgstr "Usar inicio de sesión único"
-
-msgid "Ok"
-msgstr "Ok"
-
 msgid "Are you sure you want to continue? This cannot be undone."
 msgstr "Estás seguro de que quieres continuar? Esto no se puede deshacer."
 

@@ -5469,12 +5469,6 @@ msgstr ""
 msgid "You are no longer logged in to this workspace in this browser. To continue, please refresh your browser."
 msgstr ""
 
-msgid "Use Single Sign-On"
-msgstr ""
-
-msgid "Ok"
-msgstr ""
-
 msgid "Are you sure you want to continue? This cannot be undone."
 msgstr ""
 

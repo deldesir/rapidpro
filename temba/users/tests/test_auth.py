@@ -83,45 +83,26 @@ class UserAuthTest(TembaTest):
         self.assertEqual(2, emails.count())
         self.assertTrue(emails.filter(email="newemail@temba.io").exists())
 
-    @override_settings(
-        SSO_LOGIN_WARNING_DOMAINS={"SSO-Corp.com": lazystr("Use <b>Sign In with SSO Corp</b> next time.")}
-    )
-    def test_sso_login_warning(self):
+    @override_settings(SSO_ONLY_DOMAINS={"SSO-Corp.com": lazystr("Use <b>Sign In with SSO Corp</b> instead.")})
+    def test_sso_only_domains(self):
         login_url = reverse("account_login")
 
-        def create_verified_user(email):
-            user = self.create_user(email)
-            EmailAddress.objects.create(user=user, email=email, verified=True, primary=True)
-            self.org.add_user(user, OrgRole.EDITOR)
-            return user
-
-        # logging in with a password from a non-matching domain doesn't warn
-        response = self.client.post(
-            login_url, {"login": self.admin.email, "password": self.default_password}, follow=True
-        )
-        self.assertNotContains(response, "sso-login-warning")
-
+        # logging in with a password from a non-matching domain works
+        response = self.client.post(login_url, {"login": self.admin.email, "password": self.default_password})
+        self.assertRedirect(response, reverse("orgs.org_choose"))
         self.client.logout()
 
-        # but a user whose email domain should be using SSO gets the warning configured for that domain, escaped
-        user = create_verified_user("uma@sso-corp.com")
+        # but a user whose email domain requires SSO is sent back to the login page with the error for that domain
+        user = self.create_user("uma@sso-corp.com")
+        EmailAddress.objects.create(user=user, email=user.email, verified=True, primary=True)
+        self.org.add_user(user, OrgRole.EDITOR)
 
-        response = self.client.post(login_url, {"login": user.email, "password": self.default_password}, follow=True)
-        self.assertContains(response, "sso-login-warning")
-        self.assertContains(response, 'header="Use Single Sign-On"')
-        self.assertContains(response, "Use &lt;b&gt;Sign In with SSO Corp&lt;/b&gt; next time.")
+        response = self.client.post(login_url, {"login": user.email, "password": self.default_password})
+        self.assertRedirect(response, login_url)
 
-        # only on the first page load after login
-        response = self.client.get(response.request["PATH_INFO"])
-        self.assertNotContains(response, "sso-login-warning")
-
-        # a flagged domain that is no longer configured doesn't warn
-        session = self.client.session
-        session["sso_login_warning"] = "old-corp.com"
-        session.save()
-
-        response = self.client.get(response.request["PATH_INFO"])
-        self.assertNotContains(response, "sso-login-warning")
+        response = self.client.get(login_url)
+        self.assertContains(response, "Use &lt;b&gt;Sign In with SSO Corp&lt;/b&gt; instead.")
+        self.assertNotIn("_auth_user_id", self.client.session)
 
     def test_signup(self):
         signup_url = reverse("account_signup")

@@ -8,6 +8,7 @@ from allauth.socialaccount.signals import social_account_added
 from django.conf import settings
 from django.contrib import messages
 from django.dispatch import receiver
+from django.shortcuts import redirect
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -59,16 +60,16 @@ class InviteAdapterMixin:
 
 
 class TembaAccountAdapter(InviteAdapterMixin, DefaultAccountAdapter):
-    def post_login(self, request, user, *, email_verification, signal_kwargs, email, signup, redirect_url):
-        # users whose email domain should be using SSO get a warning when they login with a password instead
+    def pre_login(self, request, user, *, email_verification, signal_kwargs, email, signup, redirect_url):
+        # users whose email domain requires SSO can't login any other way
         is_sso = bool(signal_kwargs and signal_kwargs.get("sociallogin"))
         domain = user.email.rsplit("@", 1)[-1].lower() if user.email else ""
-        warn_domains = {d.lower() for d in settings.SSO_LOGIN_WARNING_DOMAINS}
-        if not is_sso and domain in warn_domains:
-            # the message itself is looked up when rendered so that it's translated to the user's language
-            request.session["sso_login_warning"] = domain
+        sso_only = {d.lower(): m for d, m in settings.SSO_ONLY_DOMAINS.items()}
+        if not is_sso and domain in sso_only:
+            messages.error(request, sso_only[domain])
+            return redirect("account_login")
 
-        return super().post_login(
+        return super().pre_login(
             request,
             user,
             email_verification=email_verification,
