@@ -2,7 +2,10 @@ from abc import abstractmethod
 
 from django.db.models import QuerySet
 from django.forms import model_to_dict
-from django.urls import reverse
+from django.http import Http404
+from django.test import RequestFactory
+from django.urls import resolve, reverse
+from django.utils import timezone
 
 from temba.users.models import User
 
@@ -106,7 +109,7 @@ class CRUDLTestMixin:
             if new_obj_query:
                 checks.append(ObjectNotCreated(new_obj_query))
         else:
-            checks = [StatusCode(success_status), NoFormErrors(), ObjectCreated(new_obj_query)]
+            checks = [StatusCode(success_status), NoFormErrors(), ObjectCreated(new_obj_query, user)]
 
         return self.requestView(url, user, post_data=data, checks=checks, choose_org=self.org)
 
@@ -127,7 +130,7 @@ class CRUDLTestMixin:
         if form_errors:
             checks = [StatusCode(200), FormErrors(form_errors), ObjectUnchanged(object_unchanged)]
         else:
-            checks = [StatusCode(success_status), NoFormErrors()]
+            checks = [StatusCode(success_status), NoFormErrors(), ObjectModified(url, user, self.org)]
 
         return self.requestView(url, user, post_data=data, checks=checks, choose_org=self.org)
 
@@ -153,7 +156,7 @@ class CRUDLTestMixin:
         elif object_deleted:
             checks = [StatusCode(success_status), ObjectDeleted(object_deleted)]
         else:
-            checks = [StatusCode(success_status), ObjectDeactivated(object_deactivated)]
+            checks = [StatusCode(success_status), ObjectDeactivated(object_deactivated, user)]
 
         return self.requestView(url, user, post_data={}, checks=checks)
 
@@ -244,9 +247,28 @@ class ContextObjectCount(BaseCheck):
         test_cls.assertEqual(self.count, len(object_list), msg=f"{msg_prefix}: object count mismatch")
 
 
+def reset_modified_by(obj):
+    """
+    Sets who last modified the given object to the system user, so that a check can tell whether a view set it
+    """
+    if hasattr(obj, "modified_by_id"):
+        type(obj)._default_manager.filter(pk=obj.pk).update(modified_by=User.get_system_user())
+
+
+def check_modified(test_cls, obj, user, since, msg_prefix):
+    """
+    Checks the given object, if it records who last modified it, was modified by the given user since the given time
+    """
+    if hasattr(obj, "modified_by_id"):
+        test_cls.assertEqual(user, obj.modified_by, msg=f"{msg_prefix}: modified_by mismatch")
+        if since:
+            test_cls.assertGreaterEqual(obj.modified_on, since, msg=f"{msg_prefix}: expected modified_on to change")
+
+
 class ObjectCreated(BaseCheck):
-    def __init__(self, query):
+    def __init__(self, query, user=None):
         self.query = query
+        self.user = user
 
     def pre_check(self, test_cls, msg_prefix):
         created = self.query.exists()
@@ -257,6 +279,12 @@ class ObjectCreated(BaseCheck):
         count = self.query.count()
         sql = str(self.query.query)
         test_cls.assertEqual(1, count, msg=f"{msg_prefix}: expected object to be created matching: {sql}")
+
+        if self.user:
+            obj = self.query.get()
+            if hasattr(obj, "created_by_id"):
+                test_cls.assertEqual(self.user, obj.created_by, msg=f"{msg_prefix}: created_by mismatch")
+            check_modified(test_cls, obj, self.user, None, msg_prefix)
 
 
 class ObjectNotCreated(BaseCheck):
@@ -308,12 +336,68 @@ class ObjectDeleted(BaseCheck):
 
 
 class ObjectDeactivated(BaseCheck):
-    def __init__(self, obj):
+    def __init__(self, obj, user=None):
         self.obj = obj
+        self.user = user
+
+    def pre_check(self, test_cls, msg_prefix):
+        if self.user:
+            reset_modified_by(self.obj)
+        self.started = timezone.now()
 
     def check(self, test_cls, response, msg_prefix):
         self.obj.refresh_from_db()
         test_cls.assertFalse(self.obj.is_active, msg=f"{msg_prefix}: expected object.is_active to be false")
+
+        if self.user:
+            check_modified(test_cls, self.obj, self.user, self.started, msg_prefix)
+
+
+class ObjectModified(BaseCheck):
+    """
+    Checks that the object an update view acts on was modified by the given user
+    """
+
+    def __init__(self, url, user, org):
+        self.url = url
+        self.user = user
+        self.org = org
+
+    @staticmethod
+    def get_object(request):
+        # ask the view which object it acts on, as many look it up from the request rather than the URL
+        match = resolve(request.path)
+        view_class = getattr(match.func, "view_class", None)
+        if not hasattr(view_class, "get_object"):
+            return None
+
+        view = view_class()
+        view.setup(request, *match.args, **match.kwargs)
+        try:
+            return view.get_object()
+        except Http404 as e:
+            # the update may have taken the object out of the view's queryset
+            model = getattr(view_class, "model", None)
+            if model:
+                try:
+                    return view.get_object(queryset=model._default_manager.all())
+                except Http404:
+                    pass
+
+            raise Http404(f"{view_class.__qualname__} couldn't find its object for {request.path}") from e
+
+    def pre_check(self, test_cls, msg_prefix):
+        request = RequestFactory().get(self.url)
+        request.user = self.user
+        request.org = self.org
+
+        reset_modified_by(self.get_object(request))
+        self.started = timezone.now()
+
+    def check(self, test_cls, response, msg_prefix):
+        obj = self.get_object(response.wsgi_request)
+        if obj:
+            check_modified(test_cls, obj, self.user, self.started, msg_prefix)
 
 
 class FormFields(BaseCheck):

@@ -720,6 +720,7 @@ class ChannelCRUDL(SmartCRUDL):
             return initial
 
         def pre_save(self, obj):
+            obj = super().pre_save(obj)
             obj.config.update(self.form.get_config_values())
             return obj
 
