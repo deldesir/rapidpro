@@ -1,3 +1,10 @@
+## v26.3.124 (2026-10-05)
+ * Replace SmartModel with our own UUIDMixin, NameMixin, and audit/soft-delete mixins (ordered created, modified, soft delete) across TembaModel and the remaining models using it directly, moving audit fields onto the mixins without auto_now, help_text or reverse accessors
+ * Check audit fields are set by views in CRUDL test helpers, and test that the checks catch failures
+ * Raise a clearer error when a CRUDL update view's object can't be found
+ * Record the editing user as modified_by when updating campaigns, channels and scheduled broadcasts
+ * Replace SSO login warning domains with SSO-only domains that block non-SSO password logins and signups, and preserve the next redirect parameter on the login page
+
 ## v26.3.123 (2026-10-05)
  * Return 404 from label filter pages for unknown, deleted or malformed label UUIDs
  * Disable review progress tracking and bump the review model to Opus 5.5
