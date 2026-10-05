@@ -1,3 +1,6 @@
+## v26.3.126 (2026-10-05)
+ * Keep the rich editor caret in place in Safari
+
 ## v26.3.125 (2026-10-05)
  * Rename TembaModel to OrgAsset and AssetMixin to PublishedAssetMixin
  * Remove unused audit fields from imports and boundary aliases
