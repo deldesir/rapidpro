@@ -375,8 +375,16 @@ class ObjectModified(BaseCheck):
         view.setup(request, *match.args, **match.kwargs)
         try:
             return view.get_object()
-        except Http404:  # the update may have taken the object out of the view's queryset
-            return view.get_object(queryset=view_class.model._default_manager.all())
+        except Http404 as e:
+            # the update may have taken the object out of the view's queryset
+            model = getattr(view_class, "model", None)
+            if model:
+                try:
+                    return view.get_object(queryset=model._default_manager.all())
+                except Http404:
+                    pass
+
+            raise Http404(f"{view_class.__qualname__} couldn't find its object for {request.path}") from e
 
     def pre_check(self, test_cls, msg_prefix):
         request = RequestFactory().get(self.url)
