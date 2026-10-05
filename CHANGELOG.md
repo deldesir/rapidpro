@@ -1,3 +1,7 @@
+## v26.3.125 (2026-10-05)
+ * Rename TembaModel to OrgAsset and AssetMixin to PublishedAssetMixin
+ * Remove unused audit fields from imports and boundary aliases
+
 ## v26.3.124 (2026-10-05)
  * Replace SmartModel with our own UUIDMixin, NameMixin, and audit/soft-delete mixins (ordered created, modified, soft delete) across TembaModel and the remaining models using it directly, moving audit fields onto the mixins without auto_now, help_text or reverse accessors
  * Check audit fields are set by views in CRUDL test helpers, and test that the checks catch failures
