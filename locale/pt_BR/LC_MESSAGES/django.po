@@ -5494,12 +5494,6 @@ msgstr "Área de trabalho alterada"
 msgid "You are no longer logged in to this workspace in this browser. To continue, please refresh your browser."
 msgstr "Você não está mais conectado a esta área de trabalho neste navegador. Para continuar, atualize seu navegador."
 
-msgid "Use Single Sign-On"
-msgstr "Usar login único (SSO)"
-
-msgid "Ok"
-msgstr "Ok"
-
 msgid "Are you sure you want to continue? This cannot be undone."
 msgstr "Você tem certeza que quer continuar? Isso não pode ser desfeito."
 

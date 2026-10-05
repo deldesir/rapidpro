@@ -1,7 +1,6 @@
 import json
 from datetime import timezone as tzone
 
-from django.conf import settings
 from django.template.defaultfilters import register
 from django.urls import reverse
 from django.utils.html import escapejs
@@ -145,17 +144,3 @@ def format_datetime(context, dt, seconds: bool = False):
 def absolute_url(context, url_pattern):
     request = context["request"]
     return request.build_absolute_uri(reverse(url_pattern))
-
-
-@register.simple_tag(takes_context=True)
-def sso_login_warning(context):
-    """
-    Returns the warning for a user who just logged in with a password but should be using SSO, or None. The warning is
-    a one-time flag in the session and the message is looked up here so it's translated to the user's language.
-    """
-    domain = context["request"].session.pop("sso_login_warning", None)
-    if not domain:
-        return None
-
-    messages = {d.lower(): m for d, m in settings.SSO_LOGIN_WARNING_DOMAINS.items()}
-    return str(messages.get(domain, "")) or None

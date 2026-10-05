@@ -5490,12 +5490,6 @@ msgstr "Espace de travail modifié"
 msgid "You are no longer logged in to this workspace in this browser. To continue, please refresh your browser."
 msgstr "Vous n'êtes plus connecté à cet espace de travail dans ce navigateur. Pour continuer, veuillez actualiser votre navigateur."
 
-msgid "Use Single Sign-On"
-msgstr "Utiliser l'authentification unique"
-
-msgid "Ok"
-msgstr "OK"
-
 msgid "Are you sure you want to continue? This cannot be undone."
 msgstr "Es-tu sur de vouloir continuer? Ça ne peut pas être annulé."
 
