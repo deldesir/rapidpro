@@ -374,6 +374,7 @@ class BroadcastCRUDL(SmartCRUDL):
             broadcast.exclusions = exclusions
             broadcast.template = template
             broadcast.template_variables = template_variables
+            broadcast.modified_by = self.request.user
             broadcast.save()
 
             broadcast.update_recipients(groups=groups, contacts=contacts)

@@ -1844,7 +1844,7 @@ class ContactGroup(AssetMixin, LegacyIDMixin, TembaModel, DependencyMixin):
         constraints = [models.UniqueConstraint("org", Lower("name"), name="unique_contact_group_names")]
 
 
-class ContactNote(models.Model):
+class ContactNote(CreatedByMixin):
     """
     Note attached to a contact, with last 5 versions kept for history.
     """
@@ -1853,8 +1853,6 @@ class ContactNote(models.Model):
 
     contact = models.ForeignKey(Contact, on_delete=models.PROTECT, related_name="notes")
     text = models.TextField(max_length=MAX_LENGTH, blank=True)
-    created_on = models.DateTimeField(default=timezone.now)
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="contact_notes")
 
 
 class ContactGroupCount(BaseSquashableCount):

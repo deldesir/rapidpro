@@ -1486,7 +1486,7 @@ class DefinitionExport(ExportType):
         }
 
 
-class Export(UUIDMixin, models.Model):
+class Export(UUIDMixin, CreatedByMixin):
     """
     An export of workspace data initiated by a user
     """
@@ -1518,8 +1518,6 @@ class Export(UUIDMixin, models.Model):
     # additional type specific filtering and extra columns
     config = models.JSONField(default=dict)
 
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="exports")
-    created_on = models.DateTimeField(default=timezone.now)
     modified_on = models.DateTimeField(default=timezone.now)
 
     def start(self):
