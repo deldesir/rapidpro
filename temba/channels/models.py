@@ -30,7 +30,7 @@ from temba.utils.models import (
     JSONAsTextField,
     LegacyIDMixin,
     TembaModel,
-    TembaUUIDMixin,
+    UUIDMixin,
     delete_in_batches,
     generate_uuid,
 )
@@ -715,7 +715,7 @@ class ChannelCount(BaseDailyCount):
         ]
 
 
-class ChannelEvent(TembaUUIDMixin, models.Model):
+class ChannelEvent(UUIDMixin, models.Model):
     """
     An event other than a message that occurs between a channel and a contact. Can be used to trigger flows etc.
     """

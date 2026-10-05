@@ -3,10 +3,10 @@ from django.utils import timezone
 
 from temba.contacts.models import Contact
 from temba.orgs.models import Org
-from temba.utils.models import TembaUUIDMixin
+from temba.utils.models import UUIDMixin
 
 
-class AirtimeTransfer(TembaUUIDMixin, models.Model):
+class AirtimeTransfer(UUIDMixin, models.Model):
     STATUS_CREATED = "P"
     STATUS_CONFIRMED = "C"
     STATUS_REJECTED = "J"

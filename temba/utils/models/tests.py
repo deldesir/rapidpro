@@ -81,6 +81,26 @@ class ModelsTest(TembaTest):
         self.assertEqual("Andy", self.admin.first_name)
         self.assertEqual("McAdmin", self.admin.last_name)
 
+    def test_modified_by_mixin(self):
+        group = self.create_group("Testers", contacts=[])
+        modified_on = group.modified_on
+
+        # saving all fields bumps modified_on
+        group.save()
+        self.assertGreater(group.modified_on, modified_on)
+        modified_on = group.modified_on
+
+        # as does saving specific fields that include it
+        group.name = "Testers 2"
+        group.save(update_fields=("name", "modified_on"))
+        self.assertGreater(group.modified_on, modified_on)
+        modified_on = group.modified_on
+
+        # but not saving specific fields that don't
+        group.name = "Testers 3"
+        group.save(update_fields=("name",))
+        self.assertEqual(modified_on, group.modified_on)
+
 
 class SearchSliceQuerySetTest(TembaTest):
     def test_fields(self):

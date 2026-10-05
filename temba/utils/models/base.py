@@ -1,10 +1,10 @@
 import types
 from enum import Enum
 
-from smartmin.models import SmartModel
-
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from temba.utils.fields import NameValidator
@@ -78,7 +78,7 @@ class LegacyIDMixin(models.Model):
         abstract = True
 
 
-class LegacyUUIDMixin(SmartModel):
+class LegacyUUIDMixin(models.Model):
     """
     Model mixin for things with an old-style VARCHAR(36) UUID
     """
@@ -96,7 +96,64 @@ class LegacyUUIDMixin(SmartModel):
         abstract = True
 
 
-class TembaUUIDMixin(models.Model):
+class CreatedByMixin(models.Model):
+    """
+    Model mixin for things which record who created them and when
+    """
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="%(app_label)s_%(class)s_creations",
+        help_text="The user which originally created this item",
+    )
+    created_on = models.DateTimeField(
+        default=timezone.now, editable=False, blank=True, help_text="When this item was originally created"
+    )
+
+    class Meta:
+        abstract = True
+
+
+class ModifiedByMixin(models.Model):
+    """
+    Model mixin for things which record who last modified them and when
+    """
+
+    modified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="%(app_label)s_%(class)s_modifications",
+        help_text="The user which last modified this item",
+    )
+    modified_on = models.DateTimeField(
+        default=timezone.now, editable=False, blank=True, help_text="When this item was last modified"
+    )
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+
+        if update_fields is None or "modified_on" in update_fields:
+            self.modified_on = timezone.now()
+
+        return super().save(*args, **kwargs)
+
+    class Meta:
+        abstract = True
+
+
+class SoftDeleteMixin(models.Model):
+    """
+    Model mixin for things which are deactivated rather than deleted
+    """
+
+    is_active = models.BooleanField(default=True, help_text="Whether this item is active, use this instead of deleting")
+
+    class Meta:
+        abstract = True
+
+
+class UUIDMixin(models.Model):
     """
     Model mixin for things with a UUID
     """
@@ -107,7 +164,7 @@ class TembaUUIDMixin(models.Model):
         abstract = True
 
 
-class TembaNameMixin(models.Model):
+class NameMixin(models.Model):
     """
     Model mixin for things with a name
     """
@@ -182,9 +239,9 @@ class OrgLimitMixin:
         return False
 
 
-class TembaModel(TembaUUIDMixin, TembaNameMixin, OrgLimitMixin, SmartModel):
+class TembaModel(UUIDMixin, NameMixin, SoftDeleteMixin, CreatedByMixin, ModifiedByMixin, OrgLimitMixin):
     """
-    Base for models which have UUID, name and smartmin auditing fields
+    Base for models which have UUID, name, soft deletion and auditing fields
     """
 
     class ImportResult(Enum):
