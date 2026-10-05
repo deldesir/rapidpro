@@ -1,3 +1,8 @@
+## v26.3.123 (2026-10-05)
+ * Return 404 from label filter pages for unknown, deleted or malformed label UUIDs
+ * Disable review progress tracking and bump the review model to Opus 5.5
+ * Remove unused root config files and dead package.json entries
+
 ## v26.3.122 (2026-10-01)
  * Add set_contact_email action to the flow editor
  * Build call_classifier nodes natively in the Split by AI editor
