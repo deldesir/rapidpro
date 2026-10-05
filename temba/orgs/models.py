@@ -1296,7 +1296,7 @@ def get_import_upload_path(instance: Any, filename: str):
     return f"orgs/{instance.org_id}/org_imports/{instance.uuid}{ext}"
 
 
-class OrgImport(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
+class OrgImport(CreatedByMixin):
     STATUS_PENDING = "P"
     STATUS_PROCESSING = "O"
     STATUS_COMPLETE = "C"
@@ -1312,6 +1312,7 @@ class OrgImport(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     org = models.ForeignKey(Org, on_delete=models.PROTECT, related_name="imports")
     file = models.FileField(upload_to=get_import_upload_path)
     status = models.CharField(max_length=1, default=STATUS_PENDING, choices=STATUS_CHOICES)
+    modified_on = models.DateTimeField(default=timezone.now, editable=False)  # when the import finished
 
     def start(self):
         from .tasks import perform_import
@@ -1331,7 +1332,8 @@ class OrgImport(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
             org.import_app(data, self.created_by, link)
         except Exception as e:
             self.status = self.STATUS_FAILED
-            self.save(update_fields=("status",))
+            self.modified_on = timezone.now()
+            self.save(update_fields=("status", "modified_on"))
 
             # this is an unexpected error, report it to sentry
             logger = logging.getLogger(__name__)
@@ -1339,6 +1341,7 @@ class OrgImport(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
 
         else:
             self.status = self.STATUS_COMPLETE
+            self.modified_on = timezone.now()
             self.save(update_fields=("status", "modified_on"))
 
 
