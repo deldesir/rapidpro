@@ -32,7 +32,14 @@ from temba.templates.models import Template
 from temba.tickets.models import Topic
 from temba.users.models import User
 from temba.utils.export.models import MultiSheetExporter
-from temba.utils.models import JSONAsTextField, LegacyIDMixin, TembaModel, delete_in_batches
+from temba.utils.models import (
+    CreatedByMixin,
+    JSONAsTextField,
+    LegacyIDMixin,
+    ModifiedByMixin,
+    TembaModel,
+    delete_in_batches,
+)
 from temba.utils.models.counts import BaseScopedCount, BaseSquashableCount
 from temba.utils.uuid import uuid4
 
@@ -168,7 +175,7 @@ class Flow(AssetMixin, LegacyIDMixin, TembaModel, DependencyMixin):
     info = models.JSONField(null=True, default=dict)
     has_issues = models.BooleanField(default=False)
 
-    saved_on = models.DateTimeField(auto_now_add=True)
+    saved_on = models.DateTimeField(default=timezone.now)
     saved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="flow_saves")
 
     # dependencies on other assets
@@ -1230,7 +1237,7 @@ class FlowRun(models.Model):
         ]
 
 
-class FlowRevision(LegacyIDMixin, models.Model):
+class FlowRevision(LegacyIDMixin, CreatedByMixin):
     """
     Each version of a flow's definition.
     """
@@ -1246,9 +1253,6 @@ class FlowRevision(LegacyIDMixin, models.Model):
     # categorized record of what changed since the previous revision; null for legacy
     # revisions that pre-date this field.
     changes = models.JSONField(null=True, default=None)
-
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="revisions")
-    created_on = models.DateTimeField(default=timezone.now)
 
     @classmethod
     def trim(cls, since):
@@ -1634,7 +1638,7 @@ class ResultsExport(ExportType):
         }
 
 
-class FlowStart(LegacyIDMixin, models.Model):
+class FlowStart(LegacyIDMixin, CreatedByMixin, ModifiedByMixin):
     """
     A queuable request to start contacts and groups in a flow
     """
@@ -1697,9 +1701,7 @@ class FlowStart(LegacyIDMixin, models.Model):
     params = models.JSONField(null=True, default=dict)
 
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+")
-    created_on = models.DateTimeField(default=timezone.now)
     modified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+")
-    modified_on = models.DateTimeField(default=timezone.now)
 
     @classmethod
     def create(

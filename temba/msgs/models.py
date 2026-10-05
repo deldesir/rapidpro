@@ -28,7 +28,7 @@ from temba.orgs.models import DependencyMixin, Export, ExportType, Org
 from temba.schedules.models import Schedule
 from temba.utils import languages, on_transaction_commit
 from temba.utils.export.models import MultiSheetExporter
-from temba.utils.models import LegacyIDMixin, TembaModel
+from temba.utils.models import CreatedByMixin, LegacyIDMixin, ModifiedByMixin, SoftDeleteMixin, TembaModel
 from temba.utils.models.counts import BaseSquashableCount
 from temba.utils.s3 import public_file_storage
 from temba.utils.uuid import uuid4, uuid7_range
@@ -36,7 +36,7 @@ from temba.utils.uuid import uuid4, uuid7_range
 logger = logging.getLogger(__name__)
 
 
-class Media(models.Model):
+class Media(CreatedByMixin):
     """
     An uploaded media file that can be used as an attachment on messages.
     """
@@ -72,9 +72,6 @@ class Media(models.Model):
     duration = models.IntegerField(default=0)  # milliseconds
     width = models.IntegerField(default=0)  # pixels
     height = models.IntegerField(default=0)  # pixels
-
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
-    created_on = models.DateTimeField(default=timezone.now)
 
     @classmethod
     def is_allowed_type(cls, content_type: str) -> bool:
@@ -180,7 +177,7 @@ class Media(models.Model):
         ]
 
 
-class Broadcast(LegacyIDMixin, models.Model):
+class Broadcast(LegacyIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     """
     A broadcast is a message that is sent out to more than one recipient, such
     as a ContactGroup or a list of Contacts. It's nothing more than a way to tie
@@ -231,9 +228,7 @@ class Broadcast(LegacyIDMixin, models.Model):
     template_variables = ArrayField(models.TextField(), null=True)
 
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.PROTECT, related_name="+")
-    created_on = models.DateTimeField(default=timezone.now)
     modified_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.PROTECT, related_name="+")
-    modified_on = models.DateTimeField(default=timezone.now)
 
     # used for scheduled broadcasts which are never actually sent themselves but spawn child broadcasts which are
     schedule = models.OneToOneField(Schedule, on_delete=models.PROTECT, null=True, related_name="broadcast")

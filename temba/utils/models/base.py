@@ -101,15 +101,8 @@ class CreatedByMixin(models.Model):
     Model mixin for things which record who created them and when
     """
 
-    created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.PROTECT,
-        related_name="%(app_label)s_%(class)s_creations",
-        help_text="The user which originally created this item",
-    )
-    created_on = models.DateTimeField(
-        default=timezone.now, editable=False, blank=True, help_text="When this item was originally created"
-    )
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    created_on = models.DateTimeField(default=timezone.now, editable=False)
 
     class Meta:
         abstract = True
@@ -120,15 +113,8 @@ class ModifiedByMixin(models.Model):
     Model mixin for things which record who last modified them and when
     """
 
-    modified_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.PROTECT,
-        related_name="%(app_label)s_%(class)s_modifications",
-        help_text="The user which last modified this item",
-    )
-    modified_on = models.DateTimeField(
-        default=timezone.now, editable=False, blank=True, help_text="When this item was last modified"
-    )
+    modified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    modified_on = models.DateTimeField(default=timezone.now, editable=False)
 
     def save(self, *args, **kwargs):
         update_fields = kwargs.get("update_fields")
@@ -147,7 +133,7 @@ class SoftDeleteMixin(models.Model):
     Model mixin for things which are deactivated rather than deleted
     """
 
-    is_active = models.BooleanField(default=True, help_text="Whether this item is active, use this instead of deleting")
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         abstract = True

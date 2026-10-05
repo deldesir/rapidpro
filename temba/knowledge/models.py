@@ -39,7 +39,7 @@ from temba import mailroom
 from temba.mailroom.client.exceptions import RequestException
 from temba.orgs.models import Org
 from temba.utils import on_transaction_commit
-from temba.utils.models import TembaModel, delete_in_batches
+from temba.utils.models import CreatedByMixin, ModifiedByMixin, SoftDeleteMixin, TembaModel, delete_in_batches
 from temba.utils.models.counts import BaseDailyCount
 from temba.utils.s3 import public_file_storage
 from temba.utils.text import generate_secret
@@ -811,7 +811,7 @@ class KnowledgeSource(TembaModel):
         ]
 
 
-class Article(models.Model):
+class Article(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     """
     An article in an org's helpdesk. Written by this app, read by mailroom, which indexes only published, active
     articles.
@@ -861,13 +861,8 @@ class Article(models.Model):
     status = models.CharField(max_length=1, choices=STATUS_CHOICES, default=STATUS_DRAFT)
     published_on = models.DateTimeField(null=True)
 
-    is_active = models.BooleanField(default=True)
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
-    created_on = models.DateTimeField(default=timezone.now)
-    modified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
-    # auto_now is load-bearing: mailroom's staleness sweep is MAX(modified_on) > source.last_indexed_on, so an
-    # unpublish or a soft-delete has to bump it for the removal to be noticed
-    modified_on = models.DateTimeField(auto_now=True)
+    # saving bumping modified_on is load-bearing: mailroom's staleness sweep is MAX(modified_on) >
+    # source.last_indexed_on, so an unpublish or a soft-delete has to bump it for the removal to be noticed
 
     @classmethod
     def create(
@@ -1111,7 +1106,7 @@ def get_article_image_path(article, image_uuid, content_type: str) -> str:
     )
 
 
-class ArticleImage(models.Model):
+class ArticleImage(CreatedByMixin):
     """
     A screenshot uploaded to an article and referenced from its markdown by URL. Stored in public storage because the
     eventual standalone help site serves these directly.
@@ -1127,9 +1122,6 @@ class ArticleImage(models.Model):
     path = models.CharField(max_length=2048)  # key in the public bucket
     content_type = models.CharField(max_length=255)
     size = models.IntegerField()
-
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
-    created_on = models.DateTimeField(default=timezone.now)
 
     @classmethod
     def is_allowed_type(cls, content_type: str) -> bool:
@@ -1231,7 +1223,7 @@ def generate_domain_token() -> str:
     return generate_secret(32)
 
 
-class HelpSite(models.Model):
+class HelpSite(CreatedByMixin, ModifiedByMixin):
     """
     The public face of an org's helpdesk: the site its published articles are read on. Previewed from inside the app,
     and served to the world on a domain of the org's own - one they point at us by CNAME and prove is theirs with a
@@ -1294,11 +1286,6 @@ class HelpSite(models.Model):
     # the addresses of the site the org moved from, by path, to the uuid of the article or section each is now -
     # written by whatever brought the articles over, and only ever consulted for an address the site doesn't have
     redirects = models.JSONField(default=dict)
-
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
-    created_on = models.DateTimeField(default=timezone.now)
-    modified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
-    modified_on = models.DateTimeField(auto_now=True)
 
     @classmethod
     def get_or_create(cls, source, user):
@@ -1701,7 +1688,7 @@ class HelpdeskImportType:
         raise NotImplementedError()
 
 
-class HelpdeskImport(models.Model):
+class HelpdeskImport(CreatedByMixin):
     """
     A help site brought over into the helpdesk from somewhere else, done in the background once the workspace has
     handed over what its type needs to get in. The page shows its progress as it goes, and what went wrong if it
@@ -1743,9 +1730,7 @@ class HelpdeskImport(models.Model):
     num_imported = models.IntegerField(default=0)
     error = models.CharField(max_length=255, null=True)
 
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
-    created_on = models.DateTimeField(default=timezone.now)
-    modified_on = models.DateTimeField(auto_now=True)
+    modified_on = models.DateTimeField(default=timezone.now)
     started_on = models.DateTimeField(null=True)
     finished_on = models.DateTimeField(null=True)
 
@@ -1807,6 +1792,7 @@ class HelpdeskImport(models.Model):
 
         self.status = self.STATUS_PROCESSING
         self.started_on = timezone.now()
+        self.modified_on = self.started_on
         self.save(update_fields=("status", "started_on", "modified_on"))
 
         try:
@@ -1824,6 +1810,7 @@ class HelpdeskImport(models.Model):
         secrets = imp_type.secret_config_keys if imp_type else ()
         self.config = {k: v for k, v in self.config.items() if k not in secrets}
         self.finished_on = timezone.now()
+        self.modified_on = self.finished_on
         self.save(update_fields=("status", "error", "config", "finished_on", "modified_on"))
 
         # a failed import keeps what it brought in before failing - and this is the one request for all of it, as the
@@ -1833,10 +1820,12 @@ class HelpdeskImport(models.Model):
 
     def set_total(self, total: int):
         self.num_items = total
+        self.modified_on = timezone.now()
         self.save(update_fields=("num_items", "modified_on"))
 
     def advance(self):
         self.num_imported += 1
+        self.modified_on = timezone.now()
         self.save(update_fields=("num_imported", "modified_on"))
 
     def as_json(self) -> dict:
@@ -1857,7 +1846,7 @@ def get_knowledge_item_path(source, item_uuid, filename: str) -> str:
     return f"orgs/{source.org_id}/knowledge/{source.uuid}/{item_uuid}{Path(filename).suffix.lower()}"
 
 
-class KnowledgeItem(models.Model):
+class KnowledgeItem(CreatedByMixin):
     """
     One page or one uploaded document in an ingested knowledge source.
 
@@ -1909,7 +1898,6 @@ class KnowledgeItem(models.Model):
     created_by = models.ForeignKey(  # null for crawled pages - nobody uploaded them
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+"
     )
-    created_on = models.DateTimeField(default=timezone.now)
 
     @classmethod
     def is_allowed_type(cls, content_type: str) -> bool:
