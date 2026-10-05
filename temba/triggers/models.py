@@ -1,5 +1,3 @@
-from smartmin.models import SmartModel
-
 from django.contrib.postgres.fields import ArrayField
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -10,7 +8,7 @@ from temba.channels.models import Channel
 from temba.contacts.models import Contact, ContactGroup
 from temba.flows.models import Flow
 from temba.orgs.models import Org
-from temba.utils.models import OrgLimitMixin, UUIDMixin
+from temba.utils.models import CreatedByMixin, ModifiedByMixin, OrgLimitMixin, SoftDeleteMixin, UUIDMixin
 
 
 class TriggerType:
@@ -73,7 +71,7 @@ class ChannelTriggerType(TriggerType):
     export_fields = TriggerType.export_fields + ("channel",)
 
 
-class Trigger(UUIDMixin, OrgLimitMixin, SmartModel):
+class Trigger(UUIDMixin, OrgLimitMixin, SoftDeleteMixin, CreatedByMixin, ModifiedByMixin):
     """
     A Trigger is used to start a user in a flow based on an event. For example, triggers might fire for missed calls,
     inbound messages starting with a keyword, or on a repeating schedule.
