@@ -325,7 +325,8 @@ class BroadcastCRUDLTest(TembaTest, CRUDLTestMixin):
 
         self.assertEqual(302, response.status_code)
 
-        # now lets remove the template
+        # now lets remove the template, as a different user
+        self.login(self.editor)
         response = self.process_wizard(
             "update",
             update_url,
@@ -341,6 +342,7 @@ class BroadcastCRUDLTest(TembaTest, CRUDLTestMixin):
         broadcast.refresh_from_db()
         # Update should have cleared our template
         self.assertIsNone(broadcast.template)
+        self.assertEqual(self.editor, broadcast.modified_by)
         self.assertEqual({language: {"text": "Updated broadcast", "attachments": []}}, broadcast.translations)
 
         # post the first two forms
