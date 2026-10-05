@@ -153,7 +153,7 @@ class SoftDeleteMixin(models.Model):
         abstract = True
 
 
-class TembaUUIDMixin(models.Model):
+class UUIDMixin(models.Model):
     """
     Model mixin for things with a UUID
     """
@@ -164,7 +164,7 @@ class TembaUUIDMixin(models.Model):
         abstract = True
 
 
-class TembaNameMixin(models.Model):
+class NameMixin(models.Model):
     """
     Model mixin for things with a name
     """
@@ -239,7 +239,7 @@ class OrgLimitMixin:
         return False
 
 
-class TembaModel(TembaUUIDMixin, TembaNameMixin, SoftDeleteMixin, CreatedByMixin, ModifiedByMixin, OrgLimitMixin):
+class TembaModel(UUIDMixin, NameMixin, SoftDeleteMixin, CreatedByMixin, ModifiedByMixin, OrgLimitMixin):
     """
     Base for models which have UUID, name, soft deletion and auditing fields
     """

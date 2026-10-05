@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from temba.utils.fields import UploadToIdPathAndRename
-from temba.utils.models.base import LegacyIDMixin, TembaUUIDMixin
+from temba.utils.models.base import LegacyIDMixin, UUIDMixin
 from temba.utils.uuid import uuid4
 
 
@@ -41,7 +41,7 @@ class UserManager(AuthUserManager):
         return user
 
 
-class User(LegacyIDMixin, TembaUUIDMixin, AbstractBaseUser, PermissionsMixin):
+class User(LegacyIDMixin, UUIDMixin, AbstractBaseUser, PermissionsMixin):
     SYSTEM = {"email": "system", "first_name": "System"}
 
     EMAIL_FIELD = "email"

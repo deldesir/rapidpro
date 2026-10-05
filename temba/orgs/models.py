@@ -38,7 +38,7 @@ from temba.users.models import User
 from temba.utils import json, languages, on_transaction_commit
 from temba.utils.dates import datetime_to_str
 from temba.utils.email import EmailSender
-from temba.utils.models import LegacyIDMixin, TembaUUIDMixin, delete_in_batches
+from temba.utils.models import LegacyIDMixin, UUIDMixin, delete_in_batches
 from temba.utils.models.counts import BaseDailyCount, BaseScopedCount
 from temba.utils.text import generate_secret
 from temba.utils.timezones import timezone_to_country_code
@@ -1480,7 +1480,7 @@ class DefinitionExport(ExportType):
         }
 
 
-class Export(TembaUUIDMixin, models.Model):
+class Export(UUIDMixin, models.Model):
     """
     An export of workspace data initiated by a user
     """
