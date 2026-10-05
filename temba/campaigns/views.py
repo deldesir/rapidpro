@@ -98,7 +98,7 @@ class CampaignCRUDL(SmartCRUDL):
             new_group = form.cleaned_data["group"]
 
             # save our campaign
-            self.object = form.save(commit=False)
+            self.object = self.pre_save(form.save(commit=False))
             self.save(self.object)
 
             # if our group changed, create our new fires
