@@ -205,6 +205,59 @@ describe('temba-modax', () => {
     await hideTest;
   });
 
+  it('posts multipart only when the form holds files', async () => {
+    // opens a modax, lets the caller add to its form, submits it and returns the request made
+    const submitWith = async (
+      addFields: (form: HTMLFormElement) => Promise<void>
+    ) => {
+      const modax: Modax = await fixture(
+        getModaxHTML('/test/assets/modax/upload.html')
+      );
+      await open(modax);
+      await addFields(modax.shadowRoot.querySelector('form'));
+
+      mockPOST(/\/test\/assets\/modax\/upload\.html/, 'arst', {
+        'X-Temba-Success': 'hide'
+      });
+      modax.submit({ extra: '1' });
+      await clock.runAllAsync();
+      return (window.fetch as any).lastCall.args[1];
+    };
+
+    // no files, so url-encoded as ever
+    let post = await submitWith(async () => {});
+    expect(post.headers['Content-Type']).to.equal(
+      'application/x-www-form-urlencoded'
+    );
+    expect(post.body).to.equal('title=Help&extra=1');
+
+    // a component holding a file sends everything as multipart
+    post = await submitWith(async (form) => {
+      const picker = document.createElement('temba-image-picker') as any;
+      picker.name = 'favicon';
+      form.appendChild(picker);
+      await picker.updateComplete;
+      const image = new FormData();
+      image.append(
+        'favicon',
+        new Blob(['img'], { type: 'image/webp' }),
+        'f.webp'
+      );
+      picker.value = image;
+    });
+
+    // the browser sets the multipart boundary, so no content type of our own
+    expect(post.headers['Content-Type']).to.equal(undefined);
+    expect(post.body).to.be.instanceOf(FormData);
+    expect([...post.body.keys()]).to.have.members([
+      'favicon',
+      'title',
+      'extra'
+    ]);
+    expect((post.body.get('favicon') as File).name).to.equal('f.webp');
+    expect(post.body.get('title')).to.equal('Help');
+  });
+
   it('sizes the dialog it renders', async () => {
     const modax: Modax = await fixture(
       getModaxHTML('/test/assets/modax/form.html')

@@ -11,7 +11,6 @@ import iso8601
 import phonenumbers
 import regex
 from openpyxl import load_workbook
-from smartmin.models import SmartModel
 
 from django.conf import settings
 from django.contrib.humanize.templatetags.humanize import intcomma
@@ -29,10 +28,19 @@ from temba.channels.models import Channel
 from temba.locations.models import AdminBoundary
 from temba.mailroom import ContactSpec, modifiers
 from temba.orgs.models import DependencyMixin, Export, ExportType, Org, OrgRole
-from temba.orgs.realtime import AssetNameMixin
+from temba.orgs.realtime import PublishedAssetMixin
 from temba.utils import dynamo, format_number, on_transaction_commit
 from temba.utils.export import MultiSheetExporter
-from temba.utils.models import JSONField, LegacyIDMixin, LegacyUUIDMixin, TembaModel, delete_in_batches
+from temba.utils.models import (
+    CreatedByMixin,
+    JSONField,
+    LegacyIDMixin,
+    LegacyUUIDMixin,
+    ModifiedByMixin,
+    OrgAsset,
+    SoftDeleteMixin,
+    delete_in_batches,
+)
 from temba.utils.models.counts import BaseSquashableCount
 from temba.utils.text import obfuscate, unsnakify
 from temba.utils.urns import ParsedURN, parse_number, parse_urn
@@ -325,7 +333,7 @@ class UserContactFieldsManager(models.Manager):
         return UserContactFieldsQuerySet(self.model, using=self._db).filter(is_system=False)
 
 
-class ContactField(TembaModel, DependencyMixin):
+class ContactField(OrgAsset, DependencyMixin):
     """
     A custom user field for contacts.
     """
@@ -560,7 +568,7 @@ class ContactField(TembaModel, DependencyMixin):
         self.save(update_fields=("name", "is_active", "modified_on", "modified_by"))
 
 
-class Contact(LegacyIDMixin, LegacyUUIDMixin, SmartModel):
+class Contact(LegacyIDMixin, LegacyUUIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     """
     A contact represents an individual with which we can communicate and collect data
     """
@@ -592,6 +600,11 @@ class Contact(LegacyIDMixin, LegacyUUIDMixin, SmartModel):
     )
     fields = JSONField(null=True)  # custom field values for this contact, keyed by field UUID
     status = models.CharField(max_length=1, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+
+    # an address is a claim until it's verified - by the contact proving they control the mailbox - so any number of
+    # contacts can hold the same address but only one can hold it verified
+    email = models.EmailField(null=True)
+    email_verified_on = models.DateTimeField(null=True)
 
     current_session_uuid = models.UUIDField(null=True)  # waiting session if any
     current_flow = models.ForeignKey("flows.Flow", on_delete=models.PROTECT, null=True, db_index=False)
@@ -1409,9 +1422,16 @@ class Contact(LegacyIDMixin, LegacyUUIDMixin, SmartModel):
             models.Index(
                 name="contacts_by_org_deleted", fields=("org", "-modified_on", "-id"), condition=Q(is_active=False)
             ),
+            # for finding every contact claiming an address
+            models.Index(name="contacts_by_email", fields=("org", "email"), condition=Q(email__isnull=False)),
         ]
         constraints = [
             models.CheckConstraint(condition=Q(status__in=("A", "B", "S", "V")), name="contact_status_valid"),
+            models.UniqueConstraint(
+                fields=("org", "email"),
+                condition=Q(email_verified_on__isnull=False),
+                name="unique_verified_contact_emails",
+            ),
         ]
 
 
@@ -1486,12 +1506,13 @@ class ContactURN(LegacyIDMixin, models.Model):
         ]
 
 
-class ContactGroup(AssetNameMixin, LegacyIDMixin, TembaModel, DependencyMixin):
+class ContactGroup(PublishedAssetMixin, LegacyIDMixin, OrgAsset, DependencyMixin):
     """
     A group of contacts whose membership can be manual or query based
     """
 
     asset_type = "group"
+    publish_creations = True  # so clients learn whether a new group is smart before they next fetch groups
 
     TYPE_DB_ACTIVE = "A"  # maintained by db trigger on status=A
     TYPE_DB_BLOCKED = "B"  # maintained by db trigger on status=B
@@ -1668,6 +1689,14 @@ class ContactGroup(AssetNameMixin, LegacyIDMixin, TembaModel, DependencyMixin):
     def get_attrs(self):
         return {"icon": self.icon, "type": "group"}
 
+    def as_asset(self) -> dict:
+        # the query is what lets a client tell a new smart group from a manual one
+        return {**super().as_asset(), "query": self.query}
+
+    def is_published_asset(self) -> bool:
+        # the status groups maintained by db triggers are never referenced by clients
+        return self.group_type in (self.TYPE_MANUAL, self.TYPE_SMART) and super().is_published_asset()
+
     def update_query(self, query, reevaluate=True, parsed=None):
         """
         Updates the query for a smart group
@@ -1815,7 +1844,7 @@ class ContactGroup(AssetNameMixin, LegacyIDMixin, TembaModel, DependencyMixin):
         constraints = [models.UniqueConstraint("org", Lower("name"), name="unique_contact_group_names")]
 
 
-class ContactNote(models.Model):
+class ContactNote(CreatedByMixin):
     """
     Note attached to a contact, with last 5 versions kept for history.
     """
@@ -1824,8 +1853,6 @@ class ContactNote(models.Model):
 
     contact = models.ForeignKey(Contact, on_delete=models.PROTECT, related_name="notes")
     text = models.TextField(max_length=MAX_LENGTH, blank=True)
-    created_on = models.DateTimeField(default=timezone.now)
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="contact_notes")
 
 
 class ContactGroupCount(BaseSquashableCount):
@@ -1923,6 +1950,8 @@ class ContactExport(ExportType):
                 dict(label="Scheme", key="scheme", field=None, urn_scheme=None),
             ]
             fields = fields[0:1] + extra + fields[1:]
+        else:  # like URNs, email identifies the contact so isn't exported for anon orgs
+            fields.insert(3, dict(label="Email", key="email", field=None, urn_scheme=None))
 
         scheme_counts = dict()
         if not export.org.is_anon:
@@ -2042,6 +2071,8 @@ class ContactExport(ExportType):
             return contact.uuid
         elif field["key"] == "language":
             return contact.language
+        elif field["key"] == "email":
+            return contact.email
         elif field["key"] == "status":
             return contact.get_status_display()
         elif field["key"] == "created_on":
@@ -2081,7 +2112,7 @@ def get_import_upload_path(instance: Any, filename: str):
     return f"orgs/{instance.org_id}/contact_imports/{instance.uuid}{ext}"
 
 
-class ContactImport(SmartModel):
+class ContactImport(CreatedByMixin):
     MAX_RECORDS = 25_000
     BATCH_SIZE = 100
     URN_VALIDATION_CHUNK = 1000  # how many URNs we ask mailroom to validate per request
@@ -2275,7 +2306,7 @@ class ContactImport(SmartModel):
                 attribute = header_name.lower()
                 attribute = attribute.removeprefix("contact ")  # header "contact uuid" -> "uuid" etc
 
-                if attribute in ("uuid", "name", "language", "status"):
+                if attribute in ("uuid", "name", "language", "email", "status"):
                     mapping = {"type": "attribute", "name": attribute}
             elif header_prefix == "urn" and header_name:
                 mapping = {"type": "scheme", "scheme": header_name.lower()}

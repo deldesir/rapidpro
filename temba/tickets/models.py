@@ -20,13 +20,13 @@ from temba.users.models import User
 from temba.utils.dates import date_range
 from temba.utils.db.functions import SplitPart
 from temba.utils.export import MultiSheetExporter
-from temba.utils.models import TembaModel
+from temba.utils.models import OrgAsset
 from temba.utils.uuid import is_uuid
 
 logger = logging.getLogger(__name__)
 
 
-class Shortcut(TembaModel):
+class Shortcut(OrgAsset):
     """
     A canned response available from the ticketing interface.
     """
@@ -39,13 +39,27 @@ class Shortcut(TembaModel):
         assert cls.is_valid_name(name), f"'{name}' is not a valid shortcut name"
         assert not org.shortcuts.filter(name__iexact=name).exists(), f"shortcut with name '{name}' already exists"
 
-        return org.shortcuts.create(name=name, text=text, created_by=user, modified_by=user)
+        shortcut = org.shortcuts.create(name=name, text=text, created_by=user, modified_by=user)
+        shortcut.request_indexing()
+        return shortcut
+
+    def request_indexing(self):
+        """
+        Asks mailroom to index the org's shortcuts knowledge, which is derived from its shortcuts.
+        """
+        from temba.knowledge.models import KnowledgeSource
+
+        source = KnowledgeSource.get_system(self.org, KnowledgeSource.TYPE_SHORTCUTS)
+        if source:
+            source.request_indexing()
 
     def release(self, user):
         self.is_active = False
         self.name = self._deleted_name()
         self.modified_by = user
         self.save(update_fields=("name", "is_active", "modified_by", "modified_on"))
+
+        self.request_indexing()
 
     class Meta:
         constraints = [models.UniqueConstraint("org", Lower("name"), name="unique_shortcut_names")]
@@ -55,7 +69,7 @@ class Shortcut(TembaModel):
         ]
 
 
-class Topic(TembaModel, DependencyMixin):
+class Topic(OrgAsset, DependencyMixin):
     """
     The topic of a ticket which controls who can access that ticket.
     """
@@ -92,9 +106,10 @@ class Topic(TembaModel, DependencyMixin):
     def get_restriction(cls, org, user):
         """
         Returns the topics the given user is restricted to in the org, or None if they can access all of the org's
-        topics. Staff and members whose team grants all topics are unrestricted; a member on a topic-limited team is
-        restricted to that team's topics; a user with no membership in the org can access nothing. This is the single
-        source of truth for team topic access, shared by everything that scopes topics or tickets to a user.
+        topics. Staff, members of the org's admin groups and members whose team grants all topics are unrestricted; a
+        member on a topic-limited team is restricted to that team's topics; any other user with no membership in the
+        org can access nothing. This is the single source of truth for team topic access, shared by everything that
+        scopes topics or tickets to a user.
         """
         if user.is_staff:
             return None
@@ -142,7 +157,7 @@ class Topic(TembaModel, DependencyMixin):
         constraints = [models.UniqueConstraint("org", Lower("name"), name="unique_topic_names")]
 
 
-class Team(TembaModel):
+class Team(OrgAsset):
     """
     Agent users are assigned to a team which controls which topics they can access.
     """

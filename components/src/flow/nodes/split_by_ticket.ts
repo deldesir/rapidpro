@@ -8,7 +8,7 @@ export const split_by_ticket: NodeConfig = {
   type: 'split_by_ticket',
   name: 'Open Ticket',
   group: ACTION_GROUPS.trigger,
-  flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
+  flowTypes: [FlowTypes.MESSAGE],
   showAsAction: true,
   form: {
     topic: {

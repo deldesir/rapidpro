@@ -27,6 +27,7 @@ import {
   getCookie,
   setCookie,
   serialize,
+  serializeFiles,
   renderIf,
   getElementOffset,
   isElementVisible,
@@ -870,6 +871,28 @@ describe('utils/index', () => {
       disabledForm.appendChild(input);
 
       expect(serialize(disabledForm)).to.equal('');
+    });
+
+    it('leaves files to serializeFiles', () => {
+      const image = new FormData();
+      image.append('favicon', new Blob(['img'], { type: 'image/webp' }), 'f.webp');
+
+      // components holding files, like the image picker, have a FormData as their value
+      const form = {
+        elements: [
+          { name: 'title', value: 'Help' },
+          { name: 'favicon', value: image },
+          { name: 'other', value: new FormData(), disabled: true }
+        ]
+      };
+
+      expect(serialize(form)).to.equal('title=Help');
+
+      const files = serializeFiles(form);
+      expect([...files.keys()]).to.deep.equal(['favicon']);
+      expect((files.get('favicon') as File).name).to.equal('f.webp');
+
+      expect(serializeFiles({ elements: [{ name: 'title', value: 'Help' }] })).to.equal(null);
     });
 
     it('handles checkbox without value attribute', () => {

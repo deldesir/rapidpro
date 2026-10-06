@@ -2814,6 +2814,10 @@ msgstr "Corps"
 msgid "Description"
 msgstr "Description"
 
+#, python-format
+msgid "Limit for file uploads is %s MB"
+msgstr "La limite pour les envois de fichiers est de %s Mo"
+
 msgid "The name of your help site, shown in its header."
 msgstr "Le nom de votre site d'aide, affiché dans son en-tête."
 
@@ -2828,6 +2832,12 @@ msgstr "Pied de page"
 
 msgid "Shown at the bottom of every page."
 msgstr "Affiché en bas de chaque page."
+
+msgid "Icon"
+msgstr "Icône"
+
+msgid "Shown in the browser tab. An open book if you don't choose one."
+msgstr "Affichée dans l'onglet du navigateur. Un livre ouvert si vous n'en choisissez pas."
 
 msgid "Chat"
 msgstr "Discussion"
@@ -2861,6 +2871,9 @@ msgstr "Bulle 3"
 
 msgid "Not a valid color."
 msgstr "Ce n'est pas une couleur valide."
+
+msgid "Unsupported file type"
+msgstr "Type de fichier non pris en charge"
 
 msgid "Domain"
 msgstr "Domaine"
@@ -2938,13 +2951,6 @@ msgstr "Les fichiers ne peuvent être ajoutés qu'à des ensembles de documents.
 msgid "Limit of %d documents reached."
 msgstr "La limite de %d documents est atteinte."
 
-msgid "Unsupported file type"
-msgstr "Type de fichier non pris en charge"
-
-#, python-format
-msgid "Limit for file uploads is %s MB"
-msgstr "La limite pour les envois de fichiers est de %s Mo"
-
 msgid "New Section"
 msgstr "Nouvelle section"
 
@@ -3011,8 +3017,12 @@ msgstr "L'utilisation de ~ avec un nom nécessite un terme d'au moins %(min_toke
 msgid "Using ~ with URN requires value of at least %(min_value_length)s characters."
 msgstr "L'utilisation de ~ avec une URN nécessite une valeur d'au moins %(min_value_length)s caractères."
 
-msgid "Can only use ~ with name or URN values."
-msgstr "~ ne peut être utilisé qu'avec des valeurs de nom ou d'URN."
+#, python-format
+msgid "Using ~ with email requires value of at least %(min_value_length)s characters."
+msgstr "L'utilisation de ~ avec un e-mail nécessite une valeur d'au moins %(min_value_length)s caractères."
+
+msgid "Can only use ~ with name, email or URN values."
+msgstr "~ ne peut être utilisé qu'avec des valeurs de nom, d'e-mail ou d'URN."
 
 #, python-format
 msgid "Can only use %(operator)s with number or date values."
@@ -5278,6 +5288,12 @@ msgstr "Langue du contact"
 msgid "Only valid <a href=\"https://en.wikipedia.org/wiki/ISO_639-3\" target=\"_new\">ISO639-3</a> codes supported."
 msgstr "Seuls les codes <a href=\"https://en.wikipedia.org/wiki/ISO_639-3\" target=\"_new\">ISO639-3</a> valides sont pris en charge."
 
+msgid "Contact email"
+msgstr "E-mail du contact"
+
+msgid "Imported addresses are unverified."
+msgstr "Les adresses importées ne sont pas vérifiées."
+
 #, python-format
 msgid "Numbers without a country code will be treated as local numbers in %(country)s."
 msgstr "Les numéros sans code de pays seront traités comme des numéros locaux en %(country)s."
@@ -5473,12 +5489,6 @@ msgstr "Espace de travail modifié"
 
 msgid "You are no longer logged in to this workspace in this browser. To continue, please refresh your browser."
 msgstr "Vous n'êtes plus connecté à cet espace de travail dans ce navigateur. Pour continuer, veuillez actualiser votre navigateur."
-
-msgid "Use Single Sign-On"
-msgstr "Utiliser l'authentification unique"
-
-msgid "Ok"
-msgstr "OK"
 
 msgid "Are you sure you want to continue? This cannot be undone."
 msgstr "Es-tu sur de vouloir continuer? Ça ne peut pas être annulé."

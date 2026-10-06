@@ -2,13 +2,14 @@ from unittest.mock import patch
 
 import requests
 
+from django.conf import settings
 from django.test.utils import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from temba.knowledge.models import Article, ArticleCount, HelpSite, KnowledgeSource
 from temba.orgs.models import Org
-from temba.tests import TembaTest
+from temba.tests import TembaTest, mock_mailroom
 from temba.tests.requests import MockResponse
 
 
@@ -75,6 +76,14 @@ class SiteViewsTest(TembaTest):
         self.assertContains(response, f"--primary: {HelpSite.DEFAULT_PRIMARY_COLOR};")
         self.assertContains(response, f"--header-bg: {HelpSite.DEFAULT_HEADER_COLOR};")
         self.assertContains(response, "--header-text: #1f2430;")
+
+        # an open book for its icon until it has its own
+        self.assertContains(response, f'<link rel="icon" href="{settings.STATIC_URL}images/helpsite-favicon.svg">')
+
+        self.site.set_config(self.admin, favicon="orgs/1/favicon.webp")
+        response = self.public("/")
+        self.assertContains(response, 'orgs/1/favicon.webp">')
+        self.assertNotContains(response, "helpsite-favicon.svg")
 
         self.site.set_config(self.admin, primary_color="#ff6600", header_color="#1f2937")
         response = self.public("/")
@@ -206,7 +215,25 @@ class SiteViewsTest(TembaTest):
         self.assertEqual(404, self.public("/hidden/visible/").status_code)
         self.assertEqual(404, self.public("/nope/nodes/").status_code)
 
-    def test_public_search(self):
+    @mock_mailroom
+    def test_public_search(self, mr_mocks):
+        self.helpdesk.last_indexed_on = timezone.now()
+        self.helpdesk.save(update_fields=("last_indexed_on",))
+
+        mr_mocks.knowledge_search(
+            [
+                {
+                    "source_uuid": str(self.helpdesk.uuid),
+                    "item_key": str(self.nodes.uuid),
+                    "item_name": "Nodes",
+                    "text": "A **node** is a step in a flow.",
+                    "score": 0.9,
+                }
+            ]
+        )
+        mr_mocks.knowledge_search([])
+        mr_mocks.knowledge_search([])
+
         response = self.public("/search/?q=node")
         self.assertEqual(200, response.status_code)
         self.assertEqual("node", response.context["query"])

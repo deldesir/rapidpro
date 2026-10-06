@@ -2,7 +2,6 @@ import logging
 
 from django_valkey import get_valkey_connection
 from rest_framework.permissions import BasePermission
-from smartmin.models import SmartModel
 
 from django.conf import settings
 from django.db import models
@@ -10,7 +9,7 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from temba.orgs.models import Org, OrgRole
-from temba.utils.models import JSONAsTextField
+from temba.utils.models import CreatedByMixin, JSONAsTextField, ModifiedByMixin, SoftDeleteMixin
 from temba.utils.text import generate_secret
 
 logger = logging.getLogger(__name__)
@@ -106,7 +105,7 @@ class SSLPermission(BasePermission):  # pragma: no cover
             return True
 
 
-class Resthook(SmartModel):
+class Resthook(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     """
     Represents a hook that a user creates on an organization. Outside apps can integrate by subscribing
     to this particular resthook.
@@ -158,7 +157,7 @@ class Resthook(SmartModel):
         return str(self.slug)
 
 
-class ResthookSubscriber(SmartModel):
+class ResthookSubscriber(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     """
     Represents a subscriber on a specific resthook within one of our flows.
     """

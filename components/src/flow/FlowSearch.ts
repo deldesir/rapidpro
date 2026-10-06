@@ -8,6 +8,7 @@ import {
   SetRunResult,
   SetContactField,
   SetContactName,
+  SetContactEmail,
   SendEmail,
   SendBroadcast,
   EnterFlow,
@@ -106,6 +107,11 @@ function getActionSearchTexts(action: Action): string[] {
       if (a.name) texts.push(a.name);
       break;
     }
+    case 'set_contact_email': {
+      const a = action as SetContactEmail;
+      if (a.email) texts.push(a.email);
+      break;
+    }
     case 'set_contact_field': {
       const a = action as SetContactField;
       if (a.field?.name) texts.push(a.field.name);
@@ -191,8 +197,11 @@ function getActionSearchTexts(action: Action): string[] {
     }
     case 'call_classifier': {
       const a = action as CallClassifier;
-      if (a.classifier?.name) texts.push(a.classifier.name);
+      if (a.model?.name) texts.push(a.model.name);
       if (a.input) texts.push(a.input);
+      a.options?.forEach((o) => {
+        if (o.description) texts.push(o.description);
+      });
       break;
     }
     case 'open_ticket': {

@@ -489,6 +489,44 @@ class EndpointsTest(APITestMixin, TembaTest):
             errors={"fields": "Editing of 'nickname' values disallowed for current user."},
         )
 
+        # email can be set, normalized, and changing it clears any verification
+        joe.email, joe.email_verified_on = "joe@example.com", timezone.now()
+        joe.save(update_fields=("email", "email_verified_on"))
+
+        response = self.assertPost(endpoint_url + f"?uuid={joe.uuid}", self.editor, {"email": " Joseph@Example.com "})
+        joe.refresh_from_db()
+        self.assertEqual("joseph@example.com", joe.email)
+        self.assertIsNone(joe.email_verified_on)
+        self.assertEqual("joseph@example.com", response.json()["email"])
+        self.assertIsNone(response.json()["email_verified_on"])
+
+        # resubmitting the same address isn't a change, so doesn't clear verification
+        joe.email_verified_on = timezone.now()
+        joe.save(update_fields=("email_verified_on",))
+        self.assertPost(endpoint_url + f"?uuid={joe.uuid}", self.editor, {"email": "JOSEPH@example.com"})
+        joe.refresh_from_db()
+        self.assertIsNotNone(joe.email_verified_on)
+
+        self.assertPost(
+            endpoint_url + f"?uuid={joe.uuid}",
+            self.editor,
+            {"email": "joseph"},
+            errors={"email": "Enter a valid email address."},
+        )
+
+        # and cleared
+        self.assertPost(endpoint_url + f"?uuid={joe.uuid}", self.editor, {"email": ""})
+        joe.refresh_from_db()
+        self.assertIsNone(joe.email)
+
+        with self.anonymous(self.org):
+            self.assertPost(
+                endpoint_url + f"?uuid={joe.uuid}",
+                self.editor,
+                {"email": "joe@example.com"},
+                errors={"email": "Updating email not allowed for anonymous workspaces"},
+            )
+
         # deleted contacts can't be modified
         deleted = self.create_contact("Del", phone="+250788000000")
         deleted.release(self.admin)
@@ -1453,8 +1491,17 @@ class EndpointsTest(APITestMixin, TembaTest):
     def test_llms(self):
         endpoint_url = reverse("api.internal.llms") + ".json"
 
-        openai = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "GPT-4", {}, roles=LLM.ROLE_EDITING)
+        openai = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "GPT-4", {}, roles=LLM.ROLE_TRANSLATION)
         anthropic = LLM.create(self.org, self.admin, AnthropicType(), "claude-haiku-4-5-20251001", "Claude", {})
+        classifier = LLM.create(
+            self.org,
+            self.admin,
+            AnthropicType(),
+            "claude-haiku-4-5-20251001",
+            "Classifier",
+            {},
+            roles=LLM.ROLE_CLASSIFICATION,
+        )
         deleted = LLM.create(self.org, self.admin, AnthropicType(), "claude-haiku-4-5-20251001", "Deleted", {})
         deleted.release(self.admin)
         system = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "System", {})
@@ -1470,22 +1517,28 @@ class EndpointsTest(APITestMixin, TembaTest):
             [self.admin],
             results=[
                 {
+                    "uuid": str(classifier.uuid),
+                    "name": "Classifier",
+                    "type": "anthropic",
+                    "roles": ["classification"],
+                },
+                {
                     "uuid": str(anthropic.uuid),
                     "name": "Claude",
                     "type": "anthropic",
-                    "roles": ["editing", "engine"],
+                    "roles": ["translation", "generation", "classification"],
                 },
                 {
                     "uuid": str(openai.uuid),
                     "name": "GPT-4",
                     "type": "openai",
-                    "roles": ["editing"],
+                    "roles": ["translation"],
                 },
                 {
                     "uuid": str(system.uuid),
                     "name": "System",
                     "type": "openai",
-                    "roles": ["editing", "engine"],
+                    "roles": ["translation", "generation", "classification"],
                 },
             ],
         )

@@ -10,6 +10,7 @@ from django import forms
 from django.conf import settings
 from django.db.models.functions.text import Lower
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
+from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.generic import RedirectView
@@ -31,6 +32,7 @@ from temba.templates.models import Template
 from temba.utils import json
 from temba.utils.compose import compose_deserialize, compose_serialize
 from temba.utils.fields import ContactSearchWidget, InputWidget, SelectWidget
+from temba.utils.uuid import UUID_REGEX
 from temba.utils.views.mixins import (
     ModalFormMixin,
     ModalHeaderMixin,
@@ -372,6 +374,7 @@ class BroadcastCRUDL(SmartCRUDL):
             broadcast.exclusions = exclusions
             broadcast.template = template
             broadcast.template_variables = template_variables
+            broadcast.modified_by = self.request.user
             broadcast.save()
 
             broadcast.update_recipients(groups=groups, contacts=contacts)
@@ -722,11 +725,11 @@ class MsgCRUDL(SmartCRUDL):
 
         @classmethod
         def derive_url_pattern(cls, path, action):
-            return r"^%s/%s/(?P<label_uuid>[^/]+)/$" % (path, action)
+            return rf"^{path}/{action}/(?P<label_uuid>{UUID_REGEX.pattern})/$"
 
         @cached_property
         def label(self):
-            return self.request.org.msgs_labels.get(uuid=self.kwargs["label_uuid"])
+            return get_object_or_404(self.request.org.msgs_labels, uuid=self.kwargs["label_uuid"], is_active=True)
 
         def derive_folder(self):
             return self.label

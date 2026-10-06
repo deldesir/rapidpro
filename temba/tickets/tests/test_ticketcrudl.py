@@ -88,7 +88,7 @@ class TicketCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual(str(ticket.uuid), response.context["nextUUID"])
 
         # we have a specific ticket so we should show context menu for it
-        self.assertContentMenu(deep_link, self.admin, ["Add Note", "Start Flow"])
+        self.assertContentMenu(deep_link, self.admin, ["Add Note"])
 
         with self.assertNumQueries(10):
             self.client.get(deep_link)
@@ -98,6 +98,16 @@ class TicketCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual("All", response.context["title"])
         self.assertEqual("all", response.context["folder"])
         self.assertNotIn("nextUUID", response.context)
+        self.assertEqual(OrgRole.AGENT.code, response.context["user_role"])
+
+        # an agent who is also in one of the workspace's admin groups is an administrator
+        self.create_admin_group("Global Admins", orgs=[self.org], users=[self.agent2])
+        response = self.assertListFetch(deep_link, [self.agent2])
+        self.assertEqual(str(ticket.uuid), response.context["nextUUID"])
+        self.assertEqual(OrgRole.ADMINISTRATOR.code, response.context["user_role"])
+        self.assertTrue(response.context["can_assign"])
+        self.assertTrue(response.context["can_reply_non_own"])
+        self.agent2.groups.clear()
 
         # can also link to our ticket within the Support topic
         deep_link = f"{list_url}{self.support.uuid}/{ticket.uuid}/"
@@ -116,7 +126,7 @@ class TicketCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual(str(ticket.uuid), response.context["uuid"])
 
         # and again we have a specific ticket so we should show context menu for it
-        self.assertContentMenu(deep_link, self.admin, ["Add Note", "Start Flow"])
+        self.assertContentMenu(deep_link, self.admin, ["Add Note"])
 
         # deep link with assignee filter on all folder passes assignee_uuid to context
         assignee_link = f"{list_url}all/?assignee={self.admin.uuid}"
@@ -151,18 +161,31 @@ class TicketCRUDLTest(TembaTest, CRUDLTestMixin):
         )
         self.assertEqual(("tickets", "mine", str(ticket.uuid)), response.context["temba_referer"])
 
-        # contacts in a flow still get a start flow option - the start modal handles confirming
-        # the interruption
-        flow = self.create_flow("Test")
-        self.contact.current_flow = flow
-        self.contact.save()
         deep_link = f"{list_url}all/{str(ticket.uuid)}/"
-        self.assertContentMenu(deep_link, self.admin, ["Add Note", "Start Flow"])
 
         # closed tickets don't get extra menu options
         ticket.status = Ticket.STATUS_CLOSED
         ticket.save(update_fields=("status",))
         self.assertContentMenu(deep_link, self.admin, [])
+
+    def test_list_legacy_status_redirect(self):
+        ticket = self.create_ticket(self.contact, assignee=self.admin)
+
+        self.login(self.admin)
+
+        # links with an open/closed status segment redirect to the folder, keeping the ticket and query string
+        response = self.client.get(f"/ticket/mine/open/{ticket.uuid}/?tab=0")
+        self.assertEqual(301, response.status_code)
+        self.assertEqual(f"/ticket/mine/{ticket.uuid}/?tab=0", response.url)
+
+        response = self.client.get(f"/ticket/{self.support.uuid}/closed/")
+        self.assertEqual(301, response.status_code)
+        self.assertEqual(f"/ticket/{self.support.uuid}/", response.url)
+
+        # and the redirected link resolves as normal
+        response = self.client.get(f"/ticket/mine/open/{ticket.uuid}/", follow=True)
+        self.assertEqual("mine", response.context["folder"])
+        self.assertEqual(str(ticket.uuid), response.context["nextUUID"])
 
     def test_update(self):
         ticket = self.create_ticket(self.contact, assignee=self.admin)
@@ -223,6 +246,12 @@ class TicketCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual(self.sales_only, response.context["team"])
         self.assertFalse(response.context["has_teams"])
         self.assertNotContains(response, 'dataname="Teams"')
+
+        # unless they're also in one of the workspace's admin groups, which makes them an administrator
+        self.create_admin_group("Global Admins", orgs=[self.org], users=[self.agent2])
+        response = self.assertReadFetch(analytics_url, [self.agent2])
+        self.assertIsNone(response.context["team"])
+        self.assertTrue(response.context["has_teams"])
 
         # should not be able to post to it
         response = self.client.post(analytics_url)

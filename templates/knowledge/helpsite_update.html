@@ -2,9 +2,14 @@
 {% load smartmin i18n %}
 
 {% block fields %}
-  {% render_field 'title' %}
-  {% render_field 'tagline' %}
-  {% render_field 'footer' %}
+  <div class="flex gap-6">
+    <div class="flex-1">
+      {% render_field 'title' %}
+      {% render_field 'tagline' %}
+      {% render_field 'footer' %}
+    </div>
+    <div class="w-40">{% render_field 'favicon' %}</div>
+  </div>
   {% render_field 'chat_channel' %}
   <div class="flex gap-4">
     <div class="flex-1">{% render_field 'primary_color' %}</div>

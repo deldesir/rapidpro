@@ -13,7 +13,6 @@ from urllib.parse import urlparse
 import pycountry
 from django_valkey import get_valkey_connection
 from packaging.version import Version
-from smartmin.models import SmartModel
 from timezone_field import TimeZoneField
 
 from django.conf import settings
@@ -38,7 +37,14 @@ from temba.users.models import User
 from temba.utils import json, languages, on_transaction_commit
 from temba.utils.dates import datetime_to_str
 from temba.utils.email import EmailSender
-from temba.utils.models import LegacyIDMixin, TembaUUIDMixin, delete_in_batches
+from temba.utils.models import (
+    CreatedByMixin,
+    LegacyIDMixin,
+    ModifiedByMixin,
+    SoftDeleteMixin,
+    UUIDMixin,
+    delete_in_batches,
+)
 from temba.utils.models.counts import BaseDailyCount, BaseScopedCount
 from temba.utils.text import generate_secret
 from temba.utils.timezones import timezone_to_country_code
@@ -192,7 +198,7 @@ class OrgRole(Enum):
         return self.has_perm(permission) or permission in self.api_permissions
 
 
-class Org(LegacyIDMixin, SmartModel):
+class Org(LegacyIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     """
     An Org can have several users and is the main component that holds all Flows, Messages, Contacts, etc.
 
@@ -897,9 +903,11 @@ class Org(LegacyIDMixin, SmartModel):
         # default to user that created this org (converting to our User proxy model)
         return User.objects.get(id=self.created_by_id)
 
-    def get_membership(self, user: User):
+    def get_membership(self, user: User, *, explicit_only: bool = False):
         """
-        Gets the membership of the given user in this org (if any).
+        Gets the membership of the given user in this org (if any). Members of the org's admin groups get an unsaved
+        administrator membership which takes precedence over any explicit membership, unless explicit_only is set for
+        places that need the actual membership record.
         """
 
         def get():
@@ -915,6 +923,10 @@ class Org(LegacyIDMixin, SmartModel):
 
         if user not in self._membership_cache:
             self._membership_cache[user] = get()
+
+        if not explicit_only and self.has_group_admin(user):
+            return OrgMembership(org=self, user=user, role_code=OrgRole.ADMINISTRATOR.code)
+
         return self._membership_cache[user]
 
     def has_group_admin(self, user: User) -> bool:
@@ -932,11 +944,7 @@ class Org(LegacyIDMixin, SmartModel):
         administrator role regardless of any explicit membership.
         """
 
-        membership = self.get_membership(user)  # fetched first as it also caches the admin group check
-
-        if self.has_group_admin(user):
-            return OrgRole.ADMINISTRATOR
-
+        membership = self.get_membership(user)
         return membership.role if membership else None
 
     def create_sample_flows(self, api_url):
@@ -1288,7 +1296,7 @@ def get_import_upload_path(instance: Any, filename: str):
     return f"orgs/{instance.org_id}/org_imports/{instance.uuid}{ext}"
 
 
-class OrgImport(SmartModel):
+class OrgImport(CreatedByMixin):
     STATUS_PENDING = "P"
     STATUS_PROCESSING = "O"
     STATUS_COMPLETE = "C"
@@ -1304,6 +1312,7 @@ class OrgImport(SmartModel):
     org = models.ForeignKey(Org, on_delete=models.PROTECT, related_name="imports")
     file = models.FileField(upload_to=get_import_upload_path)
     status = models.CharField(max_length=1, default=STATUS_PENDING, choices=STATUS_CHOICES)
+    modified_on = models.DateTimeField(default=timezone.now, editable=False)  # when the import finished
 
     def start(self):
         from .tasks import perform_import
@@ -1323,7 +1332,8 @@ class OrgImport(SmartModel):
             org.import_app(data, self.created_by, link)
         except Exception as e:
             self.status = self.STATUS_FAILED
-            self.save(update_fields=("status",))
+            self.modified_on = timezone.now()
+            self.save(update_fields=("status", "modified_on"))
 
             # this is an unexpected error, report it to sentry
             logger = logging.getLogger(__name__)
@@ -1331,10 +1341,11 @@ class OrgImport(SmartModel):
 
         else:
             self.status = self.STATUS_COMPLETE
+            self.modified_on = timezone.now()
             self.save(update_fields=("status", "modified_on"))
 
 
-class Invitation(SmartModel):
+class Invitation(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     """
     An invitation to an e-mail address to join an org as a specific role.
     """
@@ -1478,7 +1489,7 @@ class DefinitionExport(ExportType):
         }
 
 
-class Export(TembaUUIDMixin, models.Model):
+class Export(UUIDMixin, CreatedByMixin):
     """
     An export of workspace data initiated by a user
     """
@@ -1510,8 +1521,6 @@ class Export(TembaUUIDMixin, models.Model):
     # additional type specific filtering and extra columns
     config = models.JSONField(default=dict)
 
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="exports")
-    created_on = models.DateTimeField(default=timezone.now)
     modified_on = models.DateTimeField(default=timezone.now)
 
     def start(self):

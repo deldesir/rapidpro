@@ -1,10 +1,10 @@
 import types
 from enum import Enum
 
-from smartmin.models import SmartModel
-
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from temba.utils.fields import NameValidator
@@ -78,7 +78,7 @@ class LegacyIDMixin(models.Model):
         abstract = True
 
 
-class LegacyUUIDMixin(SmartModel):
+class LegacyUUIDMixin(models.Model):
     """
     Model mixin for things with an old-style VARCHAR(36) UUID
     """
@@ -96,7 +96,50 @@ class LegacyUUIDMixin(SmartModel):
         abstract = True
 
 
-class TembaUUIDMixin(models.Model):
+class CreatedByMixin(models.Model):
+    """
+    Model mixin for things which record who created them and when
+    """
+
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    created_on = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        abstract = True
+
+
+class ModifiedByMixin(models.Model):
+    """
+    Model mixin for things which record who last modified them and when
+    """
+
+    modified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    modified_on = models.DateTimeField(default=timezone.now, editable=False)
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+
+        if update_fields is None or "modified_on" in update_fields:
+            self.modified_on = timezone.now()
+
+        return super().save(*args, **kwargs)
+
+    class Meta:
+        abstract = True
+
+
+class SoftDeleteMixin(models.Model):
+    """
+    Model mixin for things which are deactivated rather than deleted
+    """
+
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        abstract = True
+
+
+class UUIDMixin(models.Model):
     """
     Model mixin for things with a UUID
     """
@@ -107,7 +150,7 @@ class TembaUUIDMixin(models.Model):
         abstract = True
 
 
-class TembaNameMixin(models.Model):
+class NameMixin(models.Model):
     """
     Model mixin for things with a name
     """
@@ -158,7 +201,7 @@ class TembaNameMixin(models.Model):
 class OrgLimitMixin:
     """
     Mixin for things which are limited per org. Deliberately not a model mixin - it adds no fields of its own, so it
-    can be mixed into models which don't have the rest of the `TembaModel` machinery (e.g. things without a name).
+    can be mixed into models which don't have the rest of the `OrgAsset` machinery (e.g. things without a name).
     """
 
     org_limit_key = None
@@ -182,9 +225,10 @@ class OrgLimitMixin:
         return False
 
 
-class TembaModel(TembaUUIDMixin, TembaNameMixin, OrgLimitMixin, SmartModel):
+class OrgAsset(UUIDMixin, NameMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin, OrgLimitMixin):
     """
-    Base for models which have UUID, name and smartmin auditing fields
+    Base for the named things users manage in a workspace, such as flows, groups and channels, most of which can be
+    referenced by UUID and name (e.g. from flow definitions and exports)
     """
 
     class ImportResult(Enum):

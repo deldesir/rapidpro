@@ -160,9 +160,7 @@ class KnowledgeSourceCRUDL(SmartCRUDL):
         def get_context_data(self, **kwargs):
             context = super().get_context_data(**kwargs)
 
-            obj = self.request.org.sources.filter(
-                source_type=KnowledgeSource.TYPE_SHORTCUTS, is_system=True, is_active=True
-            ).first()
+            obj = KnowledgeSource.get_system(self.request.org, KnowledgeSource.TYPE_SHORTCUTS)
             if not obj:
                 raise Http404()
 
@@ -198,6 +196,8 @@ class KnowledgeSourceCRUDL(SmartCRUDL):
         require_feature = Org.FEATURE_AGENTS
         form_class = KnowledgeSourceUpdateForm
 
+        needs_indexing = False
+
         def pre_save(self, obj):
             obj = super().pre_save(obj)
 
@@ -215,8 +215,16 @@ class KnowledgeSourceCRUDL(SmartCRUDL):
                 if new_config != obj.config:
                     obj.status = KnowledgeSource.STATUS_PENDING
                     obj.error = None
+                    self.needs_indexing = True
                 obj.config = new_config
 
+            return obj
+
+        def post_save(self, obj):
+            obj = super().post_save(obj)
+
+            if self.needs_indexing:
+                obj.request_indexing()
             return obj
 
         def get_success_url(self):
@@ -289,9 +297,7 @@ class HelpdeskMixin(RequireFeatureMixin):
 
     @cached_property
     def helpdesk(self):
-        obj = self.request.org.sources.filter(
-            source_type=KnowledgeSource.TYPE_HELPDESK, is_system=True, is_active=True
-        ).first()
+        obj = KnowledgeSource.get_system(self.request.org, KnowledgeSource.TYPE_HELPDESK)
         if not obj:
             raise Http404()
         return obj
@@ -536,6 +542,14 @@ class ArticleCRUDL(SmartCRUDL):
             obj.slug = Article.get_unique_slug(obj.source, obj.title, ignore=obj)
             return obj
 
+        def post_save(self, obj):
+            obj = super().post_save(obj)
+
+            # a draft isn't indexed so only a published article's edits need to be
+            if obj.status == Article.STATUS_PUBLISHED:
+                obj.source.request_indexing()
+            return obj
+
     class Publish(HelpdeskMixin, PostOnlyMixin, OrgPermsMixin, SmartTemplateView):
         """
         Puts one article in or out of the agents' reach, posted as {uuid, status} by the switch on its row in the
@@ -566,6 +580,9 @@ class ArticleCRUDL(SmartCRUDL):
                 article.publish(request.user)
             else:
                 article.unpublish(request.user)
+
+            # here rather than in publish/unpublish so that imports, which call those per article, request it once
+            self.helpdesk.request_indexing()
 
             return JsonResponse({"status": "ok"})
 
@@ -761,7 +778,7 @@ class HelpSiteCRUDL(SmartCRUDL):
 
     class Update(InferSite, BaseUpdateModal):
         """
-        The site's settings - what it says about itself, whether it's up, and its colors.
+        The site's settings - what it says about itself, whether it's up, its icon and its colors.
         """
 
         form_class = HelpSiteForm
@@ -792,6 +809,10 @@ class HelpSiteCRUDL(SmartCRUDL):
         def post_save(self, obj):
             obj = super().post_save(obj)
             obj.set_bubbles({key: self.form.cleaned_data[f"bubble_{key}"] for key in HelpSite.BUBBLE_KEYS})
+            # None is no change, False is the picker cleared back to the default
+            favicon = self.form.cleaned_data["favicon"]
+            if favicon is not None:
+                obj.set_favicon(favicon or None)
             return obj
 
     class Domain(InferSite, BaseUpdateModal):

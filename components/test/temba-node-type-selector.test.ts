@@ -139,6 +139,24 @@ describe('temba-node-type-selector', () => {
     expect(await titlesFor('background')).to.not.include('Add Input Labels');
   });
 
+  it('only offers Open Ticket in messaging flows', async () => {
+    const selector = await createSelector();
+
+    const titlesFor = async (flowType: string) => {
+      selector.flowType = flowType as any;
+      await selector.updateComplete;
+      selector.show('all', { x: 100, y: 100 });
+      await selector.updateComplete;
+      return Array.from(
+        selector.shadowRoot?.querySelectorAll('.node-item-title') || []
+      ).map((item) => item.textContent?.trim());
+    };
+
+    expect(await titlesFor('message')).to.include('Open Ticket');
+    expect(await titlesFor('voice')).to.not.include('Open Ticket');
+    expect(await titlesFor('background')).to.not.include('Open Ticket');
+  });
+
   it('shows Call AI in action categories (not a separate branching section)', async () => {
     const selector = await createSelector();
     selector.flowType = 'message';

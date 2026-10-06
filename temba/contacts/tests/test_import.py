@@ -127,6 +127,7 @@ class ContactImportTest(TembaTest):
                     "mapping": {"type": "new_field", "key": "sheep", "name": "Sheep", "value_type": "T"},
                 },
                 {"header": "Group:Testers", "mapping": {"type": "ignore"}},
+                {"header": "Email", "mapping": {"type": "attribute", "name": "email"}},
             ],
             imp.mappings,
         )
@@ -307,6 +308,7 @@ class ContactImportTest(TembaTest):
                     "status": "archived",
                     "urns": ["tel:+250788123123"],
                     "fields": {"goats": "1", "sheep": "0"},
+                    "email": "john@doe.com",
                     "groups": [str(imp.group.uuid)],
                 },
                 {
@@ -316,6 +318,7 @@ class ContactImportTest(TembaTest):
                     "status": "blocked",
                     "urns": ["tel:+250788456456"],
                     "fields": {"goats": "3", "sheep": "5"},
+                    "email": "Mary@Smith.com",
                     "groups": [str(imp.group.uuid)],
                 },
                 {
@@ -392,6 +395,7 @@ class ContactImportTest(TembaTest):
                 "language": "",
                 "urns": ["tel:+250788456678"],
                 "fields": {"goats": "", "sheep": ""},
+                "email": "",
                 "groups": [str(imp.group.uuid)],
             },
             batch.specs[2],
