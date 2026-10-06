@@ -157,6 +157,14 @@ def release_slot():
         conn.eval(RELEASE_SCRIPT, 2, CLAIMS_KEY, OWNERS_KEY, slot, owner)
 
 
+def uses_buckets() -> bool:
+    """
+    Whether any configured storage is S3 bucket-backed (file system storages are the fork's local-first mode)
+    """
+
+    return any(config.get("OPTIONS", {}).get("bucket_name") for config in settings.STORAGES.values())
+
+
 def use_slot(slot: int):
     """
     Switches this process to its slot's valkey database, DynamoDB tables and S3 buckets (see create_slot_storage)
@@ -185,7 +193,16 @@ def use_slot(slot: int):
     _base_prefixes.setdefault("dynamo", settings.DYNAMO_TABLE_PREFIX)
     _base_prefixes.setdefault("bucket", settings.BUCKET_PREFIX)
     old_bucket_prefix = settings.BUCKET_PREFIX
-    settings.DYNAMO_TABLE_PREFIX = f"{_base_prefixes['dynamo']}{slot}"
+
+    # an empty DYNAMO_TABLE_PREFIX means DynamoDB is switched off (see temba.utils.dynamo.is_enabled) and tests run
+    # against Postgres alone, so there are no tables to name after the slot - deriving "17" from "" would switch it on
+    if _base_prefixes["dynamo"]:
+        settings.DYNAMO_TABLE_PREFIX = f"{_base_prefixes['dynamo']}{slot}"
+
+    # likewise S3 is only in play when a storage is bucket-backed; file system storages have nothing to rename
+    if not uses_buckets():
+        return
+
     settings.BUCKET_PREFIX = f"{_base_prefixes['bucket']}{slot}"
 
     for alias, config in settings.STORAGES.items():
@@ -209,8 +226,10 @@ def create_slot_storage():
     does this, as the AWS clients it creates can't be used by processes forked from it.
     """
 
-    call_command("migrate_dynamo", stdout=io.StringIO())
-    call_command("create_buckets", stdout=io.StringIO())
+    call_command("migrate_dynamo", stdout=io.StringIO())  # a no-op when DynamoDB is switched off
+
+    if uses_buckets():
+        call_command("create_buckets", stdout=io.StringIO())
 
 
 def _temba_init_worker(counter, *args, **kwargs):
