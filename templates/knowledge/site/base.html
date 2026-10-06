@@ -13,6 +13,7 @@
     </title>
     <meta name="description" content="{% block description %}{% if site.tagline %}{{ site.tagline }}{% else %}{{ site.title }}{% endif %}{% endblock description %}">
     {% if is_preview %}<meta name="robots" content="noindex">{% endif %}
+    <link rel="icon" href="{% if site.favicon_url %}{{ site.favicon_url }}{% else %}{{ STATIC_URL }}images/helpsite-favicon.svg{% endif %}">
     <link rel="stylesheet" href="{{ STATIC_URL }}css/helpsite.css">
     <link rel="stylesheet" href="{{ STATIC_URL }}css/article.css">
     <style>

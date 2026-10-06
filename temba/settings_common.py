@@ -734,6 +734,12 @@ DATABASES = {"default": _default_database_config, "readonly": _default_database_
 # -----------------------------------------------------------------------------------
 _valkey_url = f"redis://{_valkey_host}:6379/{10 if TESTING else 15}"
 
+# the database coordinating claims on the pool of valkey databases test processes claim for themselves, one each (see
+# temba.testrunner) - shared with other projects' tests so must match theirs, and valkey needs more than its default 16
+# databases (e.g. --databases 64)
+TEST_VALKEY_COORD_DB = 16
+TEST_VALKEY_POOL = (17, 63)
+
 CACHES = {
     "default": {
         "BACKEND": "django_valkey.cache.ValkeyCache",
@@ -909,6 +915,7 @@ LLM_TYPES = {
             "claude-opus-4-8": 128_000,
             "claude-opus-4-7": 128_000,
             "claude-opus-4-5-20251101": 64_000,
+            "claude-sonnet-5-5": 128_000,
             "claude-sonnet-5": 128_000,
             "claude-sonnet-4-6": 128_000,
             "claude-haiku-4-5-20251001": 64_000,
@@ -1060,9 +1067,9 @@ SOCIALACCOUNT_PROVIDERS = {}
 SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
 SOCIALACCOUNT_LOGIN_ON_GET = True
 
-# maps email domains whose users should be logging in with SSO to the (translatable) warning shown to those still
-# logging in with a password
-SSO_LOGIN_WARNING_DOMAINS = {}
+# maps email domains whose users can only login or signup with SSO (any configured social provider) to the
+# (translatable) error shown when they try another way
+SSO_ONLY_DOMAINS = {}
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 
 ACCOUNT_LOGIN_METHODS = ("email",)

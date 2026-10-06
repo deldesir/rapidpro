@@ -2800,6 +2800,10 @@ msgstr ""
 msgid "Description"
 msgstr ""
 
+#, python-format
+msgid "Limit for file uploads is %s MB"
+msgstr ""
+
 msgid "The name of your help site, shown in its header."
 msgstr ""
 
@@ -2813,6 +2817,12 @@ msgid "Footer"
 msgstr ""
 
 msgid "Shown at the bottom of every page."
+msgstr ""
+
+msgid "Icon"
+msgstr ""
+
+msgid "Shown in the browser tab. An open book if you don't choose one."
 msgstr ""
 
 msgid "Chat"
@@ -2846,6 +2856,9 @@ msgid "Bubble 3"
 msgstr ""
 
 msgid "Not a valid color."
+msgstr ""
+
+msgid "Unsupported file type"
 msgstr ""
 
 msgid "Domain"
@@ -2924,13 +2937,6 @@ msgstr ""
 msgid "Limit of %d documents reached."
 msgstr ""
 
-msgid "Unsupported file type"
-msgstr ""
-
-#, python-format
-msgid "Limit for file uploads is %s MB"
-msgstr ""
-
 msgid "New Section"
 msgstr ""
 
@@ -2997,7 +3003,11 @@ msgstr ""
 msgid "Using ~ with URN requires value of at least %(min_value_length)s characters."
 msgstr ""
 
-msgid "Can only use ~ with name or URN values."
+#, python-format
+msgid "Using ~ with email requires value of at least %(min_value_length)s characters."
+msgstr ""
+
+msgid "Can only use ~ with name, email or URN values."
 msgstr ""
 
 #, python-format
@@ -5262,6 +5272,12 @@ msgstr ""
 msgid "Only valid <a href=\"https://en.wikipedia.org/wiki/ISO_639-3\" target=\"_new\">ISO639-3</a> codes supported."
 msgstr ""
 
+msgid "Contact email"
+msgstr ""
+
+msgid "Imported addresses are unverified."
+msgstr ""
+
 #, python-format
 msgid "Numbers without a country code will be treated as local numbers in %(country)s."
 msgstr ""
@@ -5451,12 +5467,6 @@ msgid "Workspace Changed"
 msgstr ""
 
 msgid "You are no longer logged in to this workspace in this browser. To continue, please refresh your browser."
-msgstr ""
-
-msgid "Use Single Sign-On"
-msgstr ""
-
-msgid "Ok"
 msgstr ""
 
 msgid "Are you sure you want to continue? This cannot be undone."

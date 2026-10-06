@@ -4,6 +4,7 @@ import {
   getTextFromEditableDiv,
   getCaretOffset,
   getCaretEndOffset,
+  getSelectionRange,
   setCaretOffset,
   setCaretRange
 } from '../src/excellent/caret-utils';
@@ -179,6 +180,111 @@ describe('excellent/caret-utils', () => {
       setCaretRange(element, 0, 1);
       setCaretRange(element, 0, 99);
       expect(getCaretEndOffset(element)).to.equal(1);
+    });
+  });
+
+  describe('inside a shadow root', () => {
+    type Mode = 'native' | 'composed' | 'variadic' | 'unsupported';
+
+    // Safari has no ShadowRoot.getSelection and its window selection reports
+    // ranges retargeted to the shadow host, leaving getComposedRanges as the
+    // only way to see where the caret really is. Older Safari takes the shadow
+    // roots as arguments rather than an options dictionary.
+    const actSafari = (root: ShadowRoot, mode: Mode) => {
+      Object.defineProperty(root, 'getSelection', { value: undefined });
+
+      const selection = window.getSelection() as any;
+      const getRangeAt = Selection.prototype.getRangeAt;
+      const host = root.host;
+
+      selection.getRangeAt = (index: number) => {
+        const real = getRangeAt.call(selection, index);
+        if (!root.contains(real.startContainer)) return real;
+        const retargeted = document.createRange();
+        retargeted.setStartBefore(host);
+        return retargeted;
+      };
+
+      selection.getComposedRanges = (arg: any) => {
+        const dictionary = !(arg instanceof ShadowRoot);
+        if (
+          mode === 'unsupported' ||
+          (mode === 'variadic' && dictionary) ||
+          (mode === 'composed' && !dictionary)
+        ) {
+          throw new TypeError('unsupported getComposedRanges signature');
+        }
+        return [getRangeAt.call(selection, 0)];
+      };
+    };
+
+    const shadowEditable = async (
+      inner: string,
+      mode: Mode
+    ): Promise<HTMLElement> => {
+      const host = (await fixture('<div></div>')) as HTMLElement;
+      const root = host.attachShadow({ mode: 'open' });
+      if (mode !== 'native') {
+        actSafari(root, mode);
+      }
+      root.innerHTML = `<div contenteditable="true">${inner}</div>`;
+      const element = root.firstElementChild as HTMLElement;
+      element.focus();
+      return element;
+    };
+
+    afterEach(() => {
+      const selection = window.getSelection() as any;
+      delete selection.getRangeAt;
+      delete selection.getComposedRanges;
+    });
+
+    for (const mode of ['native', 'composed', 'variadic'] as Mode[]) {
+      it(`round trips caret offsets (${mode})`, async () => {
+        const element = await shadowEditable(
+          spans('hello', ' ', 'world'),
+          mode
+        );
+        for (const offset of [0, 3, 5, 6, 11]) {
+          setCaretOffset(element, offset);
+          expect(getCaretOffset(element), `offset ${offset}`).to.equal(offset);
+        }
+      });
+
+      it(`reads a selected range (${mode})`, async () => {
+        const element = await shadowEditable(
+          spans('hello', ' ', 'world'),
+          mode
+        );
+        setCaretRange(element, 3, 8);
+        expect(getCaretOffset(element)).to.equal(3);
+        expect(getCaretEndOffset(element)).to.equal(8);
+        expect(element.contains(getSelectionRange(element).startContainer)).to
+          .be.true;
+      });
+
+      it(`keeps focus after the content is rebuilt (${mode})`, async () => {
+        const element = await shadowEditable(spans('hel'), mode);
+        setCaretOffset(element, 3);
+
+        // what RichEditor does on every input
+        element.textContent = 'hell';
+        setCaretOffset(element, 4);
+
+        expect(element.getRootNode()['activeElement']).to.equal(element);
+        expect(getCaretOffset(element)).to.equal(4);
+      });
+    }
+
+    it('reads no range when getComposedRanges is unusable', async () => {
+      const element = await shadowEditable(
+        spans('hello', ' ', 'world'),
+        'unsupported'
+      );
+      setCaretOffset(element, 4);
+      expect(getSelectionRange(element)).to.equal(null);
+      expect(getCaretOffset(element)).to.equal(0);
+      expect(getCaretEndOffset(element)).to.equal(0);
     });
   });
 });

@@ -260,6 +260,7 @@ class ContactImportCRUDLTest(TembaTest, CRUDLTestMixin):
                 },
                 {"header": "Field:Sheep", "mapping": {"type": "ignore"}},
                 {"header": "Group:Testers", "mapping": {"type": "ignore"}},
+                {"header": "Email", "mapping": {"type": "attribute", "name": "email"}},
             ],
             imp.mappings,
         )

@@ -103,6 +103,11 @@ class ShortcutCRUDL(SmartCRUDL):
     class Update(BaseUpdateModal):
         form_class = ShortcutForm
 
+        def post_save(self, obj):
+            obj = super().post_save(obj)
+            obj.request_indexing()
+            return obj
+
         def get_success_url(self):
             return shortcuts_url(self.request.org)
 
@@ -213,7 +218,8 @@ class TeamCRUDL(SmartCRUDL):
 
 class TeamScopedMixin:
     """
-    Mixin for analytics views which agent users see scoped to their team. Other users see the whole workspace.
+    Mixin for analytics views which agent users see scoped to their team. Other users, including members of the
+    workspace's admin groups, see the whole workspace.
     """
 
     @cached_property
@@ -441,15 +447,6 @@ class TicketCRUDL(SmartCRUDL):
                         _("Add Note"),
                         "add-note",
                         f"{reverse('tickets.ticket_note', args=[ticket.uuid])}",
-                    )
-
-                if self.has_org_perm("flows.flow_start"):
-                    menu.add_modax(
-                        _("Start Flow"),
-                        "start-flow",
-                        f"{reverse('flows.flow_start')}?c={ticket.contact.uuid}",
-                        disabled=True,
-                        on_submit="handleFlowStarted()",
                     )
 
         def get_queryset(self, **kwargs):

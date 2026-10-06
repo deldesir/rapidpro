@@ -6,6 +6,7 @@ import {
   AirtimeTransferredEvent,
   CallEvent,
   ChatStartedEvent,
+  ContactEmailChangedEvent,
   ContactGroupsEvent,
   ContactLanguageChangedEvent,
   ContactStatusChangedEvent,
@@ -27,6 +28,7 @@ export enum Events {
   CALL_MISSED = 'call_missed',
   CALL_RECEIVED = 'call_received',
   CHAT_STARTED = 'chat_started',
+  CONTACT_EMAIL_CHANGED = 'contact_email_changed',
   CONTACT_FIELD_CHANGED = 'contact_field_changed',
   // ephemeral, updates contact state instead of rendering as history
   CONTACT_FLOW_CHANGED = 'contact_flow_changed',
@@ -315,6 +317,14 @@ export const renderNameChanged = (event: NameChangedEvent): TemplateResult => {
   </div>`;
 };
 
+export const renderContactEmailChangedEvent = (
+  event: ContactEmailChangedEvent
+): TemplateResult => {
+  return html`<div style=${eventLineStyle}>
+    ${attributePill('Email', event.email || null, { icon: 'email' })}
+  </div>`;
+};
+
 // strip the scheme and query string from a raw URN for display
 // (e.g. "tel:+1234?channel=x" → "+1234"); a malformed URN without a
 // scheme separator passes through as-is rather than throwing
@@ -517,6 +527,7 @@ export const renderEventSummary = (
       case Events.CONTACT_GROUPS_CHANGED:
         addIcon('group');
         break;
+      case Events.CONTACT_EMAIL_CHANGED:
       case Events.CONTACT_FIELD_CHANGED:
       case Events.CONTACT_NAME_CHANGED:
       case Events.CONTACT_LANGUAGE_CHANGED:
@@ -823,6 +834,8 @@ const getEventTooltipLines = (
     }
     case Events.CONTACT_NAME_CHANGED:
       return fullValue(event.name);
+    case Events.CONTACT_EMAIL_CHANGED:
+      return fullValue(event.email);
     case Events.CONTACT_URNS_CHANGED: {
       const urns = (event.urns || []).map(urnDisplayValue);
       return fullValue(urns.join(', '));
@@ -996,6 +1009,11 @@ export const renderEvent = (
       content = renderContactGroupsEvent(
         event as ContactGroupsEvent,
         !isSimulation
+      );
+      break;
+    case Events.CONTACT_EMAIL_CHANGED:
+      content = renderContactEmailChangedEvent(
+        event as ContactEmailChangedEvent
       );
       break;
     case Events.CONTACT_LANGUAGE_CHANGED:

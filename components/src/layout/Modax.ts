@@ -3,7 +3,14 @@ import { property } from 'lit/decorators.js';
 import { unsafeHTML } from 'lit-html/directives/unsafe-html.js';
 
 import { RapidElement } from '../RapidElement';
-import { getUrl, serialize, postUrl, WebResponse, getClasses } from '../utils';
+import {
+  getUrl,
+  serialize,
+  serializeFiles,
+  postUrl,
+  WebResponse,
+  getClasses
+} from '../utils';
 import { CustomEventType } from '../interfaces';
 import { ButtonType, Dialog, DialogButton } from './Dialog';
 
@@ -388,11 +395,19 @@ export class Modax extends RapidElement {
       });
     }
 
+    // a form with files goes up as multipart, the rest of it alongside them
+    const files = form ? serializeFiles(form) : null;
+    if (files) {
+      new URLSearchParams(postData).forEach((value, key) =>
+        files.append(key, value)
+      );
+    }
+
     postUrl(
       this.endpoint,
-      postData,
+      files || postData,
       this.getHeaders(),
-      'application/x-www-form-urlencoded'
+      files ? null : 'application/x-www-form-urlencoded'
     )
       .then((response: WebResponse) => {
         window.setTimeout(() => {

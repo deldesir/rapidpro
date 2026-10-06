@@ -23,7 +23,6 @@ from pgvector.django import HnswIndex, VectorField
 
 from django.conf import settings
 from django.contrib.postgres.indexes import OpClass
-from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
 from django.core.cache import cache
 from django.core.files.storage import default_storage
 from django.db import models, transaction
@@ -40,7 +39,7 @@ from temba import mailroom
 from temba.mailroom.client.exceptions import RequestException
 from temba.orgs.models import Org
 from temba.utils import on_transaction_commit
-from temba.utils.models import TembaModel, delete_in_batches
+from temba.utils.models import CreatedByMixin, ModifiedByMixin, OrgAsset, SoftDeleteMixin, delete_in_batches
 from temba.utils.models.counts import BaseDailyCount
 from temba.utils.s3 import public_file_storage
 from temba.utils.text import generate_secret
@@ -566,12 +565,14 @@ def make_snippet(text: str, terms: list, *, length: int = 200) -> str:
     return mark_safe(html)
 
 
-class KnowledgeSource(TembaModel):
+class KnowledgeSource(OrgAsset):
     """
     A source of knowledge that AI agents can search semantically.
 
-    Indexing - crawling, extracting, chunking and embedding - is performed entirely by mailroom, which sweeps for rows
-    needing work. This app owns the schema, the CRUD UI and document uploads only; it never calls an embeddings service.
+    Indexing - crawling, extracting, chunking and embedding - is performed entirely by mailroom, which this app asks to
+    index a source whenever it changes what that source's index is derived from, and which also sweeps for rows needing
+    work in case a request is lost. This app owns the schema, the CRUD UI and document uploads only; it never calls an
+    embeddings service.
     """
 
     # authored types - items live in their own Django-owned table, mailroom only reads
@@ -590,7 +591,7 @@ class KnowledgeSource(TembaModel):
     SYSTEM_TYPES = (TYPE_SHORTCUTS, TYPE_HELPDESK)  # one of each per org, created in Org.initialize()
     SYSTEM_NAMES = {TYPE_SHORTCUTS: "Shortcuts", TYPE_HELPDESK: "Helpdesk"}
 
-    STATUS_PENDING = "P"  # needs (re)indexing, mailroom's sweep will pick it up
+    STATUS_PENDING = "P"  # needs (re)indexing
     STATUS_INDEXING = "I"  # mailroom is working on it
     STATUS_READY = "R"  # indexed and searchable
     STATUS_FAILED = "F"  # last indexing attempt failed, see error
@@ -661,11 +662,15 @@ class KnowledgeSource(TembaModel):
         ]
 
     @classmethod
+    def get_system(cls, org, source_type: str):
+        return org.sources.filter(source_type=source_type, is_system=True, is_active=True).first()
+
+    @classmethod
     def create_website(cls, org, user, name: str, url: str, *, max_depth=None, max_pages=None, refresh=None):
         assert cls.is_valid_name(name), f"'{name}' is not a valid knowledge name"
         assert not org.sources.filter(name__iexact=name, is_active=True).exists()
 
-        return org.sources.create(
+        source = org.sources.create(
             name=name,
             source_type=cls.TYPE_WEBSITE,
             config={
@@ -677,6 +682,8 @@ class KnowledgeSource(TembaModel):
             created_by=user,
             modified_by=user,
         )
+        source.request_indexing()
+        return source
 
     @classmethod
     def create_documents(cls, org, user, name: str):
@@ -719,12 +726,29 @@ class KnowledgeSource(TembaModel):
 
     def mark_pending(self):
         """
-        Flags this source as needing (re)indexing so mailroom's sweep picks it up. Called whenever this app changes
-        something mailroom's index is derived from - website config, uploaded files.
+        Flags this source as needing (re)indexing and asks mailroom to do it. Called whenever this app changes
+        something mailroom's index is derived from - website config, uploaded files, imported articles.
         """
         self.status = self.STATUS_PENDING
         self.error = None
         self.save(update_fields=("status", "error"))
+
+        self.request_indexing()
+
+    def request_indexing(self):
+        """
+        Asks mailroom to index this source's changes. That waits for the commit because mailroom indexes whatever has
+        changed since it last indexed and then moves that watermark on - so if it ran first, it would skip the change.
+        Mailroom collapses repeated requests for a source, but bulk changes should still make only one.
+        """
+        on_transaction_commit(self._request_indexing)
+
+    def _request_indexing(self):
+        # best effort - a lost request only delays indexing until mailroom's sweep finds the source stale
+        try:
+            mailroom.get_client().knowledge_index(self.org, self)
+        except Exception:
+            logger.exception("error requesting knowledge indexing from mailroom", extra={"source_id": self.id})
 
     def release(self, user):
         assert not (self.is_system and self.org.is_active), "can't release system knowledge"
@@ -746,8 +770,8 @@ class KnowledgeSource(TembaModel):
 
     def _purge(self):
         """
-        Removes this source's chunks, items, articles and article images. Rows go first; storage objects are only
-        removed once their rows are gone.
+        Removes this source's chunks, items, articles, article images and site. Rows go first; storage objects are
+        only removed once their rows are gone.
         """
         # collect storage keys before the rows that name them disappear - two different buckets
         item_paths = list(self.items.exclude(path=None).values_list("path", flat=True))
@@ -758,8 +782,10 @@ class KnowledgeSource(TembaModel):
         delete_in_batches(ArticleImage.objects.filter(article__source=self))
         delete_in_batches(ArticleCount.objects.filter(article__source=self))
 
-        # the helpdesk's public site goes with its articles
+        # the helpdesk's public site goes with its articles, and its favicon with the article images
         for site in HelpSite.objects.filter(source=self):
+            if favicon := site.config.get(HelpSite.CONFIG_FAVICON):
+                image_paths.append(favicon)
             site.delete()
 
         # parent is PROTECT so flatten the article tree before deleting it
@@ -785,13 +811,13 @@ class KnowledgeSource(TembaModel):
         ]
 
 
-class Article(models.Model):
+class Article(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     """
     An article in an org's helpdesk. Written by this app, read by mailroom, which indexes only published, active
     articles.
 
-    Deliberately not a TembaModel: TembaModel.name is capped at 64 chars and NameValidator rejects " and \\, which real
-    help titles routinely contain. Soft-deleted like Shortcut so mailroom's delta sweep sees the tombstone - a hard
+    Deliberately not an OrgAsset: OrgAsset.name is capped at 64 chars and NameValidator rejects " and \\, which real
+    help titles routinely contain. Soft-deleted like Shortcut so mailroom's delta index sees the tombstone - a hard
     delete would leave its chunks stranded until a full reindex.
     """
 
@@ -835,13 +861,8 @@ class Article(models.Model):
     status = models.CharField(max_length=1, choices=STATUS_CHOICES, default=STATUS_DRAFT)
     published_on = models.DateTimeField(null=True)
 
-    is_active = models.BooleanField(default=True)
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
-    created_on = models.DateTimeField(default=timezone.now)
-    modified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
-    # auto_now is load-bearing: mailroom's staleness sweep is MAX(modified_on) > source.last_indexed_on, so an
-    # unpublish or a soft-delete has to bump it for the removal to be noticed
-    modified_on = models.DateTimeField(auto_now=True)
+    # saving bumping modified_on is load-bearing: mailroom's staleness sweep is MAX(modified_on) >
+    # source.last_indexed_on, so an unpublish or a soft-delete has to bump it for the removal to be noticed
 
     @classmethod
     def create(
@@ -1021,7 +1042,7 @@ class Article(models.Model):
 
     def unpublish(self, user):
         """
-        Reverts to a draft. modified_on bumps, so mailroom's sweep sees the helpdesk as stale and drops our chunks.
+        Reverts to a draft. modified_on bumps, so mailroom's next index of the helpdesk drops our chunks.
         """
         self.status = self.STATUS_DRAFT
         self.published_on = None
@@ -1030,7 +1051,7 @@ class Article(models.Model):
 
     def release(self, user):
         """
-        Soft delete - a tombstone, so mailroom's delta sweep notices and drops our chunks. A section goes only once
+        Soft delete - a tombstone, so mailroom's next index of the helpdesk drops our chunks. A section goes only once
         it's empty, since its articles would otherwise be left as sections themselves; the images go for good, since
         nothing will render this body again.
         """
@@ -1039,6 +1060,7 @@ class Article(models.Model):
         )
 
         image_paths = list(self.images.values_list("path", flat=True))
+        was_published = self.status == self.STATUS_PUBLISHED
 
         with transaction.atomic():
             self.images.all().delete()
@@ -1052,6 +1074,10 @@ class Article(models.Model):
         # ATOMIC_REQUESTS means the atomic block above is only a savepoint, so the storage objects can't go until the
         # request's transaction commits - otherwise a later failure restores the article without its screenshots
         on_transaction_commit(lambda: [public_file_storage.delete(p) for p in image_paths])
+
+        # a draft was never indexed so there's nothing to drop
+        if was_published:
+            self.source.request_indexing()
 
     def __str__(self):
         return self.title
@@ -1080,7 +1106,7 @@ def get_article_image_path(article, image_uuid, content_type: str) -> str:
     )
 
 
-class ArticleImage(models.Model):
+class ArticleImage(CreatedByMixin):
     """
     A screenshot uploaded to an article and referenced from its markdown by URL. Stored in public storage because the
     eventual standalone help site serves these directly.
@@ -1096,9 +1122,6 @@ class ArticleImage(models.Model):
     path = models.CharField(max_length=2048)  # key in the public bucket
     content_type = models.CharField(max_length=255)
     size = models.IntegerField()
-
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
-    created_on = models.DateTimeField(default=timezone.now)
 
     @classmethod
     def is_allowed_type(cls, content_type: str) -> bool:
@@ -1200,7 +1223,7 @@ def generate_domain_token() -> str:
     return generate_secret(32)
 
 
-class HelpSite(models.Model):
+class HelpSite(CreatedByMixin, ModifiedByMixin):
     """
     The public face of an org's helpdesk: the site its published articles are read on. Previewed from inside the app,
     and served to the world on a domain of the org's own - one they point at us by CNAME and prove is theirs with a
@@ -1220,6 +1243,10 @@ class HelpSite(models.Model):
     CONFIG_PRIMARY_COLOR = "primary_color"  # links, buttons, accents
     CONFIG_HEADER_COLOR = "header_color"  # the header's background
     CONFIG_CHAT_CHANNEL = "chat_channel"  # the uuid of the WebChat channel whose widget the site embeds, if any
+    CONFIG_FAVICON = "favicon"  # the key in public storage of the site's own favicon, if it has one
+
+    FAVICON_CONTENT_TYPES = ("image/gif", "image/jpeg", "image/png", "image/webp")
+    MAX_FAVICON_SIZE = 1024 * 1024  # 1MB
 
     DEFAULT_PRIMARY_COLOR = "#2f6fed"
     DEFAULT_HEADER_COLOR = "#ffffff"
@@ -1259,11 +1286,6 @@ class HelpSite(models.Model):
     # the addresses of the site the org moved from, by path, to the uuid of the article or section each is now -
     # written by whatever brought the articles over, and only ever consulted for an address the site doesn't have
     redirects = models.JSONField(default=dict)
-
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
-    created_on = models.DateTimeField(default=timezone.now)
-    modified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
-    modified_on = models.DateTimeField(auto_now=True)
 
     @classmethod
     def get_or_create(cls, source, user):
@@ -1399,6 +1421,37 @@ class HelpSite(models.Model):
         """
         return "#ffffff" if is_dark_color(self.header_color) else "#1f2430"
 
+    @property
+    def favicon_url(self) -> str | None:
+        """
+        Where the site's own favicon is served from, if it has one - otherwise pages use the default.
+        """
+        path = self.config.get(self.CONFIG_FAVICON)
+        return public_file_storage.url(path) if path else None
+
+    def set_favicon(self, file):
+        """
+        Stores an uploaded image as the site's favicon, replacing any it had - or with None, goes back to the default.
+        Each is saved under a new key, so no browser or cache holds on to the old one.
+        """
+        old_path = self.config.get(self.CONFIG_FAVICON)
+
+        if file:
+            assert file.content_type in self.FAVICON_CONTENT_TYPES, "unsupported content type"
+
+            extension = mimetypes.guess_extension(file.content_type) or ".bin"  # see get_article_image_path
+            path = public_file_storage.save(
+                f"orgs/{self.source.org_id}/knowledge/{self.source.uuid}/site/favicon-{uuid4()}{extension}", file
+            )
+            self.config = {**self.config, self.CONFIG_FAVICON: path}
+        else:
+            self.config = {k: v for k, v in self.config.items() if k != self.CONFIG_FAVICON}
+
+        self.save(update_fields=("config", "modified_on"))
+
+        if old_path:
+            on_transaction_commit(lambda: public_file_storage.delete(old_path))
+
     @classmethod
     def get_chat_channels(cls, org):
         """
@@ -1532,61 +1585,40 @@ class HelpSite(models.Model):
 
     def search(self, query: str, limit: int = SEARCH_LIMIT) -> list:
         """
-        Searches the site's articles, returning (article, snippet) pairs, best first. Semantic search through mailroom
-        leads when the helpdesk has been indexed, and text search over titles and bodies fills in behind it - so a
-        search works before the first index, and still finds an exact phrase the embeddings rank low.
+        Searches the site's articles through mailroom's semantic search, returning (article, snippet) pairs, best
+        first. Nothing is found until the helpdesk has been indexed.
         """
         query = query.strip()
-        if not query:
+        if not query or not self.source.last_indexed_on:
             return []
 
         readable = self._published().filter(parent__in=self._published().filter(parent=None))
 
-        # the site is public, and a search costs an embedding and a scan of every body - so the same question asked
-        # again within a few minutes is answered from the last time, less anything unpublished since
+        # the site is public, and a search costs an embedding - so the same question asked again within a few minutes
+        # is answered from the last time, less anything unpublished since
         cache_key = self.SEARCH_CACHE_KEY % (self.id, hashlib.md5(f"{query.lower()}|{limit}".encode()).hexdigest())
         cached = cache.get(cache_key)
         if cached is not None:
             by_id = {a.id: a for a in readable.filter(id__in=[i for i, _ in cached]).select_related("parent")}
             return [(by_id[i], snippet) for i, snippet in cached if i in by_id]
 
+        try:
+            # an article can match as several chunks, so ask for more than we need to still fill the limit
+            hits = mailroom.get_client().knowledge_search(self.org, query, sources=[self.source], limit=limit * 3)
+        except RequestException as e:
+            logger.error(f"error searching knowledge: {e}", exc_info=True)
+            return []
+
         terms = [t for t in re.split(r"\W+", query) if len(t) > 2]  # worth marking in a snippet
 
-        ordered, snippets = [], {}
+        snippets = {}
+        for h in hits:
+            if h["item_key"] not in snippets:
+                snippets[h["item_key"]] = make_snippet(to_plain_text(h["text"]), terms)
 
-        if self.source.last_indexed_on:
-            try:
-                # the org's sources are searched together, so ask for more than we need and keep what's ours
-                results = mailroom.get_client().knowledge_search(self.org, query, limit=limit * 3)
-            except RequestException as e:
-                logger.error(f"error searching knowledge: {e}", exc_info=True)
-                results = []
+        by_uuid = {str(a.uuid): a for a in readable.filter(uuid__in=snippets.keys()).select_related("parent")}
+        results = [(by_uuid[k], snippet) for k, snippet in snippets.items() if k in by_uuid][:limit]
 
-            keys = []
-            for r in results:
-                if r["knowledge_uuid"] == str(self.source.uuid) and r["item_key"] not in keys:
-                    keys.append(r["item_key"])
-                    snippets[r["item_key"]] = make_snippet(to_plain_text(r["text"]), terms)
-
-            by_uuid = {str(a.uuid): a for a in readable.filter(uuid__in=keys).select_related("parent")}
-            ordered.extend(by_uuid[k] for k in keys if k in by_uuid)
-
-        if len(ordered) < limit:
-            # simple rather than a language config, since a helpdesk can hold articles in any language
-            vector = SearchVector("title", weight="A", config="simple") + SearchVector(
-                "body", weight="B", config="simple"
-            )
-            search = SearchQuery(query, search_type="websearch", config="simple")
-            matches = (
-                readable.exclude(id__in=[a.id for a in ordered])
-                .annotate(rank=SearchRank(vector, search))
-                .filter(rank__gt=0)
-                .order_by("-rank", "title")
-                .select_related("parent")[: limit - len(ordered)]
-            )
-            ordered.extend(matches)
-
-        results = [(a, snippets.get(str(a.uuid)) or make_snippet(a.as_plain_text(), terms)) for a in ordered[:limit]]
         cache.set(cache_key, [(a.id, snippet) for a, snippet in results], self.SEARCH_CACHE_TTL)
         return results
 
@@ -1656,7 +1688,7 @@ class HelpdeskImportType:
         raise NotImplementedError()
 
 
-class HelpdeskImport(models.Model):
+class HelpdeskImport(CreatedByMixin):
     """
     A help site brought over into the helpdesk from somewhere else, done in the background once the workspace has
     handed over what its type needs to get in. The page shows its progress as it goes, and what went wrong if it
@@ -1698,9 +1730,7 @@ class HelpdeskImport(models.Model):
     num_imported = models.IntegerField(default=0)
     error = models.CharField(max_length=255, null=True)
 
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
-    created_on = models.DateTimeField(default=timezone.now)
-    modified_on = models.DateTimeField(auto_now=True)
+    modified_on = models.DateTimeField(default=timezone.now)
     started_on = models.DateTimeField(null=True)
     finished_on = models.DateTimeField(null=True)
 
@@ -1762,6 +1792,7 @@ class HelpdeskImport(models.Model):
 
         self.status = self.STATUS_PROCESSING
         self.started_on = timezone.now()
+        self.modified_on = self.started_on
         self.save(update_fields=("status", "started_on", "modified_on"))
 
         try:
@@ -1775,19 +1806,26 @@ class HelpdeskImport(models.Model):
             self.error = _("Something went wrong. Please try again later.")
         else:
             self.status = self.STATUS_COMPLETE
-            self.source.mark_pending()
 
         secrets = imp_type.secret_config_keys if imp_type else ()
         self.config = {k: v for k, v in self.config.items() if k not in secrets}
         self.finished_on = timezone.now()
+        self.modified_on = self.finished_on
         self.save(update_fields=("status", "error", "config", "finished_on", "modified_on"))
+
+        # a failed import keeps what it brought in before failing - and this is the one request for all of it, as the
+        # article changes the import made don't request indexing themselves
+        if self.status == self.STATUS_COMPLETE or self.num_imported > 0:
+            self.source.mark_pending()
 
     def set_total(self, total: int):
         self.num_items = total
+        self.modified_on = timezone.now()
         self.save(update_fields=("num_items", "modified_on"))
 
     def advance(self):
         self.num_imported += 1
+        self.modified_on = timezone.now()
         self.save(update_fields=("num_imported", "modified_on"))
 
     def as_json(self) -> dict:
@@ -1808,7 +1846,7 @@ def get_knowledge_item_path(source, item_uuid, filename: str) -> str:
     return f"orgs/{source.org_id}/knowledge/{source.uuid}/{item_uuid}{Path(filename).suffix.lower()}"
 
 
-class KnowledgeItem(models.Model):
+class KnowledgeItem(CreatedByMixin):
     """
     One page or one uploaded document in an ingested knowledge source.
 
@@ -1860,7 +1898,6 @@ class KnowledgeItem(models.Model):
     created_by = models.ForeignKey(  # null for crawled pages - nobody uploaded them
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+"
     )
-    created_on = models.DateTimeField(default=timezone.now)
 
     @classmethod
     def is_allowed_type(cls, content_type: str) -> bool:

@@ -5,7 +5,7 @@ from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 
 from temba.orgs.views.mixins import UniqueNameMixin
-from temba.utils.fields import CheckboxWidget, ColorInputWidget, InputWidget, SelectWidget
+from temba.utils.fields import CheckboxWidget, ColorInputWidget, ImagePickerWidget, InputWidget, SelectWidget
 
 from .models import Article, HelpdeskImport, HelpSite, KnowledgeSource
 
@@ -166,6 +166,19 @@ class SectionForm(forms.ModelForm):
         labels = {"title": _("Title")}
 
 
+class FaviconField(forms.ImageField):
+    """
+    An image upload that's turned away on size before Pillow is asked to open it.
+    """
+
+    def to_python(self, data):
+        if data and data.size > HelpSite.MAX_FAVICON_SIZE:
+            raise forms.ValidationError(
+                _("Limit for file uploads is %s MB") % (HelpSite.MAX_FAVICON_SIZE // (1024 * 1024))
+            )
+        return super().to_python(data)
+
+
 class HelpSiteForm(forms.ModelForm):
     """
     The help site's settings - what it says about itself, whether it's up, where it lives, and its few colors.
@@ -192,6 +205,13 @@ class HelpSiteForm(forms.ModelForm):
         label=_("Footer"),
         help_text=_("Shown at the bottom of every page."),
         widget=InputWidget(),
+    )
+    # cleared, it's False - the site goes back to the default
+    favicon = FaviconField(
+        required=False,
+        label=_("Icon"),
+        help_text=_("Shown in the browser tab. An open book if you don't choose one."),
+        widget=ImagePickerWidget(attrs={"clearable": True}),
     )
     chat_channel = forms.ChoiceField(
         required=False,
@@ -227,6 +247,10 @@ class HelpSiteForm(forms.ModelForm):
             (str(channel.uuid), channel.name) for channel in HelpSite.get_chat_channels(org)
         ]
 
+        # the picker shows the favicon the site has now - it's not a file field of the model to be given as a value
+        if self.instance.favicon_url:
+            self.fields["favicon"].widget.attrs["url"] = self.instance.favicon_url
+
     def _clean_color(self, field: str, required: bool) -> str:
         value = (self.cleaned_data[field] or "").strip().lower()
         if not value and not required:
@@ -234,6 +258,13 @@ class HelpSiteForm(forms.ModelForm):
         if not self.COLOR_PATTERN.match(value):
             raise forms.ValidationError(_("Not a valid color."))
         return value
+
+    def clean_favicon(self):
+        # the content type is Pillow's, from the image itself
+        file = self.cleaned_data.get("favicon")
+        if file and file.content_type not in HelpSite.FAVICON_CONTENT_TYPES:
+            raise forms.ValidationError(_("Unsupported file type"))
+        return file
 
     def clean_primary_color(self):
         return self._clean_color("primary_color", required=True)

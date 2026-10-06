@@ -609,7 +609,11 @@ class TestClient(MailroomClient):
         return {}
 
     @_client_method
-    def knowledge_search(self, org, query: str, limit: int = 10) -> list[dict]:
+    def knowledge_index(self, org, source):
+        return {}
+
+    @_client_method
+    def knowledge_search(self, org, query: str, sources: list = None, limit: int = 10) -> list[dict]:
         assert self.mocks._knowledge_search, "missing knowledge_search mock"
 
         return self.mocks._knowledge_search.pop(0)
@@ -766,6 +770,9 @@ def apply_modifiers(org, user, contacts, modifiers: list):
 
         if mod.type == "language":
             fields = dict(language=mod.language)
+
+        if mod.type == "email":
+            fields = dict(email=mod.email.strip().lower() or None, email_verified_on=None)
 
         if mod.type == "field":
             for c in contacts:

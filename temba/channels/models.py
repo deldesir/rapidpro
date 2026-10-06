@@ -29,8 +29,8 @@ from temba.utils import dynamo, on_transaction_commit, redact
 from temba.utils.models import (
     JSONAsTextField,
     LegacyIDMixin,
-    TembaModel,
-    TembaUUIDMixin,
+    OrgAsset,
+    UUIDMixin,
     delete_in_batches,
     generate_uuid,
 )
@@ -238,7 +238,7 @@ def _get_default_channel_scheme():
     return ["tel"]
 
 
-class Channel(LegacyIDMixin, TembaModel, DependencyMixin):
+class Channel(LegacyIDMixin, OrgAsset, DependencyMixin):
     """
     Notes:
         - we want to reuse keys as much as possible (2018-10-11)
@@ -715,7 +715,7 @@ class ChannelCount(BaseDailyCount):
         ]
 
 
-class ChannelEvent(TembaUUIDMixin, models.Model):
+class ChannelEvent(UUIDMixin, models.Model):
     """
     An event other than a message that occurs between a channel and a contact. Can be used to trigger flows etc.
     """

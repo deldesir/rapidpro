@@ -2,7 +2,6 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone as tzone
 
 from django_valkey import get_valkey_connection
-from smartmin.models import SmartModel
 
 from django.contrib.postgres.fields import ArrayField
 from django.db import models
@@ -16,10 +15,17 @@ from temba.contacts.models import ContactField, ContactGroup, ContactGroupCount
 from temba.flows.models import Flow
 from temba.orgs.models import Org
 from temba.utils import json, languages, on_transaction_commit
-from temba.utils.models import TembaModel, TembaUUIDMixin, delete_in_batches
+from temba.utils.models import (
+    CreatedByMixin,
+    ModifiedByMixin,
+    OrgAsset,
+    SoftDeleteMixin,
+    UUIDMixin,
+    delete_in_batches,
+)
 
 
-class Campaign(TembaModel):
+class Campaign(OrgAsset):
     org = models.ForeignKey(Org, related_name="campaigns", on_delete=models.PROTECT)
     group = models.ForeignKey(ContactGroup, on_delete=models.PROTECT, related_name="campaigns")
     is_archived = models.BooleanField(default=False)
@@ -320,7 +326,7 @@ class Campaign(TembaModel):
         verbose_name_plural = _("Campaigns")
 
 
-class CampaignEvent(TembaUUIDMixin, SmartModel):
+class CampaignEvent(UUIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     """
     An event within a campaign that can send a message to a contact or start them in a flow
     """
