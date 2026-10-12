@@ -118,6 +118,39 @@ export function moveArticle(
   return result;
 }
 
+/** Whether an article's title holds the query, ignoring case. */
+export function matchesQuery(article: Article, query: string): boolean {
+  const needle = query.trim().toLocaleLowerCase();
+  return !needle || (article.title || '').toLocaleLowerCase().includes(needle);
+}
+
+/**
+ * Reads a slot amongst the articles a filter leaves showing as the index
+ * that slot has amongst all of a card's articles - both with the dragged
+ * one already out, the way `moveArticle` takes it. A drop lands just
+ * before the shown article it was dropped above, or just after the last
+ * shown one, so the articles the filter is hiding keep their places.
+ */
+export function toFullIndex(
+  all: Article[],
+  shown: Article[],
+  slot: number,
+  dragged: string
+): number {
+  const rest = all.filter((article) => article.uuid !== dragged);
+  const visible = shown.filter((article) => article.uuid !== dragged);
+  const indexOf = (target: Article) =>
+    rest.findIndex((article) => article.uuid === target.uuid);
+
+  if (slot < visible.length) {
+    return indexOf(visible[slot]);
+  }
+  if (visible.length === 0) {
+    return rest.length;
+  }
+  return indexOf(visible[visible.length - 1]) + 1;
+}
+
 /**
  * The helpdesk as sortable cards: each root article is a section
  * rendered as a card of the articles under it, the way the contact page
@@ -134,6 +167,11 @@ export function moveArticle(
  * this component renders the placeholder in whichever card the drop
  * would land in - or rings a shut card, which files the article at its
  * end.
+ *
+ * A search filters the articles live. Every card stays on the page so
+ * any of them can still take a drop: those with a match open to show
+ * just the matching articles (or all of them, when it's the section's
+ * own title that matches), and the rest shut down to a dimmed header.
  */
 export class HelpdeskCards extends RapidElement {
   static get styles() {
@@ -231,6 +269,63 @@ export class HelpdeskCards extends RapidElement {
 
       .main {
         min-width: 0;
+      }
+
+      /* the search rides the top of the outline, staying in reach while
+         a long one scrolls - and while a drag carries an article down it */
+      .searchbar {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 14px 44px;
+        padding: 0 10px 0 12px;
+        height: 38px;
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        background: var(--surface);
+        box-shadow: var(--shadow-1);
+        color: var(--text-3);
+        --icon-color: var(--text-3);
+      }
+
+      .searchbar:focus-within {
+        border-color: var(--accent-400);
+        box-shadow: 0 0 0 3px var(--accent-100);
+      }
+
+      .searchbar input {
+        flex: 1 1 auto;
+        min-width: 0;
+        border: 0;
+        background: transparent;
+        outline: 0;
+        font: inherit;
+        font-size: 13.5px;
+        color: var(--text-1);
+      }
+
+      .searchbar input::placeholder {
+        color: var(--text-3);
+      }
+
+      .search-count {
+        flex: none;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .search-cancel {
+        flex: none;
+        --icon-color-circle-hover: rgba(15, 22, 36, 0.1);
+      }
+
+      .no-matches {
+        margin: -4px 0 14px 44px;
+        color: var(--text-3);
+        font-size: 13px;
       }
 
       /* ==========================================================
@@ -378,6 +473,24 @@ export class HelpdeskCards extends RapidElement {
         border-style: dashed;
         border-color: var(--text-4);
         color: var(--text-3);
+      }
+
+      /* a card without a match is still a whole section - and still a
+         place to drop - so it keeps its full strength, just shut down to
+         its title and a note that nothing in it matched */
+      temba-card[no-match] .description {
+        display: none;
+      }
+
+      temba-card[no-match] .meta {
+        margin-top: 2px;
+      }
+
+      /* the part of a title the search matched */
+      mark {
+        background: var(--warning-bg);
+        color: inherit;
+        border-radius: 2px;
       }
 
       /* a drop landing on a shut card files into it, so the whole card
@@ -853,6 +966,14 @@ export class HelpdeskCards extends RapidElement {
   @state()
   private loaded = false;
 
+  /** What the articles are filtered by, live. */
+  @state()
+  private query = '';
+
+  /** How the cards were opened and shut before a search took them over,
+   * so clearing it puts them back. */
+  private collapsedBeforeSearch: Map<string, boolean> = null;
+
   /** Where a row dragged out of its card would land right now. */
   @state()
   private dropTarget: DropTarget = null;
@@ -866,6 +987,13 @@ export class HelpdeskCards extends RapidElement {
     super.updated(changes);
     if (changes.has('endpoint') && changes.get('endpoint') !== undefined) {
       this.fetchArticles();
+    }
+    if (changes.has('query')) {
+      this.applySearchToCards(true);
+    } else if (changes.has('sections') && this.isSearching()) {
+      // an article moved or arrived during a search - open whichever card
+      // it matches in, but leave shut cards the user opened alone
+      this.applySearchToCards(false);
     }
   }
 
@@ -891,6 +1019,89 @@ export class HelpdeskCards extends RapidElement {
         console.warn('Failed to save article order', error);
       })
       .finally(() => this.refresh());
+  }
+
+  // ==========================================================
+  // Search
+  // ==========================================================
+
+  private isSearching(): boolean {
+    return this.query.trim().length > 0;
+  }
+
+  /** The section's articles the search leaves showing. The search is
+   * for articles, so a section's own title doesn't count as a match. */
+  private getShownArticles(group: Section): Article[] {
+    if (!this.isSearching()) {
+      return group.articles;
+    }
+    return group.articles.filter((article) =>
+      matchesQuery(article, this.query)
+    );
+  }
+
+  private hasMatch(group: Section): boolean {
+    return group.articles.some((article) => matchesQuery(article, this.query));
+  }
+
+  /** Opens the cards holding a match and - when `shutOthers` - shuts the
+   * rest, keeping how they all stood before the search started so that
+   * clearing it can put them back. */
+  private applySearchToCards(shutOthers: boolean): void {
+    const cards = this.getCards();
+    if (cards.length === 0) {
+      return;
+    }
+
+    // the overview's expand/collapse label reads the cards, so it only
+    // needs another render when one of them actually moved
+    let changed = false;
+    const setCollapsed = (card: Card, collapsed: boolean) => {
+      if (card.collapsed !== collapsed) {
+        card.setCollapsed(collapsed);
+        changed = true;
+      }
+    };
+
+    if (!this.isSearching()) {
+      const before = this.collapsedBeforeSearch;
+      this.collapsedBeforeSearch = null;
+      cards.forEach((card) => {
+        if (before?.has(card.id)) {
+          setCollapsed(card, before.get(card.id));
+        }
+      });
+    } else {
+      if (!this.collapsedBeforeSearch) {
+        this.collapsedBeforeSearch = new Map(
+          cards.map((card) => [card.id, card.collapsed])
+        );
+      }
+
+      this.sections.forEach((group) => {
+        const card = cards.find((card) => card.id === group.section.uuid);
+        if (!card) {
+          return;
+        }
+        if (this.hasMatch(group)) {
+          setCollapsed(card, false);
+        } else if (shutOthers) {
+          setCollapsed(card, true);
+        }
+      });
+    }
+
+    if (changed) {
+      this.requestUpdate();
+    }
+  }
+
+  private handleSearchInput(event: InputEvent): void {
+    this.query = (event.target as HTMLInputElement).value || '';
+  }
+
+  private clearSearch(): void {
+    this.query = '';
   }
 
   // ==========================================================
@@ -935,20 +1146,26 @@ export class HelpdeskCards extends RapidElement {
     // the outer stack listens for its own swaps on this same event
     event.stopPropagation();
 
+    // the swap counts only the rows the search leaves showing
     const [from, to] = event.detail.swap;
     const group = this.sections[sectionIndex];
-    if (!group || from === to || !group.articles[from]) {
+    const shown = group ? this.getShownArticles(group) : [];
+    if (from === to || !shown[from]) {
       return;
     }
 
-    const articles = [...group.articles];
-    const [moved] = articles.splice(from, 1);
-    articles.splice(to, 0, moved);
+    const uuid = shown[from].uuid;
+    const moved = moveArticle(
+      this.sections,
+      uuid,
+      sectionIndex,
+      toFullIndex(group.articles, shown, to, uuid)
+    );
+    if (!moved) {
+      return;
+    }
 
-    const sections = [...this.sections];
-    sections[sectionIndex] = { ...group, articles };
-    this.sections = sections;
-
+    this.sections = moved;
     this.postOrder();
   }
 
@@ -985,7 +1202,8 @@ export class HelpdeskCards extends RapidElement {
       };
     }
 
-    // the slot above the first row whose midpoint the pointer is above
+    // the slot above the first row whose midpoint the pointer is above -
+    // amongst the rows showing, which a search may have narrowed
     const rows = Array.from(
       cards[section].querySelectorAll('.row')
     ) as HTMLElement[];
@@ -1025,11 +1243,22 @@ export class HelpdeskCards extends RapidElement {
       return;
     }
 
+    const group = this.sections[target.section];
+    const index =
+      target.into || !group
+        ? target.index
+        : toFullIndex(
+            group.articles,
+            this.getShownArticles(group),
+            target.index,
+            event.detail.id
+          );
+
     const moved = moveArticle(
       this.sections,
       event.detail.id,
       target.section,
-      target.index
+      index
     );
     if (!moved) {
       return;
@@ -1106,18 +1335,37 @@ export class HelpdeskCards extends RapidElement {
       : null;
   }
 
-  private renderRow(article: Article): TemplateResult {
+  /** The title, with the part the search matched picked out. */
+  private renderTitle(title: string): TemplateResult | string {
+    const needle = this.query.trim().toLocaleLowerCase();
+    const lowered = title.toLocaleLowerCase();
+    const at = needle ? lowered.indexOf(needle) : -1;
+
+    // lowering some characters (e.g. İ) changes the length, and then the
+    // offsets would mark the wrong part of the original - so mark nothing
+    if (at < 0 || lowered.length !== title.length) {
+      return title;
+    }
+    return html`${title.slice(0, at)}<mark>${title.slice(
+      at,
+      at + needle.length
+    )}</mark>${title.slice(at + needle.length)}`;
+  }
+
+  private renderRow(article: Article, position: number): TemplateResult {
     const classes = ['row'];
     if (this.sortEndpoint) classes.push('sortable');
     if (article.status === 'draft') classes.push('draft');
 
     // the position is drawn by a counter, so it follows the row as a drag
     // reflows its card; sortable, it doubles as the handle the row is
-    // picked up by
+    // picked up by. A search hides rows, so it pins each one's count to
+    // where the article really sits.
     return html`
       <div
         class=${classes.join(' ')}
         id=${article.uuid}
+        style=${this.isSearching() ? `counter-set: article ${position}` : ''}
         @click=${() => this.handleArticleClick(article)}
       >
         ${this.sortEndpoint
@@ -1128,7 +1376,7 @@ export class HelpdeskCards extends RapidElement {
             ></span>`
           : html`<span class="position"></span>`}
         <div class="title" title=${article.title || ''}>
-          ${article.title || ''}
+          ${this.renderTitle(article.title || '')}
         </div>
         ${this.renderStatus(article)}
       </div>
@@ -1139,9 +1387,10 @@ export class HelpdeskCards extends RapidElement {
     // rows keyed by article so a mid-drag render (the cross-card
     // placeholder arriving) moves the placeholder without rebuilding the
     // rows around it - in particular the one the drag is hiding
-    const rows = group.articles.map((article) => ({
+    const shown = this.getShownArticles(group);
+    const rows = shown.map((article) => ({
       key: article.uuid,
-      content: this.renderRow(article)
+      content: this.renderRow(article, group.articles.indexOf(article) + 1)
     }));
 
     const target = this.dropTarget;
@@ -1155,7 +1404,7 @@ export class HelpdeskCards extends RapidElement {
 
     return html`
       <temba-sortable-list
-        class="rows ${group.articles.length ? '' : 'empty'}"
+        class="rows ${shown.length ? '' : 'empty'}"
         dragHandle="drag-handle"
         .ghostContainer=${this.renderRoot}
         .overlapDrop=${true}
@@ -1173,27 +1422,29 @@ export class HelpdeskCards extends RapidElement {
           (row) => row.key,
           (row) => row.content
         )}
-        ${group.articles.length || placeholder
+        ${shown.length || placeholder
           ? null
-          : html`<div class="empty-note">
-              No articles yet
-              ${this.createEndpoint
-                ? html`<span
-                    class="empty-add"
-                    role="button"
-                    tabindex="0"
-                    @click=${() => this.handleAddArticle(group.section)}
-                    @keydown=${(event: KeyboardEvent) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        this.handleAddArticle(group.section);
-                      }
-                    }}
-                    ><temba-icon name=${Icon.add} size="0.9"></temba-icon> Add
-                    article</span
-                  >`
-                : null}
-            </div>`}
+          : group.articles.length
+            ? html`<div class="empty-note">No matching articles</div>`
+            : html`<div class="empty-note">
+                No articles yet
+                ${this.createEndpoint
+                  ? html`<span
+                      class="empty-add"
+                      role="button"
+                      tabindex="0"
+                      @click=${() => this.handleAddArticle(group.section)}
+                      @keydown=${(event: KeyboardEvent) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          this.handleAddArticle(group.section);
+                        }
+                      }}
+                      ><temba-icon name=${Icon.add} size="0.9"></temba-icon> Add
+                      article</span
+                    >`
+                  : null}
+              </div>`}
       </temba-sortable-list>
     `;
   }
@@ -1209,21 +1460,28 @@ export class HelpdeskCards extends RapidElement {
     return articles.filter((article) => article.status === 'draft').length;
   }
 
-  /** How much the section holds, beneath what it says about itself. */
+  /** How much the section holds, beneath what it says about itself -
+   * or, during a search, how much of it matches. */
   private renderSummary(group: Section): TemplateResult {
     const count = group.articles.length;
     const drafts = this.countDrafts(group.articles);
+
+    let counted = count
+      ? `${count} ${count === 1 ? 'article' : 'articles'}`
+      : 'No articles';
+    if (this.isSearching()) {
+      const matches = this.getShownArticles(group).length;
+      counted = matches
+        ? `${matches} of ${counted} ${matches === 1 ? 'matches' : 'match'}`
+        : 'No matching articles';
+    }
 
     return html`<div slot="description" class="summary">
       ${group.section.description
         ? html`<div class="description">${group.section.description}</div>`
         : null}
       <div class="meta">
-        <span class="count"
-          >${count
-            ? `${count} ${count === 1 ? 'article' : 'articles'}`
-            : 'No articles'}</span
-        >
+        <span class="count">${counted}</span>
         ${drafts
           ? html`<span class="sep">·</span
               ><span class="drafts"
@@ -1251,6 +1509,7 @@ export class HelpdeskCards extends RapidElement {
         label=${group.section.title}
         ?drop-into=${target && target.section === index && target.into}
         ?unpublished=${this.isUnpublished(group)}
+        ?no-match=${this.isSearching() && !this.hasMatch(group)}
       >
         <div slot="header-actions" class="section-actions">
           <span
@@ -1388,6 +1647,57 @@ export class HelpdeskCards extends RapidElement {
     `;
   }
 
+  private renderSearch(): TemplateResult {
+    if (!this.loaded || this.sections.length === 0) {
+      return null;
+    }
+
+    const searching = this.isSearching();
+    const matches = searching
+      ? this.sections.reduce(
+          (total, group) => total + this.getShownArticles(group).length,
+          0
+        )
+      : 0;
+
+    return html`
+      <div class="searchbar">
+        <temba-icon name=${Icon.search} size="1"></temba-icon>
+        <input
+          type="text"
+          placeholder="Search articles"
+          aria-label="Search articles"
+          .value=${this.query}
+          @input=${this.handleSearchInput}
+          @keydown=${(event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+              this.clearSearch();
+            }
+          }}
+        />
+        ${searching
+          ? html`<span class="search-count"
+                >${matches} ${matches === 1 ? 'match' : 'matches'}</span
+              >
+              <temba-icon
+                class="search-cancel"
+                name=${Icon.close}
+                size="1.1"
+                clickable
+                title="Clear search"
+                aria-label="Clear search"
+                @click=${this.clearSearch}
+              ></temba-icon>`
+          : null}
+      </div>
+      ${searching && matches === 0
+        ? html`<div class="no-matches">
+            No articles match "${this.query.trim()}"
+          </div>`
+        : null}
+    `;
+  }
+
   public render(): TemplateResult {
     // the header decides whether to show a subtitle by looking for one in
     // its own light DOM, where our forwarding slot would always be found -
@@ -1415,6 +1725,7 @@ export class HelpdeskCards extends RapidElement {
             ${this.renderOverview()}
           </div>
           <div class="main">
+            ${this.renderSearch()}
             ${this.loaded && this.sections.length === 0
               ? html`<div class="empty-message">${this.emptyMessage}</div>`
               : html`
