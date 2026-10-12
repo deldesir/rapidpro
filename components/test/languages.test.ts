@@ -19,6 +19,13 @@ describe('getLanguageName', () => {
     expect(getLanguageName('tdt')).to.equal('Tetun Dili');
   });
 
+  it('names ISO-639-1 languages missing from browser locale data', () => {
+    expect(getLanguageName('aar')).to.equal('Afar');
+    expect(getLanguageName('bod')).to.equal('Tibetan');
+    expect(getLanguageName('run')).to.equal('Rundi');
+    expect(getLanguageName('vol')).to.equal('Volapük');
+  });
+
   it('returns the raw code for codes not in either source', () => {
     expect(getLanguageName('xx-invalid-code')).to.equal('xx-invalid-code');
   });
