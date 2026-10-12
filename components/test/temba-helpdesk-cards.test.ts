@@ -756,18 +756,65 @@ describe(TAG, () => {
       expect(row.style.getPropertyValue('counter-set')).to.equal('article 2');
       expect(row.querySelector('mark').textContent).to.equal('Conf');
 
+      // every card says how much of it matched, at full strength
+      const count = (card: HTMLElement) =>
+        card.querySelector('.meta .count').textContent.trim();
+      expect(count(gettingStarted)).to.equal('1 of 2 articles matches');
+      expect(count(flows)).to.equal('No matching articles');
+
       expect(
         cards.shadowRoot.querySelector('.search-count').textContent.trim()
       ).to.equal('1 match');
 
+      // clear of any card, so none is drawn hovered
+      await moveMouse(0, 0);
       await assertScreenshot('helpdesk-cards/search', getClip(cards));
     });
 
-    it("shows a section's every article when its title matches", async () => {
+    it("doesn't count a match on a section's own title", async () => {
       const cards = await getCards();
       await search(cards, 'getting');
 
+      expect(rowIds(cards, 0)).to.deep.equal([]);
+      expect(getCardElements(cards)[0].hasAttribute('no-match')).to.equal(true);
+      expect(
+        cards.shadowRoot.querySelector('.no-matches').textContent
+      ).to.contain('No articles match "getting"');
+    });
+
+    it('moves an article within a filtered card', async () => {
+      const cards = await getCards();
+      await search(cards, 'ing');
       expect(rowIds(cards, 0)).to.deep.equal(['installing', 'configuring']);
+
+      // Installing below Configuring
+      await dragArticle(cards, 0, 0, () => {
+        const below = getRows(cards, 0)[1].getBoundingClientRect();
+        return [below.left + 40, below.bottom + 2];
+      });
+
+      await waitForCondition(() => getSortPosts().length > 0);
+      expect(getSortPosts()[0]).to.deep.equal([
+        { uuid: 'getting-started', parent: null, sort_order: 0 },
+        { uuid: 'configuring', parent: 'getting-started', sort_order: 0 },
+        { uuid: 'installing', parent: 'getting-started', sort_order: 1 },
+        { uuid: 'flows', parent: null, sort_order: 1 },
+        { uuid: 'nodes', parent: 'flows', sort_order: 0 }
+      ]);
+    });
+
+    it('marks no part of a title whose case changes its length', async () => {
+      const cards = await getCards();
+      const [, flows] = (cards as any).sections;
+      flows.articles[0] = { ...flows.articles[0], title: 'İstanbul Nodes' };
+      (cards as any).sections = [...(cards as any).sections];
+      await search(cards, 'nodes');
+
+      const row = getRows(cards, 1)[0];
+      expect(row.querySelector('mark')).to.equal(null);
+      expect(row.querySelector('.title').textContent.trim()).to.equal(
+        'İstanbul Nodes'
+      );
     });
 
     it('says when nothing matches', async () => {
@@ -827,7 +874,7 @@ describe(TAG, () => {
 
     it('drops amongst the shown articles of another card', async () => {
       const cards = await getCards();
-      // Configuring alone in its card, and Flows matching by its title
+      // Configuring and Nodes, each alone in its card
       await search(cards, 'o');
       expect(rowIds(cards, 0)).to.deep.equal(['configuring']);
       expect(rowIds(cards, 1)).to.deep.equal(['nodes']);

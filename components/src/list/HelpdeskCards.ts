@@ -475,15 +475,15 @@ export class HelpdeskCards extends RapidElement {
         color: var(--text-3);
       }
 
-      /* a card without a match stays as a place to drop, but shrinks to
-         its header and steps back */
-      temba-card[no-match]::part(frame) {
-        opacity: 0.55;
-        box-shadow: none;
+      /* a card without a match is still a whole section - and still a
+         place to drop - so it keeps its full strength, just shut down to
+         its title and a note that nothing in it matched */
+      temba-card[no-match] .description {
+        display: none;
       }
 
-      temba-card[no-match] .summary {
-        display: none;
+      temba-card[no-match] .meta {
+        margin-top: 2px;
       }
 
       /* the part of a title the search matched */
@@ -1029,10 +1029,10 @@ export class HelpdeskCards extends RapidElement {
     return this.query.trim().length > 0;
   }
 
-  /** The section's articles the search leaves showing - all of them when
-   * the section's own title is the match. */
+  /** The section's articles the search leaves showing. The search is
+   * for articles, so a section's own title doesn't count as a match. */
   private getShownArticles(group: Section): Article[] {
-    if (!this.isSearching() || matchesQuery(group.section, this.query)) {
+    if (!this.isSearching()) {
       return group.articles;
     }
     return group.articles.filter((article) =>
@@ -1041,10 +1041,7 @@ export class HelpdeskCards extends RapidElement {
   }
 
   private hasMatch(group: Section): boolean {
-    return (
-      matchesQuery(group.section, this.query) ||
-      group.articles.some((article) => matchesQuery(article, this.query))
-    );
+    return group.articles.some((article) => matchesQuery(article, this.query));
   }
 
   /** Opens the cards holding a match and - when `shutOthers` - shuts the
@@ -1341,8 +1338,12 @@ export class HelpdeskCards extends RapidElement {
   /** The title, with the part the search matched picked out. */
   private renderTitle(title: string): TemplateResult | string {
     const needle = this.query.trim().toLocaleLowerCase();
-    const at = needle ? title.toLocaleLowerCase().indexOf(needle) : -1;
-    if (at < 0) {
+    const lowered = title.toLocaleLowerCase();
+    const at = needle ? lowered.indexOf(needle) : -1;
+
+    // lowering some characters (e.g. İ) changes the length, and then the
+    // offsets would mark the wrong part of the original - so mark nothing
+    if (at < 0 || lowered.length !== title.length) {
       return title;
     }
     return html`${title.slice(0, at)}<mark>${title.slice(
@@ -1459,21 +1460,28 @@ export class HelpdeskCards extends RapidElement {
     return articles.filter((article) => article.status === 'draft').length;
   }
 
-  /** How much the section holds, beneath what it says about itself. */
+  /** How much the section holds, beneath what it says about itself -
+   * or, during a search, how much of it matches. */
   private renderSummary(group: Section): TemplateResult {
     const count = group.articles.length;
     const drafts = this.countDrafts(group.articles);
+
+    let counted = count
+      ? `${count} ${count === 1 ? 'article' : 'articles'}`
+      : 'No articles';
+    if (this.isSearching()) {
+      const matches = this.getShownArticles(group).length;
+      counted = matches
+        ? `${matches} of ${counted} ${matches === 1 ? 'matches' : 'match'}`
+        : 'No matching articles';
+    }
 
     return html`<div slot="description" class="summary">
       ${group.section.description
         ? html`<div class="description">${group.section.description}</div>`
         : null}
       <div class="meta">
-        <span class="count"
-          >${count
-            ? `${count} ${count === 1 ? 'article' : 'articles'}`
-            : 'No articles'}</span
-        >
+        <span class="count">${counted}</span>
         ${drafts
           ? html`<span class="sep">·</span
               ><span class="drafts"
@@ -1647,12 +1655,7 @@ export class HelpdeskCards extends RapidElement {
     const searching = this.isSearching();
     const matches = searching
       ? this.sections.reduce(
-          (total, group) =>
-            total +
-            (matchesQuery(group.section, this.query) ? 1 : 0) +
-            group.articles.filter((article) =>
-              matchesQuery(article, this.query)
-            ).length,
+          (total, group) => total + this.getShownArticles(group).length,
           0
         )
       : 0;
