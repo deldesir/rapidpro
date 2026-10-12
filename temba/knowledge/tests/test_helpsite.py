@@ -234,6 +234,10 @@ class HelpSiteTest(TembaTest):
         self.assertIsNone(site.get_redirect("/e"))  # a prefix of a segment isn't an index
         self.assertIsNone(site.get_redirect("/en/article/nodes-x7ygk2/extra"))
 
+        # an index mapped to what isn't a page any more is still an index
+        site.redirects["/en"] = "6e1b2c4d-0000-0000-0000-000000000000"
+        self.assertEqual("/", site.get_redirect("/en"))
+
         site.redirects["/en/search"] = HelpSite.REDIRECT_HOME
         site.save(update_fields=("redirects",))
         self.assertEqual("/", site.get_redirect("/en/search/"))

@@ -1559,15 +1559,17 @@ class HelpSite(CreatedByMixin, ModifiedByMixin):
     def get_redirect(self, path: str, prefix: str = "") -> str | None:
         """
         Where an address of the site the org moved from leads now, if anywhere. One the mapping has leads to its page,
-        if that's still a page, or home if it's mapped there. One the mapping doesn't have but that leads to addresses
-        it does - an index of the old site, like its root for a language - leads home too.
+        if that's still a page, or home if it's mapped there. Otherwise one that leads to addresses the mapping has - an
+        index of the old site, like its root for a language - leads home too.
         """
         path = self.normalize_path(path)
         home = f"{prefix}/"
 
-        if path in self.redirects:
-            uuid = self.redirects[path]
-            return home if uuid == self.REDIRECT_HOME else self.get_link_targets(prefix).get(uuid)
+        uuid = self.redirects.get(path)
+        if uuid == self.REDIRECT_HOME:
+            return home
+        if uuid and (address := self.get_link_targets(prefix).get(uuid)):
+            return address
 
         if path != "/" and any(old.startswith(path + "/") for old in self.redirects):
             return home
