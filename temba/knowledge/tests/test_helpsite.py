@@ -227,6 +227,18 @@ class HelpSiteTest(TembaTest):
         )
         self.assertIsNone(site.get_redirect("/en/article/other-abc123/"))
 
+        # an index of the old site that leads to mapped addresses goes home, as does an address mapped there
+        self.assertEqual("/", site.get_redirect("/en"))
+        self.assertEqual("/", site.get_redirect("/EN/category/"))
+        self.assertEqual("/helpsite/preview/", site.get_redirect("/en/", "/helpsite/preview"))
+        self.assertIsNone(site.get_redirect("/e"))  # a prefix of a segment isn't an index
+        self.assertIsNone(site.get_redirect("/en/article/nodes-x7ygk2/extra"))
+
+        site.redirects["/en/search"] = HelpSite.REDIRECT_HOME
+        site.save(update_fields=("redirects",))
+        self.assertEqual("/", site.get_redirect("/en/search/"))
+        self.assertEqual("/helpsite/preview/", site.get_redirect("/en/search", "/helpsite/preview"))
+
         # an old address only leads to a page the site has
         nodes.unpublish(self.admin)
         self.assertIsNone(site.get_redirect("/en/article/nodes-x7ygk2/"))
