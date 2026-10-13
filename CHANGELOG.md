@@ -1,3 +1,7 @@
+## v26.3.137 (2026-10-13)
+ * Redirect old index pages and home-mapped addresses to the help site's home page
+ * Treat an index mapped to a missing page like an unmapped one
+
 ## v26.3.136 (2026-10-12)
  * Add a live article search to the helpdesk editor that searches articles only, keeps unmatched cards at full strength and skips highlights that lowercasing would misplace
  * Add fallback names for languages missing from browser locale data
