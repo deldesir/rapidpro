@@ -1,3 +1,6 @@
+## v26.3.139 (2026-10-13)
+ * Request flow spec 14.7.0 from the flow editor
+
 ## v26.3.138 (2026-10-13)
  * Bump flow spec version to 14.7.0
 
