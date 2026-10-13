@@ -1,3 +1,6 @@
+## v26.3.138 (2026-10-13)
+ * Bump flow spec version to 14.7.0
+
 ## v26.3.137 (2026-10-13)
  * Redirect old index pages and home-mapped addresses to the help site's home page
  * Treat an index mapped to a missing page like an unmapped one
