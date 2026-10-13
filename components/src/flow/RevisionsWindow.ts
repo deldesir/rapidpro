@@ -229,12 +229,12 @@ export class RevisionsWindow extends RapidElement {
   // merging the tag sets so the summary covers everything that happened in
   // the window. The merged revision is capped at three distinct displayed
   // labels — once a fourth would be introduced we break out into a new row.
-  // System and user revisions are never merged with each other, since the
-  // row would then show one party's change at the other's time.
+  // Revisions by different authors are never merged, since the row would
+  // then show one author's change at another's time.
   private collapseRevisions(revisions: Revision[]): Revision[] {
     // Spec-only revisions are dropped outright. The rest are normalized so
     // the logic below reasons about real edits only: `changes === null` is
-    // the single signal for "no-op" — used both for the author-barrier
+    // the single signal for "no-op" — used both for the time-window
     // bypass and for keeping housekeeping tags out of the merged tag set
     // and label cap.
     const cleaned = revisions
@@ -257,11 +257,6 @@ export class RevisionsWindow extends RapidElement {
     const flush = () => {
       if (group.length === 0) return;
       const head = group[0];
-      // Pick the user from the most recent real-change revision in the
-      // group, so a no-op author doesn't claim another user's absorbed
-      // edit. Fall back to the head if every revision was a no-op.
-      const realChange = group.find((r) => r.changes);
-      const displayUser = realChange?.user ?? head.user;
       const tagSet = new Set<string>();
       let anyKnown = false;
       for (const r of group) {
@@ -272,7 +267,6 @@ export class RevisionsWindow extends RapidElement {
       }
       result.push({
         ...head,
-        user: displayUser,
         changes: anyKnown ? { tags: Array.from(tagSet) } : null
       });
       group = [];
@@ -295,21 +289,20 @@ export class RevisionsWindow extends RapidElement {
       // back through the chain keeps both shapes working.
       const headId = head.user?.email ?? head.user?.username;
       const revId = rev.user?.email ?? rev.user?.username;
-      // Within the same kind (system or user), two conditions bypass the
-      // time/author barriers:
+      // Two conditions bypass the time window:
       //   1. The incoming rev is itself a no-op — it carries no editorial
       //      intent and should disappear into whichever group it neighbors.
       //   2. The group hasn't accumulated a real change yet — we never want
       //      to surface a row showing "nothing changed", so a no-op-only
       //      chain reaches forward to absorb the first real edit even if
-      //      that edit is far away in time or by a different author.
+      //      that edit is far away in time.
       const isNoOp = !rev.changes;
-      const bypassBarriers = isNoOp || !groupHasRealChange;
-      const withinWindow =
-        bypassBarriers || headTime - revTime < GROUP_WINDOW_MS;
-      const sameAuthor = bypassBarriers || headId === revId;
-      // Unlike the author check, the system/user split is never bypassed.
-      const sameKind = isSystemUser(head.user) === isSystemUser(rev.user);
+      const bypassWindow = isNoOp || !groupHasRealChange;
+      const withinWindow = bypassWindow || headTime - revTime < GROUP_WINDOW_MS;
+      // The author check is never bypassed, so a row only ever shows one
+      // author's changes. System revisions all share one identity, so they
+      // still collapse with each other but never with a user's revisions.
+      const sameAuthor = headId === revId;
       const prospective = new Set([...groupLabels, ...labelsFor(rev.changes)]);
       // The label cap is meaningful only when adding a real change to a
       // group that already has one. A no-op contributes zero labels by
@@ -320,7 +313,7 @@ export class RevisionsWindow extends RapidElement {
       const fitsLabelCap =
         isNoOp || !groupHasRealChange || prospective.size <= MAX_GROUP_LABELS;
 
-      if (sameKind && withinWindow && sameAuthor && fitsLabelCap) {
+      if (withinWindow && sameAuthor && fitsLabelCap) {
         group.push(rev);
         groupLabels = prospective;
         if (!isNoOp) groupHasRealChange = true;

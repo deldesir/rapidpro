@@ -557,9 +557,9 @@ describe('Editor Revisions', () => {
     ]);
   });
 
-  it('stops absorbing after the first real change is pulled in', async () => {
-    // Once a no-op chain has reached forward to grab a real edit, normal
-    // barriers resume — a second far-away real edit should NOT be swept up.
+  it("never lets one user's no-op revisions absorb another user's edit", async () => {
+    // A no-op chain may reach forward through time, but never across
+    // authors — otherwise Bob's recent row would show Eric's old edit.
     const bob = { email: 'bob@example.com', name: 'Bob' };
     const eric = { email: 'eric@textit.com', name: 'Eric' };
     const ann = { email: 'ann@example.com', name: 'Ann' };
@@ -597,12 +597,13 @@ describe('Editor Revisions', () => {
     await (revisionsWindow as any).fetchRevisions();
 
     const revisions = (revisionsWindow as any).revisions;
-    expect(revisions.length).to.equal(2);
-    expect(revisions[0].id).to.equal(4);
-    expect(revisions[0].user.email).to.equal('eric@textit.com');
-    expect(revisions[0].changes.tags).to.deep.equal(['layout']);
-    expect(revisions[1].id).to.equal(1);
-    expect(revisions[1].changes.tags).to.deep.equal(['actions']);
+    expect(revisions.map((r: any) => r.id)).to.deep.equal([4, 2, 1]);
+    expect(revisions[0].user.email).to.equal('bob@example.com');
+    expect(revisions[0].changes).to.equal(null);
+    expect(revisions[1].user.email).to.equal('eric@textit.com');
+    expect(revisions[1].changes.tags).to.deep.equal(['layout']);
+    expect(revisions[2].user.email).to.equal('ann@example.com');
+    expect(revisions[2].changes.tags).to.deep.equal(['actions']);
   });
 
   it('does not count the "spec" tag toward the label cap when collapsing', async () => {
