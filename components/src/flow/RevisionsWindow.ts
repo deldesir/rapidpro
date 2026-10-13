@@ -9,6 +9,7 @@ import { FlowDefinition } from '../store/flow-definition';
 import { fetchResults } from '../utils';
 import { FLOW_SPEC_VERSION } from '../store/AppState';
 import {
+  isHousekeepingOnly,
   labelsFor,
   normalizeChanges,
   RevisionChanges,
@@ -17,6 +18,9 @@ import {
 
 const GROUP_WINDOW_MS = 15 * 60 * 1000;
 const MAX_GROUP_LABELS = 3;
+
+const isSystemUser = (user: { email?: string } | null | undefined) =>
+  user?.email === 'system';
 
 export interface Revision {
   id: number;
@@ -195,7 +199,7 @@ export class RevisionsWindow extends RapidElement {
   // --- Private ---
 
   private renderUser(user: Revision['user']): TemplateResult | string {
-    if (user?.email === 'system') {
+    if (isSystemUser(user)) {
       return html`<em>${msg('System update')}</em>`;
     }
     return user?.name || user?.username || '';
@@ -225,15 +229,20 @@ export class RevisionsWindow extends RapidElement {
   // merging the tag sets so the summary covers everything that happened in
   // the window. The merged revision is capped at three distinct displayed
   // labels — once a fourth would be introduced we break out into a new row.
+  // System and user revisions are never merged with each other, since the
+  // row would then show one party's change at the other's time.
   private collapseRevisions(revisions: Revision[]): Revision[] {
-    // Normalize at the boundary so the rest of the logic reasons about real
-    // edits only. After this step, `changes === null` is the single signal
-    // for "no-op" — used both for the author-barrier bypass and for keeping
-    // housekeeping tags out of the merged tag set and label cap.
-    const cleaned = revisions.map((r) => ({
-      ...r,
-      changes: normalizeChanges(r.changes)
-    }));
+    // Spec-only revisions are dropped outright. The rest are normalized so
+    // the logic below reasons about real edits only: `changes === null` is
+    // the single signal for "no-op" — used both for the author-barrier
+    // bypass and for keeping housekeeping tags out of the merged tag set
+    // and label cap.
+    const cleaned = revisions
+      .filter((r) => !isHousekeepingOnly(r.changes))
+      .map((r) => ({
+        ...r,
+        changes: normalizeChanges(r.changes)
+      }));
     // The API returns newest-first today; sort defensively so the head/window
     // logic stays correct if that ever changes.
     const sorted = [...cleaned].sort(
@@ -249,11 +258,8 @@ export class RevisionsWindow extends RapidElement {
       if (group.length === 0) return;
       const head = group[0];
       // Pick the user from the most recent real-change revision in the
-      // group. No-op authors (typically the system, doing spec bumps)
-      // shouldn't appear as the editor when a real user's edit was
-      // absorbed into the row — that would mislabel the change as
-      // "System update" even though a real person did the work. Fall back
-      // to the head if every revision was a no-op.
+      // group, so a no-op author doesn't claim another user's absorbed
+      // edit. Fall back to the head if every revision was a no-op.
       const realChange = group.find((r) => r.changes);
       const displayUser = realChange?.user ?? head.user;
       const tagSet = new Set<string>();
@@ -289,7 +295,8 @@ export class RevisionsWindow extends RapidElement {
       // back through the chain keeps both shapes working.
       const headId = head.user?.email ?? head.user?.username;
       const revId = rev.user?.email ?? rev.user?.username;
-      // Two conditions bypass the time/author barriers:
+      // Within the same kind (system or user), two conditions bypass the
+      // time/author barriers:
       //   1. The incoming rev is itself a no-op — it carries no editorial
       //      intent and should disappear into whichever group it neighbors.
       //   2. The group hasn't accumulated a real change yet — we never want
@@ -301,6 +308,8 @@ export class RevisionsWindow extends RapidElement {
       const withinWindow =
         bypassBarriers || headTime - revTime < GROUP_WINDOW_MS;
       const sameAuthor = bypassBarriers || headId === revId;
+      // Unlike the author check, the system/user split is never bypassed.
+      const sameKind = isSystemUser(head.user) === isSystemUser(rev.user);
       const prospective = new Set([...groupLabels, ...labelsFor(rev.changes)]);
       // The label cap is meaningful only when adding a real change to a
       // group that already has one. A no-op contributes zero labels by
@@ -311,7 +320,7 @@ export class RevisionsWindow extends RapidElement {
       const fitsLabelCap =
         isNoOp || !groupHasRealChange || prospective.size <= MAX_GROUP_LABELS;
 
-      if (withinWindow && sameAuthor && fitsLabelCap) {
+      if (sameKind && withinWindow && sameAuthor && fitsLabelCap) {
         group.push(rev);
         groupLabels = prospective;
         if (!isNoOp) groupHasRealChange = true;
