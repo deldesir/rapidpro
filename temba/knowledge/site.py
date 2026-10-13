@@ -75,7 +75,15 @@ class SiteView(TemplateView):
         if not self.site or not self.site.is_available:
             raise Http404()
 
-        return super().dispatch(request, *args, **kwargs)
+        try:
+            return super().dispatch(request, *args, **kwargs)
+        except Http404:
+            # a page the site doesn't have may be an address of the site the org moved from
+            address = self.site.get_redirect(request.path, self.prefix) if request.method in ("GET", "HEAD") else None
+            if not address:
+                raise
+
+            return HttpResponsePermanentRedirect(address)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -138,16 +146,12 @@ class ArticleView(SiteView):
 
 class RedirectView(SiteView):
     """
-    Anything else asked of the site - which is where the addresses of the site the org moved from arrive. One the
-    site's mapping knows is sent on to where that page lives now; anything else is not found.
+    Anything else asked of the site - which is where the addresses of the site the org moved from arrive, to be sent
+    on wherever the site's mapping leads them (see SiteView.dispatch); anything else is not found.
     """
 
     def get(self, request, *args, **kwargs):
-        address = self.site.get_redirect(kwargs["path"], self.prefix)
-        if not address:
-            raise Http404()
-
-        return HttpResponsePermanentRedirect(address)
+        raise Http404()
 
 
 class SearchView(SiteView):
