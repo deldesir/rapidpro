@@ -21,7 +21,7 @@ import {
   resolveDependencyNames
 } from '../flow/dependencies';
 
-export const FLOW_SPEC_VERSION = '14.3';
+export const FLOW_SPEC_VERSION = '14.7.0';
 const CANVAS_PADDING = 800;
 
 // how long a revision load will wait on canonical names before rendering the
