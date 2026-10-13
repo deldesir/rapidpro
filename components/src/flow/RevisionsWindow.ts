@@ -232,23 +232,25 @@ export class RevisionsWindow extends RapidElement {
   // Revisions by different authors are never merged, since the row would
   // then show one author's change at another's time.
   private collapseRevisions(revisions: Revision[]): Revision[] {
-    // Spec-only revisions are dropped outright. The rest are normalized so
-    // the logic below reasons about real edits only: `changes === null` is
-    // the single signal for "no-op" — used both for the time-window
-    // bypass and for keeping housekeeping tags out of the merged tag set
-    // and label cap.
-    const cleaned = revisions
-      .filter((r) => !isHousekeepingOnly(r.changes))
+    // The API returns newest-first today; sort defensively so the head/window
+    // logic stays correct if that ever changes.
+    const newestFirst = [...revisions].sort(
+      (a, b) =>
+        new Date(b.created_on).getTime() - new Date(a.created_on).getTime()
+    );
+    // Spec-only revisions are dropped, except the newest revision, which is
+    // always kept so the "Current" row is the real current revision and the
+    // list is never empty. The rest are normalized so the logic below
+    // reasons about real edits only: `changes === null` is the single signal
+    // for "no-op" (no known changes) — used both for the time-window bypass
+    // and for keeping housekeeping tags out of the merged tag set and label
+    // cap.
+    const sorted = newestFirst
+      .filter((r, i) => i === 0 || !isHousekeepingOnly(r.changes))
       .map((r) => ({
         ...r,
         changes: normalizeChanges(r.changes)
       }));
-    // The API returns newest-first today; sort defensively so the head/window
-    // logic stays correct if that ever changes.
-    const sorted = [...cleaned].sort(
-      (a, b) =>
-        new Date(b.created_on).getTime() - new Date(a.created_on).getTime()
-    );
     const result: Revision[] = [];
     let group: Revision[] = [];
     let groupLabels = new Set<string>();
@@ -292,10 +294,11 @@ export class RevisionsWindow extends RapidElement {
       // Two conditions bypass the time window:
       //   1. The incoming rev is itself a no-op — it carries no editorial
       //      intent and should disappear into whichever group it neighbors.
-      //   2. The group hasn't accumulated a real change yet — we never want
-      //      to surface a row showing "nothing changed", so a no-op-only
-      //      chain reaches forward to absorb the first real edit even if
-      //      that edit is far away in time.
+      //   2. The group hasn't accumulated a real change yet — to avoid a
+      //      row with no summary, a no-op-only chain reaches forward to
+      //      absorb its author's next real edit even if that edit is far
+      //      away in time. If the next revision is by someone else, the
+      //      no-op row is shown on its own.
       const isNoOp = !rev.changes;
       const bypassWindow = isNoOp || !groupHasRealChange;
       const withinWindow = bypassWindow || headTime - revTime < GROUP_WINDOW_MS;

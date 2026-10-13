@@ -374,12 +374,6 @@ describe('Editor Revisions', () => {
     const system = { email: 'system', name: 'System' };
     const mockRevisions = [
       {
-        id: 5,
-        created_on: '2024-06-02T00:00:00Z',
-        user: system,
-        changes: { tags: ['spec'] }
-      },
-      {
         id: 4,
         created_on: '2024-06-01T12:10:00Z',
         user: adam,
@@ -414,6 +408,71 @@ describe('Editor Revisions', () => {
       'actions',
       'layout'
     ]);
+  });
+
+  it('keeps a spec-only newest revision so it stays the current row', async () => {
+    const adam = { email: 'adam@example.com', name: 'Adam McAdmin' };
+    const system = { email: 'system', name: 'System' };
+    const mockRevisions = [
+      {
+        id: 3,
+        created_on: '2026-03-19T00:00:00Z',
+        user: system,
+        changes: { tags: ['spec'] }
+      },
+      {
+        id: 2,
+        created_on: '2025-01-01T00:00:00Z',
+        user: system,
+        changes: { tags: ['spec'] }
+      },
+      {
+        id: 1,
+        created_on: '2024-01-01T00:00:00Z',
+        user: adam,
+        changes: { tags: ['actions'] }
+      }
+    ];
+
+    fetchStub.resolves(
+      new Response(JSON.stringify({ results: mockRevisions }), { status: 200 })
+    );
+
+    await (revisionsWindow as any).fetchRevisions();
+
+    const revisions = (revisionsWindow as any).revisions;
+    expect(revisions.map((r: any) => r.id)).to.deep.equal([3, 1]);
+    expect(revisions[0].user.email).to.equal('system');
+    expect(revisions[0].created_on).to.equal('2026-03-19T00:00:00Z');
+    expect(revisions[0].changes).to.equal(null);
+    expect(revisions[1].changes.tags).to.deep.equal(['actions']);
+  });
+
+  it('never filters the list down to nothing', async () => {
+    const system = { email: 'system', name: 'System' };
+    const mockRevisions = [
+      {
+        id: 2,
+        created_on: '2026-03-19T00:00:00Z',
+        user: system,
+        changes: { tags: ['spec'] }
+      },
+      {
+        id: 1,
+        created_on: '2025-01-01T00:00:00Z',
+        user: system,
+        changes: { tags: ['spec'] }
+      }
+    ];
+
+    fetchStub.resolves(
+      new Response(JSON.stringify({ results: mockRevisions }), { status: 200 })
+    );
+
+    await (revisionsWindow as any).fetchRevisions();
+
+    const revisions = (revisionsWindow as any).revisions;
+    expect(revisions.map((r: any) => r.id)).to.deep.equal([2]);
   });
 
   it('never collapses system revisions with user revisions', async () => {
