@@ -266,7 +266,7 @@ export class FieldRenderer {
       endpoint="${config.endpoint || ''}"
       queryParam="${config.queryParam || ''}"
       .helpText="${helpText || ''}"
-      flavor="${flavor || config.flavor || 'small'}"
+      flavor="${flavor || config.flavor || 'default'}"
       class="${extraClasses}"
       style="${style}"
       .getName=${config.getName}

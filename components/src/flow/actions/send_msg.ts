@@ -25,6 +25,8 @@ const ATTACHMENT_TYPE_NAMES: Record<string, string> = {
 
 export const send_msg: ActionConfig = {
   name: 'Send Message',
+  subtitle:
+    "Reply on the channel they're using, with quick replies or attachments.",
   group: ACTION_GROUPS.send,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   hideFromActions: true,

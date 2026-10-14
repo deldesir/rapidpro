@@ -6,6 +6,7 @@ import { renderClamped } from '../utils';
 
 export const set_contact_status: ActionConfig = {
   name: 'Update Status',
+  subtitle: "Stopped and blocked contacts won't get any more messages.",
   group: ACTION_GROUPS.contacts,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   render: (_node: Node, action: SetContactStatus) => {

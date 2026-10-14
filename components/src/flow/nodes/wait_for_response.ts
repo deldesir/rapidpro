@@ -82,6 +82,8 @@ const createWaitForResponseRouter = (
 export const wait_for_response: NodeConfig = {
   type: 'wait_for_response',
   name: 'Wait for Response',
+  subtitle:
+    "Sort the contact's reply into categories, with a timeout if they go quiet.",
   group: SPLIT_GROUPS.wait,
   flowTypes: [FlowTypes.MESSAGE],
   hideFromSplits: true,

@@ -6,6 +6,8 @@ import { shouldExcludeFlow } from '../flow-utils';
 
 export const enter_flow: ActionConfig = {
   name: 'Enter a Flow',
+  subtitle:
+    "The contact runs another flow, then carries on here once it's done.",
   group: ACTION_GROUPS.trigger,
   hideFromActions: true,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],

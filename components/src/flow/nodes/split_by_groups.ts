@@ -13,6 +13,7 @@ import {
 export const split_by_groups: NodeConfig = {
   type: 'split_by_groups',
   name: 'Split by Group',
+  subtitle: 'Send members of different groups down different paths.',
   group: SPLIT_GROUPS.split,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   form: {

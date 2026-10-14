@@ -11,6 +11,7 @@ import { SCHEMES, renderClamped, renderHighlightedText } from '../utils';
 
 export const add_contact_urn: ActionConfig = {
   name: 'Add URN',
+  subtitle: 'Save another phone number, handle or address for the contact.',
   group: ACTION_GROUPS.contacts,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   render: (_node: Node, action: AddContactUrn) => {

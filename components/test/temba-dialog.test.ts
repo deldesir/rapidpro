@@ -3,7 +3,10 @@ import * as sinon from 'sinon';
 import { Dialog } from '../src/layout/Dialog';
 import { assertScreenshot, getClip } from './utils.test';
 
-const getDialogClip = (dialog: Dialog) => {
+// measured once the dialog has finished updating, so a later render pass
+// can't leave part of it outside the clip
+const getDialogClip = async (dialog: Dialog) => {
+  await dialog.updateComplete;
   return getClip(
     dialog.shadowRoot.querySelector('.dialog-container') as HTMLElement
   );
@@ -91,7 +94,7 @@ describe('temba-dialog', () => {
 
     const input = dialog.querySelector('input');
     expect(document.activeElement).to.not.equal(input);
-    await assertScreenshot('dialog/focused', getDialogClip(dialog));
+    await assertScreenshot('dialog/focused', await getDialogClip(dialog));
   });
 
   it('hides on click', async () => {
@@ -280,6 +283,51 @@ describe('temba-dialog', () => {
 
       expect(confirmStub.calledOnce).to.equal(true);
       expect(dialog.open).to.equal(true);
+    });
+  });
+
+  describe('subtitle', () => {
+    it('renders under the header when set', async () => {
+      const dialog: Dialog = await fixture(
+        '<temba-dialog header="Hello" subtitle="A little more detail"></temba-dialog>'
+      );
+      const subtitle = dialog.shadowRoot.querySelector('.subtitle');
+      expect(subtitle.textContent.trim()).to.equal('A little more detail');
+    });
+
+    it('is left out when not set', async () => {
+      const dialog: Dialog = await fixture(getDialogHTML());
+      expect(dialog.shadowRoot.querySelector('.subtitle')).to.equal(null);
+    });
+  });
+
+  describe('exit', () => {
+    it("finishes right away when it can't animate", async () => {
+      // the suite runs with reduced motion, as some users do
+      const dialog: Dialog = await fixture(getDialogHTML());
+      await open(dialog);
+      expect(dialog.canAnimateExit()).to.equal(false);
+      await dialog.exit('cancel');
+    });
+
+    it('plays a submit after the primary button and a cancel otherwise', async () => {
+      const dialog: Dialog = await fixture(getDialogHTML());
+      const exit = sinon.spy(dialog, 'exit');
+
+      await open(dialog);
+      dialog.getPrimaryButton().click();
+      await close(dialog);
+      expect(exit.lastCall.args[0]).to.equal('submit');
+
+      // working in the dialog after the primary button (a submit that came
+      // back with errors) makes the next close a cancel
+      await open(dialog);
+      dialog.getPrimaryButton().click();
+      dialog.shadowRoot
+        .querySelector('.dialog-container')
+        .dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      await close(dialog);
+      expect(exit.lastCall.args[0]).to.equal('cancel');
     });
   });
 });

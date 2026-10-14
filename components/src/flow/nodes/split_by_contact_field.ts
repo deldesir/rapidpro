@@ -60,6 +60,7 @@ const getOperandForField = (field: any): string => {
 export const split_by_contact_field: NodeConfig = {
   type: 'split_by_contact_field',
   name: 'Split by Contact Field',
+  subtitle: 'Branch on what you already know about the contact.',
   group: SPLIT_GROUPS.split,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   dialogSize: 'large',

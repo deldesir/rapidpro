@@ -18,9 +18,14 @@ const assertDialogScreenshot = async (
   el: NodeEditorElement,
   screenshotName: string
 ) => {
-  const dialog = el.shadowRoot
-    .querySelector('temba-dialog')
-    .shadowRoot.querySelector('.dialog-container') as HTMLElement;
+  // measure once the dialog has finished updating, so a later render pass
+  // can't leave part of it outside the clip
+  const dialogEl = el.shadowRoot.querySelector('temba-dialog') as any;
+  await el.updateComplete;
+  await dialogEl.updateComplete;
+  const dialog = dialogEl.shadowRoot.querySelector(
+    '.dialog-container'
+  ) as HTMLElement;
   const clip = getClip(dialog);
   // Adjust width to show full dialog with proper padding
   const dialogRect = dialog.getBoundingClientRect();
@@ -1675,5 +1680,54 @@ describe('temba-node-editor', () => {
       const dialog = el.shadowRoot!.querySelector('temba-dialog') as any;
       expect(dialog.open).to.equal(true);
     });
+  });
+
+  it('waits for the dialog exit before announcing a save', async () => {
+    const action = {
+      uuid: 'test-action-uuid',
+      type: 'send_msg',
+      text: 'Hello world',
+      quick_replies: []
+    };
+
+    const el = (await fixture(html`
+      <temba-node-editor .action=${action} .isOpen=${true}></temba-node-editor>
+    `)) as NodeEditorElement;
+    await el.updateComplete;
+
+    // let the dialog animate, with an exit we finish by hand
+    const dialog = el.shadowRoot!.querySelector('temba-dialog') as Dialog;
+    let finishExit: () => void;
+    sinon.stub(dialog, 'canAnimateExit').returns(true);
+    const exit = sinon
+      .stub(dialog, 'exit')
+      .returns(new Promise<void>((resolve) => (finishExit = resolve)));
+
+    let saves = 0;
+    el.addEventListener('temba-action-saved', () => saves++);
+
+    const clickSave = () =>
+      dialog.dispatchEvent(
+        new CustomEvent('temba-button-clicked', {
+          detail: {
+            button: { name: 'Save' },
+            detail: { name: 'Save', type: 'primary' }
+          },
+          bubbles: true
+        })
+      );
+
+    clickSave();
+    expect(exit.calledOnceWith('submit')).to.equal(true);
+    expect(saves).to.equal(0);
+
+    // a second save while the dialog is leaving does nothing
+    clickSave();
+    expect(exit.callCount).to.equal(1);
+
+    finishExit();
+    await exit.firstCall.returnValue;
+    await el.updateComplete;
+    expect(saves).to.equal(1);
   });
 });

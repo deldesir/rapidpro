@@ -6,6 +6,12 @@ import { Icon } from '../Icons';
 import { CustomEventType, ObjectReference } from '../interfaces';
 import { formatCount, getUrl, postJSON, postUrl } from '../utils';
 import { designTokens } from '../styles/designTokens';
+import {
+  buttonChrome,
+  buttonChromeCompact,
+  buttonChromeActive,
+  buttonChromeHover
+} from '../styles/buttonChrome';
 
 /** A single column in the list. Subclasses typically define a static
  * set via {@link ContentList.columns}; consumers may also set it as
@@ -211,22 +217,14 @@ export class ContentList<T = any> extends RapidElement {
          transparent ground; host's slotted buttons can match this
          style or bring their own. */
       .action {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        cursor: pointer;
-        user-select: none;
-        height: 26px;
-        box-sizing: border-box;
-        padding: 0 10px;
-        border: 1px solid var(--border-strong);
-        border-radius: var(--r-sm);
-        background: transparent;
-        color: var(--text-2);
+        ${buttonChrome}
+        ${buttonChromeCompact}
       }
       .action:hover {
-        background: var(--sunken);
-        color: var(--text-1);
+        ${buttonChromeHover}
+      }
+      .action:active {
+        ${buttonChromeActive}
       }
       .action temba-icon {
         --icon-color: currentColor;

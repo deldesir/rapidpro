@@ -14,6 +14,7 @@ import { LLMModel, hasLLMRole } from '../flow-utils';
 export const split_by_llm: NodeConfig = {
   type: 'split_by_llm',
   name: 'Call AI',
+  subtitle: 'Give AI instructions, and use its answer later in the flow.',
   group: ACTION_GROUPS.services,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   showAsAction: true,

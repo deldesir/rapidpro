@@ -17,6 +17,7 @@ const DIAL_CASES = [
 export const wait_for_dial: NodeConfig = {
   type: 'wait_for_dial',
   name: 'Redirect Call',
+  subtitle: 'Connect the caller to another number, then branch on how it went.',
   group: SPLIT_GROUPS.wait,
   flowTypes: [FlowTypes.VOICE],
   router: {

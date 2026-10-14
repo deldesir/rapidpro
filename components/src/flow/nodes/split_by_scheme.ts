@@ -22,6 +22,8 @@ const getSchemeName = (scheme: string) =>
 export const split_by_scheme: NodeConfig = {
   type: 'split_by_scheme',
   name: 'Split by URN Type',
+  subtitle:
+    'Branch on how the contact reaches you, like SMS, WhatsApp or email.',
   group: SPLIT_GROUPS.split,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   form: {

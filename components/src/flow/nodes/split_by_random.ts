@@ -11,6 +11,7 @@ import {
 export const split_by_random: NodeConfig = {
   type: 'split_by_random',
   name: 'Random Split',
+  subtitle: 'Useful for A/B tests and spreading contacts across paths.',
   group: SPLIT_GROUPS.split,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   form: {

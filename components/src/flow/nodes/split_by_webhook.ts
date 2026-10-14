@@ -65,6 +65,8 @@ const defaultPost = `@(json(object(
 export const split_by_webhook: NodeConfig = {
   type: 'split_by_webhook',
   name: 'Call Webhook',
+  subtitle:
+    'Send or fetch data from your own systems, then branch on the response.',
   group: ACTION_GROUPS.services,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   showAsAction: true,

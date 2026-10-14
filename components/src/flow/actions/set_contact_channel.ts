@@ -5,6 +5,7 @@ import { renderClamped } from '../utils';
 
 export const set_contact_channel: ActionConfig = {
   name: 'Update Channel',
+  subtitle: 'Choose which of your channels reaches this contact from now on.',
   group: ACTION_GROUPS.contacts,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   render: (_node: Node, action: SetContactChannel) => {

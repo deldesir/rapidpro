@@ -6,6 +6,14 @@ import { EndpointMonitorElement } from '../store/EndpointMonitorElement';
 import { Icon } from '../Icons';
 import { designTokens } from '../styles/designTokens';
 import { formatCount, postJSON } from '../utils';
+import {
+  buttonChrome,
+  buttonChromeCompact,
+  buttonChromeActive,
+  buttonChromeDestructive,
+  buttonChromeDestructiveHover,
+  buttonChromeHover
+} from '../styles/buttonChrome';
 
 // resolved per call rather than held in a module-level map so the names
 // reflect the locale, which is only known once the store has loaded
@@ -136,22 +144,14 @@ export class FieldList extends EndpointMonitorElement {
       }
 
       .action {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        cursor: pointer;
-        user-select: none;
-        height: 26px;
-        box-sizing: border-box;
-        padding: 0 10px;
-        border: 1px solid var(--border-strong);
-        border-radius: var(--r-sm);
-        background: transparent;
-        color: var(--text-2);
+        ${buttonChrome}
+        ${buttonChromeCompact}
       }
       .action:hover {
-        background: var(--sunken);
-        color: var(--text-1);
+        ${buttonChromeHover}
+      }
+      .action:active {
+        ${buttonChromeActive}
       }
       .action temba-icon {
         --icon-color: currentColor;
@@ -355,35 +355,22 @@ export class FieldList extends EndpointMonitorElement {
       /* match the page header's content-menu buttons so the modal's
          actions read like page actions */
       .menu-button {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        box-sizing: border-box;
-        height: 26px;
-        padding: 0 10px;
-        border: 1px solid var(--border-strong, #9ca3af);
-        border-radius: var(--r-sm);
-        font-size: 12.5px;
-        font-weight: var(--w-regular, 400);
-        cursor: pointer;
-        user-select: none;
-        background: var(--surface);
-        color: var(--text-1);
-        white-space: nowrap;
+        ${buttonChrome}
       }
 
       .menu-button:hover {
-        background: var(--sunken);
+        ${buttonChromeHover}
+      }
+      .menu-button:active {
+        ${buttonChromeActive}
       }
 
       .menu-button.destructive {
-        color: #dc2626;
+        ${buttonChromeDestructive}
       }
 
       .menu-button.destructive:hover {
-        border-color: #dc2626;
-        /* pre-mixed fallback for browsers without color-mix() */
-        background: #fdf2f2;
+        ${buttonChromeDestructiveHover}
       }
 
       @supports (color: color-mix(in srgb, red, red)) {

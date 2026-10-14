@@ -132,6 +132,7 @@ export interface FormConfig {
 export interface NodeConfig extends FormConfig {
   type: string;
   name?: string;
+  subtitle?: string; // a short line under the name in the editor dialog's header
   aliases?: string[]; // alternate type names for backwards compatibility (won't show in selector)
   group?: ActionGroup | SplitGroup; // Nodes can use either when showAsAction is true
   dialogSize?: 'small' | 'medium' | 'large' | 'xlarge';
@@ -479,6 +480,7 @@ export const SPLIT_GROUP_METADATA: Record<SplitGroup, GroupMetadata> = {
 
 export interface ActionConfig extends FormConfig {
   name: string;
+  subtitle?: string; // a short line under the name in the editor dialog's header
   aliases?: string[]; // alternate type names for backwards compatibility (won't show in selector)
   group: ActionGroup;
   dialogSize?: 'small' | 'medium' | 'large' | 'xlarge';

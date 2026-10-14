@@ -5,6 +5,7 @@ import { renderClamped, renderHighlightedText } from '../utils';
 
 export const set_contact_name: ActionConfig = {
   name: 'Update Name',
+  subtitle: 'Useful once the contact has told you what to call them.',
   group: ACTION_GROUPS.contacts,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   render: (_node: Node, action: SetContactName) => {

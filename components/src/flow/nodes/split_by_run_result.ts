@@ -56,6 +56,7 @@ const DELIMIT_BY_OPTIONS = [
 export const split_by_run_result: NodeConfig = {
   type: 'split_by_run_result',
   name: 'Split by Result',
+  subtitle: 'Branch on an answer collected earlier in this flow.',
   aliases: ['split_by_run_result_delimited'], // backwards compatibility with old flow editor
   group: SPLIT_GROUPS.split,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],

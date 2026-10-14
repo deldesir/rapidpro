@@ -8,6 +8,7 @@ import { renderClamped } from '../utils';
 // no form, which makes the action read-only in the editor.
 export const request_optin: ActionConfig = {
   name: 'Request Opt-In',
+  subtitle: 'No longer supported. Shown so older flows still open.',
   group: ACTION_GROUPS.send,
   flowTypes: [],
   render: (_node: Node, action: RequestOptin) => {

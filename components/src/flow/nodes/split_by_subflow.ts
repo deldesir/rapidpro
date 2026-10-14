@@ -8,6 +8,8 @@ import { shouldExcludeFlow } from '../flow-utils';
 export const split_by_subflow: NodeConfig = {
   type: 'split_by_subflow',
   name: 'Enter a Flow',
+  subtitle:
+    'Run another flow, then come back here when it completes or expires.',
   group: ACTION_GROUPS.trigger,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   showAsAction: true,

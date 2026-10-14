@@ -1,4 +1,5 @@
 import { fixture, expect, assert } from '@open-wc/testing';
+import * as sinon from 'sinon';
 import { useFakeTimers } from 'sinon';
 import { Button } from '../src/display/Button';
 import { Dialog } from '../src/layout/Dialog';
@@ -66,8 +67,12 @@ const clickPrimary = async (modax: Modax) => {
   }
 };
 
-const getDialogClip = (modax: Modax) => {
-  const dialog = modax.shadowRoot.querySelector('temba-dialog');
+// measured once modax and its dialog have finished updating, since the footer
+// renders in a later pass and would otherwise fall outside the clip
+const getDialogClip = async (modax: Modax) => {
+  const dialog = modax.shadowRoot.querySelector('temba-dialog') as Dialog;
+  await modax.updateComplete;
+  await dialog.updateComplete;
   return getClip(
     dialog.shadowRoot.querySelector('.dialog-container') as HTMLElement
   );
@@ -100,7 +105,7 @@ describe('temba-modax', () => {
     // Now our body should have our endpoint text
     expect(modax.getBody().innerHTML).to.contain('Hello World');
 
-    await assertScreenshot('modax/simple', getDialogClip(modax));
+    await assertScreenshot('modax/simple', await getDialogClip(modax));
   });
 
   it('fetches forms', async () => {
@@ -115,7 +120,7 @@ describe('temba-modax', () => {
     expect(modax.buttons[1].name).to.equal('Save Everything');
     expect(modax.buttons[0].name).to.equal('Cancel');
 
-    await assertScreenshot('modax/form', getDialogClip(modax));
+    await assertScreenshot('modax/form', await getDialogClip(modax));
   });
 
   // the fetched form is rendered inside the modax, so its fields and the focus among them are read from there
@@ -357,5 +362,36 @@ describe('temba-modax', () => {
     await open(modax);
     expect(modax.style.getPropertyValue('--header-bg')).to.equal('');
     expect(modax.style.getPropertyValue('--header-text')).to.equal('');
+  });
+
+  it('keeps its body until the dialog exit finishes', async () => {
+    const modax: Modax = await fixture(
+      getModaxHTML('/test/assets/modax/hello.html')
+    );
+    await open(modax);
+
+    // an exit we finish by hand
+    const dialog = modax.shadowRoot.querySelector('temba-dialog') as Dialog;
+    let finishExit: () => void;
+    const exited = new Promise<void>((resolve) => (finishExit = resolve));
+    sinon.stub(dialog, 'exit').returns(exited);
+
+    const body = modax.getBody().innerHTML;
+    expect(body).to.not.equal('');
+
+    modax.open = false;
+    await modax.updateComplete;
+    await dialog.updateComplete;
+    expect(modax.getBody().innerHTML).to.equal(body);
+
+    // modax clears its body once the exit resolves, a few microtasks on
+    finishExit();
+    await exited;
+    for (let i = 0; i < 10 && modax.body; i++) {
+      await Promise.resolve();
+    }
+    // compare as a boolean - a failing compare would try to print the
+    // rendered body
+    expect(modax.body === '').to.equal(true);
   });
 });

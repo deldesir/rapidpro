@@ -6,6 +6,8 @@ import { renderClamped, renderHighlightedText } from '../utils';
 
 export const set_run_result: ActionConfig = {
   name: 'Save Flow Result',
+  subtitle:
+    'Results show up in flow reports and can be used later in the flow.',
   group: ACTION_GROUPS.save,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   render: (_node: Node, action: SetRunResult) => {

@@ -13,6 +13,7 @@ import { getLanguageName } from '../../languages';
 
 export const set_contact_language: ActionConfig = {
   name: 'Update Language',
+  subtitle: 'Later messages and flows will use translations in this language.',
   group: ACTION_GROUPS.contacts,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   render: (_node: Node, action: SetContactLanguage) => {

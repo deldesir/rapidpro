@@ -11,6 +11,8 @@ import { renderGroupLinks } from '../utils';
 
 export const remove_contact_groups: ActionConfig = {
   name: 'Remove from Group',
+  subtitle:
+    'Takes effect right away, including for campaigns based on the group.',
   group: ACTION_GROUPS.contacts,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   render: (_node: Node, action: RemoveFromGroup) => {
