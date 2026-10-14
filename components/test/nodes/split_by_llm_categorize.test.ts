@@ -114,14 +114,13 @@ describe('split_by_llm_categorize node config', () => {
     ).shouldExclude!;
 
     it('includes options that have the classification role', () => {
-      expect(shouldExclude({ roles: ['classification'] })).to.be.false;
-      expect(shouldExclude({ roles: ['classification', 'generation'] })).to.be
-        .false;
+      expect(shouldExclude({ roles: ['classify'] })).to.be.false;
+      expect(shouldExclude({ roles: ['classify', 'generate'] })).to.be.false;
     });
 
     it('excludes options without the classification role', () => {
-      expect(shouldExclude({ roles: ['translation'] })).to.be.true;
-      expect(shouldExclude({ roles: ['generation'] })).to.be.true;
+      expect(shouldExclude({ roles: ['translate'] })).to.be.true;
+      expect(shouldExclude({ roles: ['generate'] })).to.be.true;
       expect(shouldExclude({ roles: [] })).to.be.true;
     });
   });

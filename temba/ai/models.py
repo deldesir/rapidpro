@@ -63,7 +63,7 @@ class LLM(OrgAsset, DependencyMixin):
     ROLE_TRANSLATION = "T"
     ROLE_GENERATION = "G"
     ROLE_CLASSIFICATION = "C"
-    ROLE_NAMES = {ROLE_TRANSLATION: "translation", ROLE_GENERATION: "generation", ROLE_CLASSIFICATION: "classification"}
+    ROLE_NAMES = {ROLE_TRANSLATION: "translate", ROLE_GENERATION: "generate", ROLE_CLASSIFICATION: "classify"}
     ALL_ROLES = ROLE_TRANSLATION + ROLE_GENERATION + ROLE_CLASSIFICATION
 
     org = models.ForeignKey(Org, related_name="llms", on_delete=models.PROTECT)

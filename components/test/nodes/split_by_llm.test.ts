@@ -39,14 +39,13 @@ describe('split_by_llm node config', () => {
       .shouldExclude!;
 
     it('includes options that have the generation role', () => {
-      expect(shouldExclude({ roles: ['generation'] })).to.be.false;
-      expect(shouldExclude({ roles: ['generation', 'translation'] })).to.be
-        .false;
+      expect(shouldExclude({ roles: ['generate'] })).to.be.false;
+      expect(shouldExclude({ roles: ['generate', 'translate'] })).to.be.false;
     });
 
     it('excludes options without the generation role', () => {
-      expect(shouldExclude({ roles: ['translation'] })).to.be.true;
-      expect(shouldExclude({ roles: ['classification'] })).to.be.true;
+      expect(shouldExclude({ roles: ['translate'] })).to.be.true;
+      expect(shouldExclude({ roles: ['classify'] })).to.be.true;
       expect(shouldExclude({ roles: [] })).to.be.true;
     });
   });

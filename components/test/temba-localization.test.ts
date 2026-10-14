@@ -305,9 +305,9 @@ describe('Localization Editing', () => {
     // Includes an generation-only model that should be filtered out of the
     // auto-translate picker, plus two valid translation models.
     (storeElement as any).getResults = async () => [
-      { uuid: 'llm-1', name: 'GPT-4', roles: ['translation'] },
-      { uuid: 'llm-2', name: 'Claude', roles: ['translation', 'generation'] },
-      { uuid: 'llm-generation', name: 'GenerationOnly', roles: ['generation'] }
+      { uuid: 'llm-1', name: 'GPT-4', roles: ['translate'] },
+      { uuid: 'llm-2', name: 'Claude', roles: ['translate', 'generate'] },
+      { uuid: 'llm-generation', name: 'GenerationOnly', roles: ['generate'] }
     ];
 
     const autoTranslateBtn = editor
@@ -339,8 +339,8 @@ describe('Localization Editing', () => {
     );
     // and the temba-select shouldExclude predicate also rejects generation-only
     const shouldExclude = (modelSelect as any).shouldExclude;
-    expect(shouldExclude({ roles: ['generation'] })).to.be.true;
-    expect(shouldExclude({ roles: ['translation'] })).to.be.false;
+    expect(shouldExclude({ roles: ['generate'] })).to.be.true;
+    expect(shouldExclude({ roles: ['translate'] })).to.be.false;
   });
 
   it('should keep auto translate visible when everything is translated', async () => {
@@ -362,8 +362,8 @@ describe('Localization Editing', () => {
     // Generation-only model is present but should be filtered out, leaving a
     // single translation-capable model — the picker should still auto-skip.
     (storeElement as any).getResults = async () => [
-      { uuid: 'llm-only', name: 'SoloGPT', roles: ['translation'] },
-      { uuid: 'llm-generation', name: 'GenerationOnly', roles: ['generation'] }
+      { uuid: 'llm-only', name: 'SoloGPT', roles: ['translate'] },
+      { uuid: 'llm-generation', name: 'GenerationOnly', roles: ['generate'] }
     ];
 
     const autoTranslateBtn = editor
@@ -389,7 +389,7 @@ describe('Localization Editing', () => {
       await selectLanguageInToolbar(editor, 'French', 'fra');
 
       (storeElement as any).getResults = async () => [
-        { uuid: 'llm-only', name: 'SoloGPT', roles: ['translation'] }
+        { uuid: 'llm-only', name: 'SoloGPT', roles: ['translate'] }
       ];
 
       const autoTranslateBtn = editor
@@ -416,7 +416,7 @@ describe('Localization Editing', () => {
     await selectLanguageInToolbar(editor, 'French', 'fra');
 
     (storeElement as any).getResults = async () => [
-      { uuid: 'llm-only', name: 'SoloGPT', roles: ['translation'] }
+      { uuid: 'llm-only', name: 'SoloGPT', roles: ['translate'] }
     ];
 
     const autoTranslateBtn = editor
@@ -1813,7 +1813,7 @@ describe('Localization Editing', () => {
     await selectLanguageInToolbar(editor, 'French', 'fra');
 
     (storeElement as any).getResults = async () => [
-      { uuid: 'llm-only', name: 'SoloGPT', roles: ['translation'] }
+      { uuid: 'llm-only', name: 'SoloGPT', roles: ['translate'] }
     ];
 
     const autoTranslateBtn = editor
