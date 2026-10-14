@@ -532,7 +532,9 @@ export const serializeFiles = function (form: any): FormData | null {
     const field = form.elements[i];
     if (field.name && !field.disabled && field.value instanceof FormData) {
       files = files || new FormData();
-      field.value.forEach((value: any, key: string) => files.append(key, value));
+      field.value.forEach((value: any, key: string) =>
+        files.append(key, value)
+      );
     }
   }
   return files;
