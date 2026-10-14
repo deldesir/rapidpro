@@ -43,6 +43,7 @@
 's0b39a64d20eca15e': `Aucune configuration de formulaire disponible pour ce nœud`,
 's0b7c0b00085b4ba6': `Appel entrant`,
 's0bb51791194b4414': `code`,
+'s0c328e625017555f': `Impossible de charger le flux. Veuillez réessayer.`,
 's0c93985e8cedb07b': `Au moins un type de canal est requis`,
 's0cd0f490954a4ee2': `En cours`,
 's0e0dc6592c73670d': `Traduction automatique`,

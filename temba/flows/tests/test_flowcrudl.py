@@ -933,6 +933,10 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
             response.json(),
         )
 
+        # a malformed version is rejected
+        response = self.client.get(f"{revisions_url}{revisions[0].id}/?version=abc")
+        self.assertEqual(400, response.status_code)
+
         # but it can be given a revision which is only a newer patch version
         revisions[0].spec_version = f"{major}.{minor}.99"
         revisions[0].save(update_fields=("spec_version",))

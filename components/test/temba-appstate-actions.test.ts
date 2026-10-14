@@ -601,6 +601,18 @@ describe('store/AppState actions', () => {
       expect(state().flowDefinition).to.equal(null);
     });
 
+    it('rejects with a generic error when the server gives none', async () => {
+      clearMockGets();
+      mockGET(/\/flow\/revisions\/flow-1\//, {}, {}, '500');
+      let error: Error = null;
+      await state()
+        .fetchRevision(REVISION_URL)
+        .catch((e) => (error = e));
+      expect(error?.message).to.equal(
+        'Unable to load the flow. Please try again.'
+      );
+    });
+
     it('does not treat "latest" as viewing an older revision', async () => {
       mockRevision();
       await state().fetchRevision(REVISION_URL, 'latest');

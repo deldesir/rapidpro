@@ -7,6 +7,7 @@ import { CustomEventType } from '../interfaces';
 import { getStore } from '../store/Store';
 import { FlowDefinition } from '../store/flow-definition';
 import { fetchResults } from '../utils';
+import { showLoadErrorDialog } from './utils';
 import {
   labelsFor,
   normalizeChanges,
@@ -352,7 +353,7 @@ export class RevisionsWindow extends RapidElement {
         store.setLanguageCode(this.browseLanguageCode);
       }
     } catch (e) {
-      console.error('Error fetching revision details', e);
+      showLoadErrorDialog(e);
       this.cancelRevisionView();
     } finally {
       this.isLoading = false;
@@ -376,11 +377,14 @@ export class RevisionsWindow extends RapidElement {
         store.setLanguageCode(preservedLanguageCode);
       }
     } else {
-      store.fetchRevision(`/flow/revisions/${this.flow}`).finally(() => {
-        if (preservedLanguageCode) {
-          store.setLanguageCode(preservedLanguageCode);
-        }
-      });
+      store
+        .fetchRevision(`/flow/revisions/${this.flow}`)
+        .catch(showLoadErrorDialog)
+        .finally(() => {
+          if (preservedLanguageCode) {
+            store.setLanguageCode(preservedLanguageCode);
+          }
+        });
     }
 
     this.viewingRevision = null;

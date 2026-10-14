@@ -4,7 +4,7 @@ from uuid import UUID
 
 import regex
 from django_valkey import get_valkey_connection
-from packaging.version import Version
+from packaging.version import InvalidVersion, Version
 from smartmin.views import (
     SmartCreateView,
     SmartCRUDL,
@@ -250,9 +250,12 @@ class FlowCRUDL(SmartCRUDL):
             flow = self.get_object()
             revision_id = self.kwargs.get("revision_id")
 
-            # the editor requests the spec version it supports which allows us to add support for new versions
-            # on the goflow/mailroom side before updating the editor to use that new version
-            requested_version = request.GET.get("version", Flow.CURRENT_SPEC_VERSION)
+            # the editor requests the spec version of the server which served it, which may differ from ours
+            # during a deploy or if the editor was loaded before an upgrade
+            try:
+                requested_version = Version(request.GET.get("version", Flow.CURRENT_SPEC_VERSION))
+            except InvalidVersion:
+                return JsonResponse({"error": "invalid version"}, status=400)
 
             # we are looking for a specific revision, fetch it and migrate it forward
             if revision_id:
@@ -263,10 +266,10 @@ class FlowCRUDL(SmartCRUDL):
 
                 # migrations only go forward, so an editor that predates the revision's minor version (e.g. one
                 # loaded before an upgrade) can't be given something it understands and needs reloading
-                if Version(revision.spec_version).release[:2] > Version(requested_version).release[:2]:
+                if Version(revision.spec_version).release[:2] > requested_version.release[:2]:
                     return JsonResponse({"error": self.UPGRADED_ERROR}, status=409)
 
-                definition = revision.get_migrated_definition(to_version=requested_version)
+                definition = revision.get_migrated_definition(to_version=str(requested_version))
 
                 # inspect to get up to date info about the flow
                 info = mailroom.get_client().flow_inspect(flow.org, definition)

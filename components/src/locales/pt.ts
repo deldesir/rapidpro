@@ -43,6 +43,7 @@
 's0b39a64d20eca15e': `Nenhuma configuração de formulário disponível para este nó`,
 's0b7c0b00085b4ba6': `Chamada recebida`,
 's0bb51791194b4414': `código`,
+'s0c328e625017555f': `Não foi possível carregar o fluxo. Tente novamente.`,
 's0c93985e8cedb07b': `Pelo menos um tipo de canal é obrigatório`,
 's0cd0f490954a4ee2': `Em andamento`,
 's0e0dc6592c73670d': `Tradução automática`,

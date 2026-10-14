@@ -26,6 +26,8 @@ import {
   getNodeBounds,
   calculateReflowPositions,
   NodeBounds,
+  showErrorDialog,
+  showLoadErrorDialog,
   snapToGrid
 } from './utils';
 import { getLanguageName } from '../languages';
@@ -1263,10 +1265,9 @@ export class Editor extends RapidElement {
         }
         const state = getStore().getState();
         state.setSpecVersion(this.specVersion);
-        state.fetchRevision(`/flow/revisions/${this.flow}`).catch((error) => {
-          console.error('Failed to load flow:', error);
-          this.showErrorDialog(msg('Load Failed'), error.message);
-        });
+        state
+          .fetchRevision(`/flow/revisions/${this.flow}`)
+          .catch(showLoadErrorDialog);
       }, 0);
     }
 
@@ -1505,7 +1506,7 @@ export class Editor extends RapidElement {
     }
 
     if (changes.has('saveError') && this.saveError) {
-      this.showErrorDialog(msg('Save Failed'), this.saveError);
+      showErrorDialog(msg('Save Failed'), this.saveError);
       setTimeout(() => {
         this.saveError = null;
       }, 0);
@@ -1679,25 +1680,6 @@ export class Editor extends RapidElement {
     content.textContent = msg(
       'This action is no longer supported and should be removed.'
     );
-    dialog.appendChild(content);
-
-    document.body.appendChild(dialog);
-    dialog.open = true;
-
-    dialog.addEventListener('temba-dialog-hidden', () => {
-      document.body.removeChild(dialog);
-    });
-  }
-
-  private showErrorDialog(header: string, message: string): void {
-    const dialog = document.createElement('temba-dialog') as Dialog;
-    dialog.header = header;
-    dialog.primaryButtonName = '';
-    dialog.cancelButtonName = msg('Dismiss');
-
-    const content = document.createElement('div');
-    content.style.cssText = 'padding: 20px; font-size: 14px; line-height: 1.5;';
-    content.textContent = message;
     dialog.appendChild(content);
 
     document.body.appendChild(dialog);
@@ -2065,7 +2047,13 @@ export class Editor extends RapidElement {
 
       // reload the swapped definition; fetchRevision resets the editing
       // language to the new base language
-      await getStore().getState().fetchRevision(`/flow/revisions/${this.flow}`);
+      try {
+        await getStore()
+          .getState()
+          .fetchRevision(`/flow/revisions/${this.flow}`);
+      } catch (error) {
+        return { error: error.message, flushFailed: false };
+      }
 
       // refresh the revisions list if it's currently open
       this.getRevisionsWindow()?.refresh();
@@ -4039,6 +4027,7 @@ export class Editor extends RapidElement {
     getStore()
       .getState()
       .fetchRevision(`/flow/revisions/${this.flow}`)
+      .catch(showLoadErrorDialog)
       .finally(() => {
         if (languageCode) {
           this.handleLanguageChange(languageCode);

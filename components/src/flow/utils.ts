@@ -1,4 +1,6 @@
 import { html, TemplateResult } from 'lit-html';
+import { msg } from '@lit/localize';
+import { Dialog } from '../layout/Dialog';
 import { iconToPillType } from '../styles/pillVariants';
 import { Action, NamedObject, FlowPosition } from '../store/flow-definition';
 import { FlowIssue } from '../store/AppState';
@@ -1017,3 +1019,29 @@ export function localizeAction(
   }
   return localized;
 }
+
+export const showErrorDialog = (header: string, message: string): void => {
+  const dialog = document.createElement('temba-dialog') as Dialog;
+  dialog.header = header;
+  dialog.primaryButtonName = '';
+  dialog.cancelButtonName = msg('Dismiss');
+
+  const content = document.createElement('div');
+  content.style.cssText = 'padding: 20px; font-size: 14px; line-height: 1.5;';
+  content.textContent = message;
+  dialog.appendChild(content);
+
+  document.body.appendChild(dialog);
+  dialog.open = true;
+
+  dialog.addEventListener('temba-dialog-hidden', () => {
+    document.body.removeChild(dialog);
+  });
+};
+
+// shown when a flow revision can't be loaded, e.g. because the flow was
+// upgraded since this editor was loaded and it needs refreshing
+export const showLoadErrorDialog = (error: Error): void => {
+  console.error('Failed to load flow:', error);
+  showErrorDialog(msg('Load Failed'), error.message);
+};

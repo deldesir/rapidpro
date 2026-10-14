@@ -43,6 +43,7 @@
 's0b39a64d20eca15e': `No hay configuración de formulario disponible para este nodo`,
 's0b7c0b00085b4ba6': `Llamada entrante`,
 's0bb51791194b4414': `código`,
+'s0c328e625017555f': `No se pudo cargar el flujo. Inténtelo de nuevo.`,
 's0c93985e8cedb07b': `Se requiere al menos un tipo de canal`,
 's0cd0f490954a4ee2': `En curso`,
 's0e0dc6592c73670d': `Traducción automática`,

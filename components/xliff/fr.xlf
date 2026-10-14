@@ -1683,6 +1683,10 @@
   <source>Classify with <x id="0" equiv-text="${model.name}"/></source>
   <target>Classer avec <x id="0" equiv-text="${model.name}"/></target>
 </trans-unit>
+<trans-unit id="s0c328e625017555f">
+  <source>Unable to load the flow. Please try again.</source>
+  <target>Impossible de charger le flux. Veuillez réessayer.</target>
+</trans-unit>
 </body>
 </file>
 </xliff>

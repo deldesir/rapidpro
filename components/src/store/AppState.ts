@@ -1,4 +1,5 @@
 import { createStore, StoreApi } from 'zustand/vanilla';
+import { msg } from '@lit/localize';
 import { generateUUID } from '../utils';
 import { getLanguageName } from '../languages';
 import {
@@ -348,13 +349,15 @@ export const zustand = createStore<AppState>()(
           specVersion
             ? `${endpoint}/${id}/?version=${specVersion}`
             : `${endpoint}/${id}/`
-        );
+        ).catch(() => null);
 
-        if (!response.ok) {
+        if (!response?.ok) {
           // surface the server's explanation, e.g. that the flow was upgraded
           // and this editor needs reloading
-          const body = await response.json().catch(() => null);
-          throw new Error(body?.error || 'Network response was not ok');
+          const body = await response?.json().catch(() => null);
+          throw new Error(
+            body?.error || msg('Unable to load the flow. Please try again.')
+          );
         }
         const data = (await response.json()) as FlowContents;
         // reclassify while the definition is still the mutable response JSON -
