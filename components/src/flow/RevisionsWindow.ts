@@ -7,7 +7,6 @@ import { CustomEventType } from '../interfaces';
 import { getStore } from '../store/Store';
 import { FlowDefinition } from '../store/flow-definition';
 import { fetchResults } from '../utils';
-import { FLOW_SPEC_VERSION } from '../store/AppState';
 import {
   labelsFor,
   normalizeChanges,
@@ -205,9 +204,7 @@ export class RevisionsWindow extends RapidElement {
     const requestId = ++this.fetchRequestId;
     this.isLoading = true;
     try {
-      const results = await fetchResults(
-        `/flow/revisions/${this.flow}/?version=${FLOW_SPEC_VERSION}`
-      );
+      const results = await fetchResults(`/flow/revisions/${this.flow}/`);
       if (requestId !== this.fetchRequestId) return;
       this.revisions = this.collapseRevisions(results);
     } catch (e) {

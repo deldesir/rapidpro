@@ -206,6 +206,9 @@ export class Editor extends RapidElement {
   @property({ type: String })
   public version: string;
 
+  @property({ type: String, attribute: 'spec-version' })
+  public specVersion: string;
+
   @property({ type: String })
   public flowType: FlowType = FlowTypes.MESSAGE;
 
@@ -1258,7 +1261,12 @@ export class Editor extends RapidElement {
         if (!this.isConnected || !this.flow) {
           return;
         }
-        getStore().getState().fetchRevision(`/flow/revisions/${this.flow}`);
+        const state = getStore().getState();
+        state.setSpecVersion(this.specVersion);
+        state.fetchRevision(`/flow/revisions/${this.flow}`).catch((error) => {
+          console.error('Failed to load flow:', error);
+          this.showErrorDialog(msg('Load Failed'), error.message);
+        });
       }, 0);
     }
 
@@ -1497,7 +1505,7 @@ export class Editor extends RapidElement {
     }
 
     if (changes.has('saveError') && this.saveError) {
-      this.showSaveErrorDialog(this.saveError);
+      this.showErrorDialog(msg('Save Failed'), this.saveError);
       setTimeout(() => {
         this.saveError = null;
       }, 0);
@@ -1681,9 +1689,9 @@ export class Editor extends RapidElement {
     });
   }
 
-  private showSaveErrorDialog(message: string): void {
+  private showErrorDialog(header: string, message: string): void {
     const dialog = document.createElement('temba-dialog') as Dialog;
-    dialog.header = msg('Save Failed');
+    dialog.header = header;
     dialog.primaryButtonName = '';
     dialog.cancelButtonName = msg('Dismiss');
 

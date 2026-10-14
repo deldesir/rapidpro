@@ -486,10 +486,6 @@
   <source>Duplicate category names found: <x id="0" equiv-text="${uniqueDuplicates.join(', ')}"/></source>
   <target>Noms de catégorie en double trouvés : <x id="0" equiv-text="${uniqueDuplicates.join(', ')}"/></target>
 </trans-unit>
-<trans-unit id="s3ce63bb0b028cfde">
-  <source>Categorize with <x id="0" equiv-text="${callLlmAction.llm.name}"/></source>
-  <target>Catégoriser avec <x id="0" equiv-text="${callLlmAction.llm.name}"/></target>
-</trans-unit>
 <trans-unit id="se1650831e07202d0">
   <source>Configure AI instructions</source>
   <target>Configurer les instructions de l'IA</target>
@@ -1670,6 +1666,22 @@
 <trans-unit id="s776c9901ec5a724b">
   <source>This address may not belong to this contact</source>
   <target>Cette adresse n'appartient peut-être pas à ce contact</target>
+</trans-unit>
+<trans-unit id="s6b42d98464d12106">
+  <source>Load Failed</source>
+  <target>Échec du chargement</target>
+</trans-unit>
+<trans-unit id="s18a531ff4c1c40b6">
+  <source>Every category with a description needs a name</source>
+  <target>Toute catégorie avec une description doit avoir un nom</target>
+</trans-unit>
+<trans-unit id="s8532931c81aff363">
+  <source>Category names can't be <x id="0" equiv-text="${reserved.join(', ')}"/></source>
+  <target>Les noms de catégorie ne peuvent pas être <x id="0" equiv-text="${reserved.join(', ')}"/></target>
+</trans-unit>
+<trans-unit id="sfee301adc4cebf77">
+  <source>Classify with <x id="0" equiv-text="${model.name}"/></source>
+  <target>Classer avec <x id="0" equiv-text="${model.name}"/></target>
 </trans-unit>
 </body>
 </file>
