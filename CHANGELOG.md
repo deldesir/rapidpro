@@ -1,3 +1,10 @@
+## v26.3.140 (2026-10-14)
+ * Save flow revisions at their own spec version, request them at the serving server's version, and refuse to serve revisions to editors on an older minor spec version
+ * Only migrate prior revisions forward when diffing flows, and skip flows already ahead of current in migrate_flows
+ * Show flow load errors wherever the editor reloads a revision, and reject malformed spec versions
+ * Remove the Anthropic LLM type
+ * Bump multidict to 6.9.1
+
 ## v26.3.139 (2026-10-13)
  * Request flow spec 14.7.0 from the flow editor
 
