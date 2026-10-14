@@ -282,6 +282,10 @@ class FlowTest(TembaTest, CRUDLTestMixin):
 
         response = self.client.get(flow_editor_url)
         self.assertEqual(response.status_code, 200)
+
+        # the editor requests revisions at the spec version of the server which served it
+        self.assertContains(response, f'spec-version="{Flow.CURRENT_SPEC_VERSION}"')
+
         self.assertIsNone(response.context["active_start"])
         self.assertNotContains(response, "<temba-start-progress")
 

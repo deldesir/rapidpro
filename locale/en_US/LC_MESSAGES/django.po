@@ -2527,10 +2527,10 @@ msgstr ""
 msgid "Labels"
 msgstr ""
 
-msgid "Your flow failed validation. Please refresh your browser."
+msgid "Your flow has been upgraded to the latest version. In order to continue editing, please refresh your browser."
 msgstr ""
 
-msgid "Your flow has been upgraded to the latest version. In order to continue editing, please refresh your browser."
+msgid "Your flow failed validation. Please refresh your browser."
 msgstr ""
 
 #, python-format

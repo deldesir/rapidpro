@@ -2541,11 +2541,11 @@ msgstr "Historique"
 msgid "Labels"
 msgstr "Etiquettes"
 
-msgid "Your flow failed validation. Please refresh your browser."
-msgstr "Votre flux n'a pas été validé. S'il vous plaît veuillez rafraîchir votre navigateur."
-
 msgid "Your flow has been upgraded to the latest version. In order to continue editing, please refresh your browser."
 msgstr "Votre flux a été mis à niveau vers la dernière version. Pour continuer la modification, veuillez actualiser votre navigateur."
+
+msgid "Your flow failed validation. Please refresh your browser."
+msgstr "Votre flux n'a pas été validé. S'il vous plaît veuillez rafraîchir votre navigateur."
 
 #, python-format
 msgid "%s is currently editing this Flow. Your changes will not be saved until you refresh your browser."
