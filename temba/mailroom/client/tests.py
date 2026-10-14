@@ -609,7 +609,7 @@ class MailroomClientTest(TembaTest):
 
     @patch("requests.post")
     def test_llm_translate(self, mock_post):
-        llm = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "GPT-4", {})
+        llm = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "GPT-4", {})
 
         items = {
             "a1f0e2c4:text": ["Hello world"],

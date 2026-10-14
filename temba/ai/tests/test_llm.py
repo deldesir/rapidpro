@@ -8,7 +8,7 @@ from temba.tests import TembaTest, mock_mailroom
 
 class LLMTest(TembaTest):
     def test_model(self):
-        openai = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "GPT-4", {"api_key": "sesame"})
+        openai = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "GPT-4", {"api_key": "sesame"})
         LLM.create(self.org, self.admin, OpenAIAzureType(), "gpt-35-turbo", "Azure", {})
 
         self.assertEqual(openai.name, "GPT-4")
@@ -25,7 +25,9 @@ class LLMTest(TembaTest):
 
     def test_roles(self):
         # roles can be given explicitly
-        editing = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "Editing", {}, roles=LLM.ROLE_TRANSLATE)
+        editing = LLM.create(
+            self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "Editing", {}, roles=LLM.ROLE_TRANSLATE
+        )
         self.assertEqual("T", editing.roles)
 
         # otherwise limited to what the type can do
@@ -34,7 +36,7 @@ class LLMTest(TembaTest):
             self.assertEqual("C", classifier.roles)
 
             # and reset when the type changes
-            classifier.update_config(self.admin, OpenAIType(), "gpt-4o", "GPT", {})
+            classifier.update_config(self.admin, OpenAIType(), "gpt-5.4-mini", "GPT", {})
             self.assertEqual("TGC", classifier.roles)
 
             editing.update_config(self.admin, OpenAIAzureType(), "gpt-35-turbo", "Azure 2", {})
@@ -45,7 +47,7 @@ class LLMTest(TembaTest):
         self.assertEqual("C", editing.roles)
 
     def test_release_system(self):
-        system = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "System", {})
+        system = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "System", {})
         system.is_system = True
         system.save(update_fields=("is_system",))
 
@@ -62,7 +64,7 @@ class LLMTest(TembaTest):
 
     @mock_mailroom
     def test_translate(self, mr_mocks):
-        openai = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "GPT-4", {})
+        openai = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "GPT-4", {})
 
         items = {"a1:text": ["Hello"]}
         translated = {"a1:text": ["Hola"]}

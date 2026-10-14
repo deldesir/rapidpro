@@ -650,7 +650,7 @@ class OrgDeleteTest(TembaTest):
         global1 = add(Global.get_or_create(org, user, "org_name", "Org Name", "Acme Ltd"))
         flow1.global_dependencies.add(global1)
 
-        llm1 = add(LLM.create(org, user, OpenAIType(), "gpt-4o", "GPT-4", {}))
+        llm1 = add(LLM.create(org, user, OpenAIType(), "gpt-5.4-mini", "GPT-4", {}))
         flow1.llm_dependencies.add(llm1)
 
         resthook = add(Resthook.get_or_create(org, "registration", user))

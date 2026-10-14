@@ -797,7 +797,7 @@ class EndpointsTest(APITestMixin, TembaTest):
         field = self.create_field("favorite_color", "Favorite Color")
         global_ = Global.get_or_create(self.org, self.admin, "company_name", "Company Name", "Acme")
         label = FlowLabel.create(self.org, self.admin, "Important")
-        llm = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "GPT-4", {})
+        llm = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "GPT-4", {})
         template = Template.get_or_create(self.org, "welcome_message")
         topic = Topic.create(self.org, self.admin, "Support")
         other_flow = self.create_flow("Other Org", org=self.org2)
@@ -1491,7 +1491,7 @@ class EndpointsTest(APITestMixin, TembaTest):
     def test_llms(self):
         endpoint_url = reverse("api.internal.llms") + ".json"
 
-        openai = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "GPT-4", {}, roles=LLM.ROLE_TRANSLATE)
+        openai = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "GPT-4", {}, roles=LLM.ROLE_TRANSLATE)
         azure = LLM.create(self.org, self.admin, OpenAIAzureType(), "gpt-35-turbo", "Azure GPT", {})
         classifier = LLM.create(
             self.org,
@@ -1504,7 +1504,7 @@ class EndpointsTest(APITestMixin, TembaTest):
         )
         deleted = LLM.create(self.org, self.admin, OpenAIAzureType(), "gpt-35-turbo", "Deleted", {})
         deleted.release(self.admin)
-        system = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "System", {})
+        system = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "System", {})
         system.is_system = True
         system.save(update_fields=("is_system",))
 
