@@ -359,6 +359,19 @@ class FlowTest(TembaTest, CRUDLTestMixin):
         self.assertIsNotNone(rev_after_trim_fail)
         self.assertTrue(FlowRevision.objects.filter(id=rev_after_trim_fail.id).exists())
 
+        # definitions are saved at their own spec version, whether that's older or newer than ours
+        for spec_version in ("14.3.0", "99.0.0"):
+            flow.name = f"Spec {spec_version}"
+            flow.save(update_fields=("name",))
+            definition = flow.revisions.order_by("id").last().definition
+            definition["spec_version"] = spec_version
+
+            rev, _ = flow.save_revision(self.admin, definition)
+            flow.refresh_from_db()
+            self.assertEqual(spec_version, rev.spec_version)
+            self.assertEqual(spec_version, rev.definition["spec_version"])
+            self.assertEqual(spec_version, flow.version_number)
+
         # can't save older spec version over newer
         definition = flow.revisions.order_by("id").last().definition
         definition["spec_version"] = Flow.FINAL_LEGACY_VERSION
