@@ -1,3 +1,7 @@
+## v26.3.142 (2026-10-14)
+ * Refresh dialogs and buttons
+ * Rename LLM role constants to match role names
+
 ## v26.3.141 (2026-10-14)
  * Use goflow's verb names for LLM roles in the internal API and editor
  * Never collapse system revisions into user revisions or revisions by different authors in the revision browser, hide spec-only revisions, and always keep the newest revision
