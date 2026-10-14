@@ -278,7 +278,13 @@ before(async () => {
     await Promise.all([
       (document.fonts as any).load('300 1em Roboto'),
       (document.fonts as any).load('400 1em Roboto'),
-      (document.fonts as any).load('500 1em Roboto')
+      (document.fonts as any).load('500 1em Roboto'),
+      // and Inter, the product font, so screenshot clips are measured
+      // against the text as it finally renders (latin-ext too, for names
+      // like Dražen)
+      ...['400', '500', '600', '700', 'italic 400'].map((weight) =>
+        (document.fonts as any).load(`${weight} 1em Inter`, 'Aa Žž')
+      )
     ]);
   }
 });

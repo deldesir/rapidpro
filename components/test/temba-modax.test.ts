@@ -66,8 +66,12 @@ const clickPrimary = async (modax: Modax) => {
   }
 };
 
-const getDialogClip = (modax: Modax) => {
-  const dialog = modax.shadowRoot.querySelector('temba-dialog');
+// measured once modax and its dialog have finished updating, since the footer
+// renders in a later pass and would otherwise fall outside the clip
+const getDialogClip = async (modax: Modax) => {
+  const dialog = modax.shadowRoot.querySelector('temba-dialog') as Dialog;
+  await modax.updateComplete;
+  await dialog.updateComplete;
   return getClip(
     dialog.shadowRoot.querySelector('.dialog-container') as HTMLElement
   );
@@ -100,7 +104,7 @@ describe('temba-modax', () => {
     // Now our body should have our endpoint text
     expect(modax.getBody().innerHTML).to.contain('Hello World');
 
-    await assertScreenshot('modax/simple', getDialogClip(modax));
+    await assertScreenshot('modax/simple', await getDialogClip(modax));
   });
 
   it('fetches forms', async () => {
@@ -115,7 +119,7 @@ describe('temba-modax', () => {
     expect(modax.buttons[1].name).to.equal('Save Everything');
     expect(modax.buttons[0].name).to.equal('Cancel');
 
-    await assertScreenshot('modax/form', getDialogClip(modax));
+    await assertScreenshot('modax/form', await getDialogClip(modax));
   });
 
   // the fetched form is rendered inside the modax, so its fields and the focus among them are read from there

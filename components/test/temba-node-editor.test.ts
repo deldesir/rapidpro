@@ -18,9 +18,14 @@ const assertDialogScreenshot = async (
   el: NodeEditorElement,
   screenshotName: string
 ) => {
-  const dialog = el.shadowRoot
-    .querySelector('temba-dialog')
-    .shadowRoot.querySelector('.dialog-container') as HTMLElement;
+  // measure once the dialog has finished updating, so a later render pass
+  // can't leave part of it outside the clip
+  const dialogEl = el.shadowRoot.querySelector('temba-dialog') as any;
+  await el.updateComplete;
+  await dialogEl.updateComplete;
+  const dialog = dialogEl.shadowRoot.querySelector(
+    '.dialog-container'
+  ) as HTMLElement;
   const clip = getClip(dialog);
   // Adjust width to show full dialog with proper padding
   const dialogRect = dialog.getBoundingClientRect();

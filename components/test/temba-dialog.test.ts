@@ -3,7 +3,10 @@ import * as sinon from 'sinon';
 import { Dialog } from '../src/layout/Dialog';
 import { assertScreenshot, getClip } from './utils.test';
 
-const getDialogClip = (dialog: Dialog) => {
+// measured once the dialog has finished updating, so a later render pass
+// can't leave part of it outside the clip
+const getDialogClip = async (dialog: Dialog) => {
+  await dialog.updateComplete;
   return getClip(
     dialog.shadowRoot.querySelector('.dialog-container') as HTMLElement
   );
@@ -91,7 +94,7 @@ describe('temba-dialog', () => {
 
     const input = dialog.querySelector('input');
     expect(document.activeElement).to.not.equal(input);
-    await assertScreenshot('dialog/focused', getDialogClip(dialog));
+    await assertScreenshot('dialog/focused', await getDialogClip(dialog));
   });
 
   it('hides on click', async () => {

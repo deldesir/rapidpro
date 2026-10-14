@@ -77,9 +77,14 @@ export class ActionTest<T extends Action> {
     screenshotName: string,
     waitForNetwork: boolean = false
   ) {
-    const dialog = el.shadowRoot
-      .querySelector('temba-dialog')
-      .shadowRoot.querySelector('.dialog-container') as HTMLElement;
+    // measure once the dialog has finished updating, so a later render pass
+    // can't leave part of it outside the clip
+    const dialogEl = el.shadowRoot.querySelector('temba-dialog') as any;
+    await (el as any).updateComplete;
+    await dialogEl.updateComplete;
+    const dialog = dialogEl.shadowRoot.querySelector(
+      '.dialog-container'
+    ) as HTMLElement;
     await assertScreenshot(screenshotName, getClip(dialog), waitForNetwork);
   }
 
