@@ -60,11 +60,11 @@ class LLM(OrgAsset, DependencyMixin):
     A language model that can be used for AI tasks
     """
 
-    ROLE_TRANSLATION = "T"
-    ROLE_GENERATION = "G"
-    ROLE_CLASSIFICATION = "C"
-    ROLE_NAMES = {ROLE_TRANSLATION: "translate", ROLE_GENERATION: "generate", ROLE_CLASSIFICATION: "classify"}
-    ALL_ROLES = ROLE_TRANSLATION + ROLE_GENERATION + ROLE_CLASSIFICATION
+    ROLE_TRANSLATE = "T"
+    ROLE_GENERATE = "G"
+    ROLE_CLASSIFY = "C"
+    ROLE_NAMES = {ROLE_TRANSLATE: "translate", ROLE_GENERATE: "generate", ROLE_CLASSIFY: "classify"}
+    ALL_ROLES = ROLE_TRANSLATE + ROLE_GENERATE + ROLE_CLASSIFY
 
     org = models.ForeignKey(Org, related_name="llms", on_delete=models.PROTECT)
     llm_type = models.CharField(max_length=16)

@@ -25,11 +25,11 @@ class LLMTest(TembaTest):
 
     def test_roles(self):
         # roles can be given explicitly
-        editing = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "Editing", {}, roles=LLM.ROLE_TRANSLATION)
+        editing = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "Editing", {}, roles=LLM.ROLE_TRANSLATE)
         self.assertEqual("T", editing.roles)
 
         # otherwise limited to what the type can do
-        with patch.object(OpenAIAzureType, "roles", LLM.ROLE_CLASSIFICATION):
+        with patch.object(OpenAIAzureType, "roles", LLM.ROLE_CLASSIFY):
             classifier = LLM.create(self.org, self.admin, OpenAIAzureType(), "gpt-35-turbo", "Azure", {})
             self.assertEqual("C", classifier.roles)
 
