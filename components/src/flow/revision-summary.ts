@@ -49,6 +49,16 @@ export function labelsFor(
   return result;
 }
 
+// A revision is housekeeping-only when every tag it carries is a no-op tag
+// (e.g. a bare spec bump). These are dropped from the revision browser
+// entirely rather than merged into neighboring edits.
+export function isHousekeepingOnly(
+  changes: RevisionChanges | null | undefined
+): boolean {
+  const tags = changes?.tags || [];
+  return tags.length > 0 && tags.every((t) => NOOP_TAGS.has(t));
+}
+
 // A revision is a no-op when, after stripping housekeeping tags, nothing
 // meaningful is left. These shouldn't break up adjacent edits in the browser.
 export function isNoOpChanges(
