@@ -2,6 +2,8 @@ import itertools
 import time
 import traceback
 
+from packaging.version import Version
+
 from django.core.management.base import BaseCommand
 
 from temba.flows.models import Flow
@@ -27,12 +29,16 @@ class Command(BaseCommand):
         self.migrate_flows(delay_ms, interactive)
 
     def migrate_flows(self, delay_ms: int, interactive: bool):
-        flow_ids = list(
-            Flow.objects.filter(is_active=True, org__is_active=True)
+        # flows can be saved at a newer spec version than ours so need to compare versions rather than just exclude
+        current = Version(Flow.CURRENT_SPEC_VERSION)
+        flow_ids = [
+            flow_id
+            for flow_id, version_number in Flow.objects.filter(is_active=True, org__is_active=True)
             .exclude(version_number=Flow.CURRENT_SPEC_VERSION)
             .order_by("org_id", "id")
-            .values_list("id", flat=True)
-        )
+            .values_list("id", "version_number")
+            if Version(version_number) < current
+        ]
         total = len(flow_ids)
 
         if total == 0:

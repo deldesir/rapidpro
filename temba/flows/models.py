@@ -752,8 +752,11 @@ class Flow(PublishedAssetMixin, LegacyIDMixin, OrgAsset, DependencyMixin):
         """
         Saves a new revision for this flow, validation will be done on the definition first
         """
-        if Version(definition.get(Flow.DEFINITION_SPEC_VERSION)) < Version(Flow.INITIAL_GOFLOW_VERSION):
-            raise FlowVersionConflictException(definition.get(Flow.DEFINITION_SPEC_VERSION))
+        # the definition keeps the spec version it was written at, which needn't be ours, e.g. during a rolling
+        # deploy an editor served by one node may save via another node on a different version
+        spec_version = definition.get(Flow.DEFINITION_SPEC_VERSION)
+        if Version(spec_version) < Version(Flow.INITIAL_GOFLOW_VERSION):
+            raise FlowVersionConflictException(spec_version)
 
         current_revision = self.get_current_revision()
 
@@ -767,14 +770,11 @@ class Flow(PublishedAssetMixin, LegacyIDMixin, OrgAsset, DependencyMixin):
         else:
             revision = 1
 
-        # update metadata from database object; normalize spec_version to CURRENT
-        # since that's what we persist on the new revision row, so the saved row
-        # and the diff input agree
+        # update metadata from database object
         definition[Flow.DEFINITION_UUID] = self.uuid
         definition[Flow.DEFINITION_NAME] = self.name
         definition[Flow.DEFINITION_REVISION] = revision
         definition[Flow.DEFINITION_EXPIRE_AFTER_MINUTES] = self.expires_after_minutes
-        definition[Flow.DEFINITION_SPEC_VERSION] = Flow.CURRENT_SPEC_VERSION
 
         # diff against prior revision so we can skip no-op saves and later collapse
         # like-for-like edits; done outside the transaction below because
@@ -783,13 +783,13 @@ class Flow(PublishedAssetMixin, LegacyIDMixin, OrgAsset, DependencyMixin):
         changes = None
         if current_revision:
             prior_def = current_revision.definition
-            if current_revision.spec_version != Flow.CURRENT_SPEC_VERSION:
+            if Version(current_revision.spec_version) < Version(spec_version):
                 # migrate the prior forward so the schemas align; accepting that name/expire
                 # then come from the live flow (get_migrated_definition rewrites them) — fine
                 # because cross-spec saves are rare and not where metadata diffs matter
                 try:
-                    prior_def = current_revision.get_migrated_definition()
-                    # get_migrated_definition rewrites spec_version to CURRENT, but we
+                    prior_def = current_revision.get_migrated_definition(to_version=spec_version)
+                    # get_migrated_definition rewrites spec_version, but we
                     # want compute_changes to see the original spec so it can tag "spec"
                     prior_def[Flow.DEFINITION_SPEC_VERSION] = current_revision.spec_version
                 except Exception:
@@ -816,7 +816,7 @@ class Flow(PublishedAssetMixin, LegacyIDMixin, OrgAsset, DependencyMixin):
         with transaction.atomic():
             # update our flow fields
             self.base_language = definition.get(Flow.DEFINITION_LANGUAGE, None)
-            self.version_number = Flow.CURRENT_SPEC_VERSION
+            self.version_number = spec_version
             self.has_issues = len(info["issues"]) > 0
             self.info = info
             self.modified_by = user
@@ -835,7 +835,7 @@ class Flow(PublishedAssetMixin, LegacyIDMixin, OrgAsset, DependencyMixin):
                 definition=definition,
                 changes=changes,
                 created_by=user,
-                spec_version=Flow.CURRENT_SPEC_VERSION,
+                spec_version=spec_version,
                 revision=revision,
             )
 
