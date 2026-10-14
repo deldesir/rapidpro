@@ -85,7 +85,7 @@ export const split_by_llm_categorize: NodeConfig = {
       valueKey: 'uuid',
       nameKey: 'name',
       placeholder: 'Select a model...',
-      shouldExclude: (option: LLMModel) => !hasLLMRole(option, 'classification')
+      shouldExclude: (option: LLMModel) => !hasLLMRole(option, 'classify')
     },
     input: {
       type: 'text',
