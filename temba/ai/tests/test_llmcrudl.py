@@ -15,17 +15,17 @@ class LLMCRUDLTest(TembaTest, CRUDLTestMixin):
     def setUp(self):
         super().setUp()
 
-        self.openai = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "GPT-4", {"api_key": "openai-key"})
+        self.openai = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "GPT-4", {"api_key": "openai-key"})
         self.azure = LLM.create(
             self.org, self.admin, OpenAIAzureType(), "gpt-35-turbo", "Azure GPT", {"api_key": "azure-key"}
         )
-        LLM.create(self.org2, self.admin2, OpenAIType(), "gpt-4o", "Other Org", {})
+        LLM.create(self.org2, self.admin2, OpenAIType(), "gpt-5.4-mini", "Other Org", {})
 
     def test_list(self):
         list_url = reverse("ai.llm_list")
 
         # system LLMs should be hidden from the list
-        system = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "System", {})
+        system = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "System", {})
         system.is_system = True
         system.save(update_fields=("is_system",))
 
@@ -51,7 +51,9 @@ class LLMCRUDLTest(TembaTest, CRUDLTestMixin):
             self.assertNotIn("openai_azure", providers)
             self.assertEqual("OpenAI", providers["openai"])
 
-    @patch.object(OpenAIType, "get_model_choices", return_value=[("gpt-4o", "gpt-4o"), ("gpt-4.1", "gpt-4.1")])
+    @patch.object(
+        OpenAIType, "get_model_choices", return_value=[("gpt-5.4-mini", "gpt-5.4-mini"), ("gpt-5.4", "gpt-5.4")]
+    )
     def test_connect_reuses_api_key(self, mock_get_models):
         connect_url = reverse("ai.llm_connect")
         self.login(self.admin)
@@ -64,11 +66,11 @@ class LLMCRUDLTest(TembaTest, CRUDLTestMixin):
 
         response = self.process_wizard("connect", connect_url, {"credentials": {"api_key": ""}})
         self.assertEqual(
-            [("gpt-4o", "gpt-4o"), ("gpt-4.1", "gpt-4.1")], response.context["form"].fields["model"].choices
+            [("gpt-5.4-mini", "gpt-5.4-mini"), ("gpt-5.4", "gpt-5.4")], response.context["form"].fields["model"].choices
         )
 
         response = self.process_wizard(
-            "connect", connect_url, {"model": {"model": "gpt-4.1", "name": "Flow Assistant"}}
+            "connect", connect_url, {"model": {"model": "gpt-5.4", "name": "Flow Assistant"}}
         )
         self.assertRedirects(response, reverse("ai.llm_list"))
 
@@ -84,11 +86,13 @@ class LLMCRUDLTest(TembaTest, CRUDLTestMixin):
         other_org.config = {"api_key": "other-org-key"}
         other_org.save(update_fields=("config",))
 
-        inactive = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "Inactive", {"api_key": "inactive-key"})
+        inactive = LLM.create(
+            self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "Inactive", {"api_key": "inactive-key"}
+        )
         inactive.is_active = False
         inactive.save(update_fields=("is_active",))
 
-        system = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "System", {"api_key": "system-key"})
+        system = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "System", {"api_key": "system-key"})
         system.is_system = True
         system.save(update_fields=("is_system",))
 
@@ -97,7 +101,9 @@ class LLMCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertTrue(response.context["form"].fields["api_key"].required)
         self.assertNotIn("placeholder", response.context["form"].fields["api_key"].widget.attrs)
 
-    @patch.object(OpenAIType, "get_model_choices", return_value=[("gpt-4o", "gpt-4o"), ("gpt-4.1", "gpt-4.1")])
+    @patch.object(
+        OpenAIType, "get_model_choices", return_value=[("gpt-5.4-mini", "gpt-5.4-mini"), ("gpt-5.4", "gpt-5.4")]
+    )
     def test_update(self, mock_get_models):
         update_url = reverse("ai.llm_update", args=[self.openai.uuid])
 
@@ -116,13 +122,13 @@ class LLMCRUDLTest(TembaTest, CRUDLTestMixin):
 
         response = self.process_wizard("update", update_url, {"credentials": {"api_key": ""}})
         self.assertEqual(
-            [("gpt-4o", "gpt-4o"), ("gpt-4.1", "gpt-4.1")], response.context["form"].fields["model"].choices
+            [("gpt-5.4-mini", "gpt-5.4-mini"), ("gpt-5.4", "gpt-5.4")], response.context["form"].fields["model"].choices
         )
-        self.assertEqual("gpt-4o", response.context["form"].initial["model"])
+        self.assertEqual("gpt-5.4-mini", response.context["form"].initial["model"])
         self.assertEqual("GPT-4", response.context["form"].initial["name"])
 
         # names must be unique (case-insensitive)
-        response = self.process_wizard("update", update_url, {"model": {"model": "gpt-4.1", "name": "azure gpt"}})
+        response = self.process_wizard("update", update_url, {"model": {"model": "gpt-5.4", "name": "azure gpt"}})
         self.assertFormError(response.context["form"], "name", "Must be unique.")
 
         # update the model and name while preserving the existing key
@@ -132,16 +138,16 @@ class LLMCRUDLTest(TembaTest, CRUDLTestMixin):
             {
                 "provider": {"provider": "openai"},
                 "credentials": {"api_key": ""},
-                "model": {"model": "gpt-4.1", "name": "Translation Assistant"},
+                "model": {"model": "gpt-5.4", "name": "Translation Assistant"},
             },
         )
         self.assertRedirects(response, reverse("ai.llm_list"))
 
         self.openai.refresh_from_db()
         self.assertEqual("Translation Assistant", self.openai.name)
-        self.assertEqual("gpt-4.1", self.openai.model)
+        self.assertEqual("gpt-5.4", self.openai.model)
         self.assertEqual({"api_key": "openai-key"}, self.openai.config)
-        self.assertEqual(32_768, self.openai.max_output_tokens)
+        self.assertEqual(128_000, self.openai.max_output_tokens)
         mock_get_models.assert_called_once_with("openai-key")
 
         # system LLMs can't be edited
@@ -179,7 +185,7 @@ class LLMCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual(4_096, self.openai.max_output_tokens)
         mock_get_models.assert_called_once_with("azure-key")
 
-    @patch.object(OpenAIType, "get_model_choices", return_value=[("gpt-4o", "gpt-4o")])
+    @patch.object(OpenAIType, "get_model_choices", return_value=[("gpt-5.4-mini", "gpt-5.4-mini")])
     def test_update_api_key(self, mock_get_models):
         update_url = reverse("ai.llm_update", args=[self.openai.uuid])
         self.login(self.admin)
@@ -190,7 +196,7 @@ class LLMCRUDLTest(TembaTest, CRUDLTestMixin):
             {
                 "provider": {"provider": "openai"},
                 "credentials": {"api_key": "openai-new-key"},
-                "model": {"model": "gpt-4o", "name": "GPT-4"},
+                "model": {"model": "gpt-5.4-mini", "name": "GPT-4"},
             },
         )
         self.assertRedirects(response, reverse("ai.llm_list"))
@@ -259,7 +265,7 @@ class LLMCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertNotIn(self.openai, self.flow.llm_dependencies.all())
 
         # system LLMs can't be deleted
-        system = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "System", {})
+        system = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "System", {})
         system.is_system = True
         system.save(update_fields=("is_system",))
 

@@ -9,9 +9,9 @@ class SplitEngineRoleTest(MigrationTest):
     migrate_to = "0014_split_engine_role"
 
     def setUpBeforeMigration(self, apps):
-        self.llm1 = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "Both", {}, roles="TF")
-        self.llm2 = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "Editing", {}, roles="T")
-        self.llm3 = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "Engine", {}, roles="F")
+        self.llm1 = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "Both", {}, roles="TF")
+        self.llm2 = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "Editing", {}, roles="T")
+        self.llm3 = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "Engine", {}, roles="F")
 
     def test_migration(self):
         def assert_roles(llm, roles: str):
