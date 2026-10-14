@@ -1,3 +1,7 @@
+## v26.3.141 (2026-10-14)
+ * Use goflow's verb names for LLM roles in the internal API and editor
+ * Never collapse system revisions into user revisions or revisions by different authors in the revision browser, hide spec-only revisions, and always keep the newest revision
+
 ## v26.3.140 (2026-10-14)
  * Save flow revisions at their own spec version, request them at the serving server's version, and refuse to serve revisions to editors on an older minor spec version
  * Only migrate prior revisions forward when diffing flows, and skip flows already ahead of current in migrate_flows
