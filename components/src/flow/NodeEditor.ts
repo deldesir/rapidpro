@@ -978,6 +978,42 @@ export class NodeEditor extends RapidElement {
       : '#aaaaaa';
   }
 
+  // set while the dialog plays its exit, before the editor goes away
+  private closing = false;
+
+  // whether the close in progress came from saving
+  private saving = false;
+
+  /**
+   * Saving or cancelling makes the flow editor remove us, so the events that
+   * signal it wait for the dialog to play its exit first.
+   */
+  public fireCustomEvent(type: CustomEventType, detail: any = {}): any {
+    const closes =
+      type === CustomEventType.NodeSaved ||
+      type === CustomEventType.ActionSaved ||
+      type === CustomEventType.NodeEditCancelled;
+    if (!closes) {
+      return super.fireCustomEvent(type, detail);
+    }
+    if (this.closing) {
+      return;
+    }
+
+    const dialog = this.shadowRoot?.querySelector('temba-dialog') as Dialog;
+    if (!dialog || !dialog.canAnimateExit()) {
+      this.saving = false;
+      return super.fireCustomEvent(type, detail);
+    }
+
+    this.closing = true;
+    dialog.exit(this.saving ? 'submit' : 'cancel').then(() => {
+      this.closing = false;
+      this.saving = false;
+      super.fireCustomEvent(type, detail);
+    });
+  }
+
   private handleDialogButtonClick(event: CustomEvent): void {
     const button = event.detail.detail;
 
@@ -989,6 +1025,8 @@ export class NodeEditor extends RapidElement {
   }
 
   private handleSave(): void {
+    this.saving = true;
+
     // Process form data first
     const processedFormData = this.processFormDataForSave();
 
@@ -998,6 +1036,7 @@ export class NodeEditor extends RapidElement {
       // Validate the form
       const validation = this.validateForm();
       if (!validation.valid) {
+        this.saving = false;
         this.errors = validation.errors;
 
         // Expand any groups that contain validation errors
@@ -2886,6 +2925,7 @@ export class NodeEditor extends RapidElement {
     return html`
       <temba-dialog
         header="${header}"
+        subtitle="${config?.subtitle || ''}"
         .open="${this.isOpen}"
         .originX=${this.dialogOrigin?.x ?? null}
         .originY=${this.dialogOrigin?.y ?? null}

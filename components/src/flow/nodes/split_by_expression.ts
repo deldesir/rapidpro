@@ -23,6 +23,7 @@ import { validateWith } from '../utils';
 export const split_by_expression: NodeConfig = {
   type: 'split_by_expression',
   name: 'Split by Expression',
+  subtitle: 'Branch on any value you can build, like a date or a calculation.',
   group: SPLIT_GROUPS.split,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   dialogSize: 'large',

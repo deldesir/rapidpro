@@ -5,6 +5,7 @@ import { renderNamedObjects } from '../utils';
 
 export const add_input_labels: ActionConfig = {
   name: 'Add Input Labels',
+  subtitle: "Tag the contact's last message so it's easy to find in the inbox.",
   group: ACTION_GROUPS.save,
   // Not allowed in background flows: goflow treats add_input_labels as an interactive
   // action (messaging, messaging_offline, voice only), so offering it in a

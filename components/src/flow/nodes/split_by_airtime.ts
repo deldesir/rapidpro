@@ -16,6 +16,8 @@ import { resultNameField } from './shared';
 export const split_by_airtime: NodeConfig = {
   type: 'split_by_airtime',
   name: 'Send Airtime',
+  subtitle:
+    "Top up the contact's phone, then branch on whether it went through.",
   group: ACTION_GROUPS.services,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   features: [Features.AIRTIME],

@@ -73,6 +73,7 @@ const fromConfidenceLevel = (selection: any): ClassifierConfidence => {
 export const split_by_llm_categorize: NodeConfig = {
   type: 'split_by_llm_categorize',
   name: 'Split by AI',
+  subtitle: 'Let AI read a value and pick the category it fits best.',
   group: ACTION_GROUPS.services,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   form: {

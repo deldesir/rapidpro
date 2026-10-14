@@ -18,6 +18,8 @@ function digitFieldKey(digit: string): string {
 export const wait_for_menu: NodeConfig = {
   type: 'wait_for_menu',
   name: 'Wait for Menu',
+  subtitle:
+    'Offer keypad options, like "press 1 for sales", and branch on the choice.',
   group: SPLIT_GROUPS.wait,
   flowTypes: [FlowTypes.VOICE],
   form: {

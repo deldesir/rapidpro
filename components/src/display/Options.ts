@@ -255,7 +255,7 @@ export class Options extends RapidElement {
           var(--color-selection)
         );
         color: var(--temba-options-option-focus-text, var(--accent-700));
-        --icon-color: var(--accent-700);
+        --icon-color: var(--temba-options-option-focus-text, var(--accent-700));
       }
 
       /* options are flex rows, so the empty message aligns via

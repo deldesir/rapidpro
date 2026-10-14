@@ -4,6 +4,13 @@ import { property, state } from 'lit/decorators.js';
 import { Icon } from '../Icons';
 import { CustomEventType, Shortcut } from '../interfaces';
 import { ContentList, ContentListColumn } from './ContentList';
+import {
+  buttonChrome,
+  buttonChromeActive,
+  buttonChromeDestructive,
+  buttonChromeDestructiveHover,
+  buttonChromeHover
+} from '../styles/buttonChrome';
 
 /**
  * Shortcut management list used by the Tickets knowledge page. This is
@@ -90,31 +97,22 @@ export class ShortcutContentList extends ContentList<Shortcut> {
       }
 
       .menu-button {
-        align-items: center;
-        background: var(--surface);
-        border: 1px solid var(--border-strong);
-        border-radius: var(--r-sm);
-        box-sizing: border-box;
-        color: var(--text-1);
-        cursor: pointer;
-        display: inline-flex;
-        font-size: 12.5px;
-        height: 26px;
-        padding: 0 10px;
-        white-space: nowrap;
+        ${buttonChrome}
       }
 
       .menu-button:hover {
-        background: var(--sunken);
+        ${buttonChromeHover}
+      }
+      .menu-button:active {
+        ${buttonChromeActive}
       }
 
       .menu-button.destructive {
-        color: var(--danger);
+        ${buttonChromeDestructive}
       }
 
       .menu-button.destructive:hover {
-        border-color: var(--danger);
-        background: color-mix(in srgb, var(--danger) 6%, var(--surface));
+        ${buttonChromeDestructiveHover}
       }
 
       .detail-close {

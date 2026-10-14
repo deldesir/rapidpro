@@ -18,6 +18,7 @@ import { CustomEventType } from '../../interfaces';
 
 export const start_session: ActionConfig = {
   name: 'Start Flow',
+  subtitle: 'Kick off a flow for other contacts, separate from this one.',
   group: ACTION_GROUPS.broadcast,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   render: (_node: Node, action: StartSession) => {

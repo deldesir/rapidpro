@@ -5,6 +5,7 @@ import { renderGroupLinks } from '../utils';
 
 export const add_contact_groups: ActionConfig = {
   name: 'Add to Group',
+  subtitle: 'Good for triggering campaigns or targeting later broadcasts.',
   group: ACTION_GROUPS.contacts,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   render: (_node: Node, action: AddToGroup) => {

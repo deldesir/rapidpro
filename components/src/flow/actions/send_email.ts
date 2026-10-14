@@ -11,6 +11,7 @@ import { Icon } from '../../Icons';
 
 export const send_email: ActionConfig = {
   name: 'Send Email',
+  subtitle: 'Notify your team or anyone else, with details from the flow.',
   group: ACTION_GROUPS.broadcast,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   render: (_node: Node, action: SendEmail) => {
