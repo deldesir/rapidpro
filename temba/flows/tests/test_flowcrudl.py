@@ -921,6 +921,29 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         # should only have been migrated to that version
         self.assertEqual("13.0.0", response.json()["definition"]["spec_version"])
 
+        # an editor on an older minor version can't be given a revision which can't be migrated down to it
+        major, minor, _ = Flow.CURRENT_SPEC_VERSION.split(".")
+        response = self.client.get(f"{revisions_url}{revisions[0].id}/?version={major}.{int(minor) - 1}.0")
+        self.assertEqual(409, response.status_code)
+        self.assertEqual(
+            {
+                "error": "Your flow has been upgraded to the latest version. In order to continue editing, please "
+                "refresh your browser."
+            },
+            response.json(),
+        )
+
+        # a malformed version is rejected
+        response = self.client.get(f"{revisions_url}{revisions[0].id}/?version=abc")
+        self.assertEqual(400, response.status_code)
+
+        # but it can be given a revision which is only a newer patch version
+        revisions[0].spec_version = f"{major}.{minor}.99"
+        revisions[0].save(update_fields=("spec_version",))
+
+        response = self.client.get(f"{revisions_url}{revisions[0].id}/?version={major}.{minor}.0")
+        self.assertEqual(200, response.status_code)
+
         # check 404 for invalid revision number
         response = self.requestView(f"{revisions_url}12345678/", self.admin)
         self.assertEqual(404, response.status_code)

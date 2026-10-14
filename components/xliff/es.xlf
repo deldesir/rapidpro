@@ -486,10 +486,6 @@
   <source>Duplicate category names found: <x id="0" equiv-text="${uniqueDuplicates.join(', ')}"/></source>
   <target>Se encontraron nombres de categoría duplicados: <x id="0" equiv-text="${uniqueDuplicates.join(', ')}"/></target>
 </trans-unit>
-<trans-unit id="s3ce63bb0b028cfde">
-  <source>Categorize with <x id="0" equiv-text="${callLlmAction.llm.name}"/></source>
-  <target>Categorizar con <x id="0" equiv-text="${callLlmAction.llm.name}"/></target>
-</trans-unit>
 <trans-unit id="se1650831e07202d0">
   <source>Configure AI instructions</source>
   <target>Configurar instrucciones de IA</target>
@@ -1670,6 +1666,26 @@
 <trans-unit id="s776c9901ec5a724b">
   <source>This address may not belong to this contact</source>
   <target>Es posible que esta dirección no pertenezca a este contacto</target>
+</trans-unit>
+<trans-unit id="s6b42d98464d12106">
+  <source>Load Failed</source>
+  <target>Error al cargar</target>
+</trans-unit>
+<trans-unit id="s18a531ff4c1c40b6">
+  <source>Every category with a description needs a name</source>
+  <target>Toda categoría con descripción necesita un nombre</target>
+</trans-unit>
+<trans-unit id="s8532931c81aff363">
+  <source>Category names can't be <x id="0" equiv-text="${reserved.join(', ')}"/></source>
+  <target>Los nombres de categoría no pueden ser <x id="0" equiv-text="${reserved.join(', ')}"/></target>
+</trans-unit>
+<trans-unit id="sfee301adc4cebf77">
+  <source>Classify with <x id="0" equiv-text="${model.name}"/></source>
+  <target>Clasificar con <x id="0" equiv-text="${model.name}"/></target>
+</trans-unit>
+<trans-unit id="s0c328e625017555f">
+  <source>Unable to load the flow. Please try again.</source>
+  <target>No se pudo cargar el flujo. Inténtelo de nuevo.</target>
 </trans-unit>
 </body>
 </file>

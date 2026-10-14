@@ -7,7 +7,7 @@ import { CustomEventType } from '../interfaces';
 import { getStore } from '../store/Store';
 import { FlowDefinition } from '../store/flow-definition';
 import { fetchResults } from '../utils';
-import { FLOW_SPEC_VERSION } from '../store/AppState';
+import { showLoadErrorDialog } from './utils';
 import {
   labelsFor,
   normalizeChanges,
@@ -205,9 +205,7 @@ export class RevisionsWindow extends RapidElement {
     const requestId = ++this.fetchRequestId;
     this.isLoading = true;
     try {
-      const results = await fetchResults(
-        `/flow/revisions/${this.flow}/?version=${FLOW_SPEC_VERSION}`
-      );
+      const results = await fetchResults(`/flow/revisions/${this.flow}/`);
       if (requestId !== this.fetchRequestId) return;
       this.revisions = this.collapseRevisions(results);
     } catch (e) {
@@ -355,7 +353,7 @@ export class RevisionsWindow extends RapidElement {
         store.setLanguageCode(this.browseLanguageCode);
       }
     } catch (e) {
-      console.error('Error fetching revision details', e);
+      showLoadErrorDialog(e);
       this.cancelRevisionView();
     } finally {
       this.isLoading = false;
@@ -379,11 +377,14 @@ export class RevisionsWindow extends RapidElement {
         store.setLanguageCode(preservedLanguageCode);
       }
     } else {
-      store.fetchRevision(`/flow/revisions/${this.flow}`).finally(() => {
-        if (preservedLanguageCode) {
-          store.setLanguageCode(preservedLanguageCode);
-        }
-      });
+      store
+        .fetchRevision(`/flow/revisions/${this.flow}`)
+        .catch(showLoadErrorDialog)
+        .finally(() => {
+          if (preservedLanguageCode) {
+            store.setLanguageCode(preservedLanguageCode);
+          }
+        });
     }
 
     this.viewingRevision = null;
