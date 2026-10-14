@@ -904,23 +904,8 @@ CHANNEL_TYPES = [
 HELPDESK_IMPORT_TYPES = []
 
 LLM_TYPES = {
-    "temba.ai.types.anthropic.type.AnthropicType": {
-        # model id -> max output tokens
-        "models": {
-            "claude-fable-5-1": 128_000,
-            "claude-fable-5": 128_000,
-            "claude-opus-5-5": 128_000,
-            "claude-opus-5": 128_000,
-            "claude-opus-4-8": 128_000,
-            "claude-opus-4-7": 128_000,
-            "claude-opus-4-5-20251101": 64_000,
-            "claude-sonnet-5-5": 128_000,
-            "claude-sonnet-5": 128_000,
-            "claude-sonnet-4-6": 128_000,
-            "claude-haiku-4-5-20251001": 64_000,
-        },
-    },
     "temba.ai.types.openai.type.OpenAIType": {
+        # model id -> max output tokens
         "models": {
             "gpt-6-astra": 128_000,
             "gpt-6-sol": 128_000,

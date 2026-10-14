@@ -1,5 +1,4 @@
 from temba.ai.models import LLM
-from temba.ai.types.anthropic.type import AnthropicType
 from temba.ai.types.openai.type import OpenAIType
 from temba.tests import MigrationTest
 
@@ -12,9 +11,7 @@ class SplitEngineRoleTest(MigrationTest):
     def setUpBeforeMigration(self, apps):
         self.llm1 = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "Both", {}, roles="TF")
         self.llm2 = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "Editing", {}, roles="T")
-        self.llm3 = LLM.create(
-            self.org, self.admin, AnthropicType(), "claude-haiku-4-5-20251001", "Engine", {}, roles="F"
-        )
+        self.llm3 = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "Engine", {}, roles="F")
 
     def test_migration(self):
         def assert_roles(llm, roles: str):

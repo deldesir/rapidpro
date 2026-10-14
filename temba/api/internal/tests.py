@@ -6,8 +6,8 @@ from django.utils import timezone
 
 from temba import mailroom
 from temba.ai.models import LLM
-from temba.ai.types.anthropic.type import AnthropicType
 from temba.ai.types.openai.type import OpenAIType
+from temba.ai.types.openai_azure.type import OpenAIAzureType
 from temba.api.tests.mixins import APITestMixin
 from temba.campaigns.models import Campaign, CampaignEvent
 from temba.contacts.models import Contact, ContactExport, ContactField, ContactGroup, ContactURN
@@ -1492,17 +1492,17 @@ class EndpointsTest(APITestMixin, TembaTest):
         endpoint_url = reverse("api.internal.llms") + ".json"
 
         openai = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "GPT-4", {}, roles=LLM.ROLE_TRANSLATION)
-        anthropic = LLM.create(self.org, self.admin, AnthropicType(), "claude-haiku-4-5-20251001", "Claude", {})
+        azure = LLM.create(self.org, self.admin, OpenAIAzureType(), "gpt-35-turbo", "Azure GPT", {})
         classifier = LLM.create(
             self.org,
             self.admin,
-            AnthropicType(),
-            "claude-haiku-4-5-20251001",
+            OpenAIAzureType(),
+            "gpt-35-turbo",
             "Classifier",
             {},
             roles=LLM.ROLE_CLASSIFICATION,
         )
-        deleted = LLM.create(self.org, self.admin, AnthropicType(), "claude-haiku-4-5-20251001", "Deleted", {})
+        deleted = LLM.create(self.org, self.admin, OpenAIAzureType(), "gpt-35-turbo", "Deleted", {})
         deleted.release(self.admin)
         system = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "System", {})
         system.is_system = True
@@ -1517,16 +1517,16 @@ class EndpointsTest(APITestMixin, TembaTest):
             [self.admin],
             results=[
                 {
-                    "uuid": str(classifier.uuid),
-                    "name": "Classifier",
-                    "type": "anthropic",
-                    "roles": ["classification"],
+                    "uuid": str(azure.uuid),
+                    "name": "Azure GPT",
+                    "type": "openai_azure",
+                    "roles": ["translation", "generation", "classification"],
                 },
                 {
-                    "uuid": str(anthropic.uuid),
-                    "name": "Claude",
-                    "type": "anthropic",
-                    "roles": ["translation", "generation", "classification"],
+                    "uuid": str(classifier.uuid),
+                    "name": "Classifier",
+                    "type": "openai_azure",
+                    "roles": ["classification"],
                 },
                 {
                     "uuid": str(openai.uuid),

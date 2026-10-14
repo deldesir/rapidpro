@@ -14,13 +14,10 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-msgid "You can find your API key at https://console.anthropic.com/settings/keys"
+msgid "You can find your API key at https://platform.openai.com/account/api-key"
 msgstr ""
 
 msgid "Invalid API Key."
-msgstr ""
-
-msgid "You can find your API key at https://platform.openai.com/account/api-key"
 msgstr ""
 
 msgid "API keys are provided by the UNICEF ICTD team."

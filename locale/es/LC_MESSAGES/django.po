@@ -20,14 +20,11 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=3; plural=n == 1 ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;\n"
 
-msgid "You can find your API key at https://console.anthropic.com/settings/keys"
-msgstr "Puede encontrar su clave de API en https://console.anthropic.com/settings/keys"
+msgid "You can find your API key at https://platform.openai.com/account/api-key"
+msgstr "Puede encontrar su clave de API en https://platform.openai.com/account/api-key"
 
 msgid "Invalid API Key."
 msgstr "Clave de API no válida."
-
-msgid "You can find your API key at https://platform.openai.com/account/api-key"
-msgstr "Puede encontrar su clave de API en https://platform.openai.com/account/api-key"
 
 msgid "API keys are provided by the UNICEF ICTD team."
 msgstr "Las claves de API las proporciona el equipo ICTD de UNICEF."
