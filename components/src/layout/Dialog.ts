@@ -837,6 +837,11 @@ export class Dialog extends ResizeElement {
   }
 
   private handleContentInteraction(event: Event) {
+    // still working in the dialog after using the primary button (a submit
+    // that came back with errors, say), so a close from here is a cancel;
+    // the primary button sets this again on its own click
+    this.primaryClicked = false;
+
     // the path covers the interacted element and its ancestors, so a change
     // fired later by a containing component (e.g. a select whose inner input
     // was clicked) still matches

@@ -538,6 +538,10 @@ export class NodeEditor extends RapidElement {
   }
 
   private handleEscapeKey(event: KeyboardEvent): void {
+    // already on the way out
+    if (this.closing) {
+      return;
+    }
     if (event.key === 'Escape' && this.isOpen) {
       const path = event.composedPath();
 
@@ -1015,6 +1019,9 @@ export class NodeEditor extends RapidElement {
   }
 
   private handleDialogButtonClick(event: CustomEvent): void {
+    if (this.closing) {
+      return;
+    }
     const button = event.detail.detail;
 
     if (button.type === ButtonType.PRIMARY) {
@@ -1025,6 +1032,9 @@ export class NodeEditor extends RapidElement {
   }
 
   private handleSave(): void {
+    if (this.closing) {
+      return;
+    }
     this.saving = true;
 
     // Process form data first

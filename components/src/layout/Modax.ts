@@ -542,7 +542,7 @@ export class Modax extends RapidElement {
         .size=${this.size}
         .width=${this.width}
         ?open=${this.open}
-        ?loading=${this.fetching && this.originX == null}
+        ?loading=${this.fetching}
         ?submitting=${this.submitting}
         ?destructive=${this.isDestructive()}
         ?noFocus=${true}

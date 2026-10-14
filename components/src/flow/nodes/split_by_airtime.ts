@@ -17,7 +17,7 @@ export const split_by_airtime: NodeConfig = {
   type: 'split_by_airtime',
   name: 'Send Airtime',
   subtitle:
-    "Top up the contact's phone, then branch on whether it went through.",
+    "Top up the contact's phone. The transfer completes in the background.",
   group: ACTION_GROUPS.services,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   features: [Features.AIRTIME],
