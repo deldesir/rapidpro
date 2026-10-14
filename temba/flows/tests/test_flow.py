@@ -372,6 +372,30 @@ class FlowTest(TembaTest, CRUDLTestMixin):
             self.assertEqual(spec_version, rev.definition["spec_version"])
             self.assertEqual(spec_version, flow.version_number)
 
+        # re-saving the same content at a newer spec version diffs against the prior migrated to that version
+        prior = flow.revisions.order_by("id").last()
+        definition = prior.definition
+        definition["spec_version"] = "99.1.0"
+
+        with patch.object(
+            FlowRevision, "get_migrated_definition", autospec=True, side_effect=lambda r, to_version: dict(r.definition)
+        ) as mock_migrate:
+            rev, _ = flow.save_revision(self.admin, dict(definition))
+
+        mock_migrate.assert_called_once_with(prior, to_version="99.1.0")
+        self.assertEqual({"tags": ["spec"]}, rev.changes)
+
+        # re-saving it at an older spec version than the prior doesn't try to migrate the prior down
+        definition = rev.definition
+        definition["spec_version"] = "99.0.0"
+
+        with patch("temba.flows.models.FlowRevision.get_migrated_definition") as mock_migrate:
+            rev, _ = flow.save_revision(self.admin, dict(definition))
+
+        mock_migrate.assert_not_called()
+        self.assertEqual({"tags": ["spec"]}, rev.changes)
+        self.assertEqual("99.0.0", rev.spec_version)
+
         # can't save older spec version over newer
         definition = flow.revisions.order_by("id").last().definition
         definition["spec_version"] = Flow.FINAL_LEGACY_VERSION

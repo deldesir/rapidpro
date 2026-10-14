@@ -56,3 +56,9 @@ class MigrateFlowsTest(TembaTest):
         self.assertIn("Flows migrated: 1 of 1 (0 errored)", out)
         flow.refresh_from_db()
         self.assertEqual(Flow.CURRENT_SPEC_VERSION, flow.version_number)
+
+        # flows saved at a newer spec version than ours are left alone
+        flow.version_number = "99.0.0"
+        flow.save(update_fields=("version_number",))
+
+        self.assertIn("All flows up to date", call())

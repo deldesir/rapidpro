@@ -783,7 +783,7 @@ class Flow(PublishedAssetMixin, LegacyIDMixin, OrgAsset, DependencyMixin):
         changes = None
         if current_revision:
             prior_def = current_revision.definition
-            if current_revision.spec_version != spec_version:
+            if Version(current_revision.spec_version) < Version(spec_version):
                 # migrate the prior forward so the schemas align; accepting that name/expire
                 # then come from the live flow (get_migrated_definition rewrites them) — fine
                 # because cross-spec saves are rare and not where metadata diffs matter
