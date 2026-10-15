@@ -1,3 +1,7 @@
+## v26.3.143 (2026-10-15)
+ * Default the definitions endpoint's dependencies param to none
+ * Remove gpt-4.1 and gpt-4o models from the OpenAI LLM type
+
 ## v26.3.142 (2026-10-14)
  * Refresh dialogs and buttons
  * Rename LLM role constants to match role names
