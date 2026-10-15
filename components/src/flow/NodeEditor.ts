@@ -399,13 +399,33 @@ export class NodeEditor extends RapidElement {
       .extras {
         display: flex;
         flex-direction: column;
-        gap: 15px;
+        gap: 6px;
       }
 
       .extra-section {
         display: flex;
         flex-direction: column;
         gap: 6px;
+      }
+
+      /* the heading's × lines up with the sentence strips' × */
+      .extra-section:not(.sentence) .extra-header {
+        margin-right: -6px;
+      }
+
+      /* stacked sections sit on the same panel as the sentence strips */
+      .extra-section:not(.sentence) {
+        padding: 12px 14px;
+        border-radius: 10px;
+        background: var(--bg, #f6f7f9);
+      }
+
+      /* when translating, a fill clashes with the original-text highlights,
+         so the panels are outlined instead */
+      .extras.translating .extra-section:not(.sentence),
+      .extras.translating .extra-line {
+        background: transparent;
+        border: 1px solid var(--border, #e6e8ec);
       }
 
       .extra-header {
@@ -476,11 +496,6 @@ export class NodeEditor extends RapidElement {
         --checkbox-hover-bg: rgba(0, 0, 0, 0.05);
       }
 
-      /* neighboring strips sit closer together than other extras */
-      .extra-section.sentence + .extra-section.sentence {
-        margin-top: -9px;
-      }
-
       /* inline flow rather than flex, so long translations wrap like text */
       .extra-sentence {
         flex-grow: 1;
@@ -529,6 +544,7 @@ export class NodeEditor extends RapidElement {
         display: flex;
         flex-wrap: wrap;
         gap: 6px;
+        margin-top: 6px;
       }
 
       .extra-chip {
@@ -2808,8 +2824,16 @@ export class NodeEditor extends RapidElement {
     const sections = extrasConfig.sections.filter((section) => {
       const fieldsInSection = this.collectFieldsFromItems(section.items);
 
-      // When translating, leave out sections marked as not localizable
-      if (this.isTranslating && section.localizable === false) {
+      // When translating, leave out sections marked as not localizable, and
+      // sections whose fields the action doesn't translate
+      const localizable = (config as ActionConfig).localizable;
+      if (
+        this.isTranslating &&
+        (section.localizable === false ||
+          (Array.isArray(localizable) &&
+            fieldsInSection.length > 0 &&
+            fieldsInSection.every((f) => !localizable.includes(f))))
+      ) {
         fieldsInSection.forEach((f) => renderedFields.add(f));
         return false;
       }
@@ -2836,7 +2860,7 @@ export class NodeEditor extends RapidElement {
     }
 
     return html`
-      <div class="extras">
+      <div class="extras ${this.isTranslating ? 'translating' : ''}">
         ${shown.map((section) =>
           this.renderExtraSection(section, config, renderedFields)
         )}

@@ -645,14 +645,14 @@ export class TembaArrayEditor extends BaseListEditor<ListItem> {
       }
 
       .removable .drag-handle {
-        opacity: 0.3;
+        color: rgba(0, 0, 0, 0.12);
         cursor: default;
         pointer-events: none;
       }
 
       .drag-handle {
         cursor: grab;
-        color: #ccc;
+        color: var(--text-4, #a2abb8);
       }
     `;
   }

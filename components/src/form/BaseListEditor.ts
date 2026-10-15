@@ -42,10 +42,10 @@ export abstract class BaseListEditor<
 
       .remove-btn {
         padding: 4px;
-        border: 1px solid var(--color-widget-border);
+        border: 1px solid var(--border-strong, #d2d6dc);
         border-radius: var(--curvature-widget);
         background: var(--surface);
-        color: var(--text-3);
+        color: var(--text-2, #4d5664);
         cursor: pointer;
         font-size: 14px;
       }
@@ -54,8 +54,11 @@ export abstract class BaseListEditor<
         background: var(--sunken);
       }
 
+      /* translucent rather than faded, so it reads on white or tinted panels */
       .remove-btn:disabled {
-        opacity: 0.3;
+        background: transparent;
+        border-color: rgba(0, 0, 0, 0.1);
+        color: rgba(0, 0, 0, 0.22);
         cursor: default;
       }
     `;
