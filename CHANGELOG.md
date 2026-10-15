@@ -1,3 +1,7 @@
+## v26.3.146 (2026-10-15)
+ * Use the website language setting for component locale and language names
+ * Simplify the auto translation dialog copy
+
 ## v26.3.145 (2026-10-15)
  * Replace dialog accordions with add-chips and sentence extras
  * Put every extras section on a panel and make list row controls easier to see
