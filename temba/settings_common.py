@@ -905,22 +905,24 @@ HELPDESK_IMPORT_TYPES = []
 
 LLM_TYPES = {
     "temba.ai.types.openai.type.OpenAIType": {
-        # model id -> max output tokens
+        # model id -> max output tokens and, if it can't perform all LLM roles, the roles it can (e.g. "C")
         "models": {
-            "gpt-6-astra": 128_000,
-            "gpt-6-sol": 128_000,
-            "gpt-6-luna": 128_000,
-            "gpt-5.6-sol": 128_000,
-            "gpt-5.6-terra": 128_000,
-            "gpt-5.6-luna": 128_000,
-            "gpt-5.5": 128_000,
-            "gpt-5.4": 128_000,
-            "gpt-5.4-mini": 128_000,
+            "gpt-6-astra": {"max_output_tokens": 128_000},
+            "gpt-6-sol": {"max_output_tokens": 128_000},
+            "gpt-6-luna": {"max_output_tokens": 128_000},
+            "gpt-5.6-sol": {"max_output_tokens": 128_000},
+            "gpt-5.6-terra": {"max_output_tokens": 128_000},
+            "gpt-5.6-luna": {"max_output_tokens": 128_000},
+            "gpt-5.5": {"max_output_tokens": 128_000},
+            "gpt-5.4": {"max_output_tokens": 128_000},
+            "gpt-5.4-mini": {"max_output_tokens": 128_000},
         },
     },
 }
 if TESTING:
-    LLM_TYPES["temba.ai.types.openai_azure.type.OpenAIAzureType"] = {"models": {"gpt-35-turbo": 4_096}}
+    LLM_TYPES["temba.ai.types.openai_azure.type.OpenAIAzureType"] = {
+        "models": {"gpt-35-turbo": {"max_output_tokens": 4_096}}
+    }
 
 
 # set of ISO-639-3 codes of languages to allow in addition to all ISO-639-1 languages

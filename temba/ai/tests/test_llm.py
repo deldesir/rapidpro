@@ -1,9 +1,16 @@
-from unittest.mock import call, patch
+from unittest.mock import call
+
+from django.conf import settings
+from django.test import override_settings
 
 from temba.ai.models import LLM
+from temba.ai.types import reload_llm_types
 from temba.ai.types.openai.type import OpenAIType
 from temba.ai.types.openai_azure.type import OpenAIAzureType
 from temba.tests import TembaTest, mock_mailroom
+
+OPENAI_TYPE = "temba.ai.types.openai.type.OpenAIType"
+AZURE_TYPE = "temba.ai.types.openai_azure.type.OpenAIAzureType"
 
 
 class LLMTest(TembaTest):
@@ -24,27 +31,57 @@ class LLMTest(TembaTest):
         self.assertEqual(2, LLM.objects.count())
 
     def test_roles(self):
-        # roles can be given explicitly
-        editing = LLM.create(
-            self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "Editing", {}, roles=LLM.ROLE_TRANSLATE
-        )
-        self.assertEqual("T", editing.roles)
+        azure_settings = {
+            "models": {
+                "gpt-35-turbo": {"max_output_tokens": 4_096},
+                "gpt-classify": {"max_output_tokens": 1_024, "roles": LLM.ROLE_CLASSIFY},
+            }
+        }
 
-        # otherwise limited to what the type can do
-        with patch.object(OpenAIAzureType, "roles", LLM.ROLE_CLASSIFY):
-            classifier = LLM.create(self.org, self.admin, OpenAIAzureType(), "gpt-35-turbo", "Azure", {})
+        with override_settings(LLM_TYPES={**settings.LLM_TYPES, AZURE_TYPE: azure_settings}):
+            # roles and max output tokens come from the model definition
+            classifier = LLM.create(self.org, self.admin, OpenAIAzureType(), "gpt-classify", "Classifier", {})
             self.assertEqual("C", classifier.roles)
+            self.assertEqual(1_024, classifier.max_output_tokens)
 
-            # and reset when the type changes
-            classifier.update_config(self.admin, OpenAIType(), "gpt-5.4-mini", "GPT", {})
+            # all roles if the definition doesn't limit them
+            general = LLM.create(self.org, self.admin, OpenAIAzureType(), "gpt-35-turbo", "General", {})
+            self.assertEqual("TGC", general.roles)
+
+            # an edit that keeps the model keeps the roles
+            LLM.objects.filter(id=general.id).update(roles=LLM.ROLE_GENERATE)
+            general.refresh_from_db()
+            general.update_config(self.admin, OpenAIAzureType(), "gpt-35-turbo", "Renamed", {})
+            self.assertEqual("G", general.roles)
+
+            # but they're updated when the model changes
+            classifier.update_config(self.admin, OpenAIAzureType(), "gpt-35-turbo", "Classifier", {})
             self.assertEqual("TGC", classifier.roles)
+            self.assertEqual(4_096, classifier.max_output_tokens)
 
-            editing.update_config(self.admin, OpenAIAzureType(), "gpt-35-turbo", "Azure 2", {})
-            self.assertEqual("C", editing.roles)
+            general.update_config(self.admin, OpenAIAzureType(), "gpt-classify", "General", {})
+            self.assertEqual("C", general.roles)
 
-        # but not when it doesn't
-        editing.update_config(self.admin, OpenAIAzureType(), "gpt-35-turbo", "Azure 3", {})
-        self.assertEqual("C", editing.roles)
+        # models of types which don't list any get all roles and the default max output tokens
+        with override_settings(LLM_TYPES={**settings.LLM_TYPES, OPENAI_TYPE: {}}):
+            anything = LLM.create(self.org, self.admin, OpenAIType(), "gpt-anything", "Anything", {})
+            self.assertEqual("TGC", anything.roles)
+            self.assertEqual(4_096, anything.max_output_tokens)
+
+    def test_settings_validation(self):
+        def assert_invalid(model_def):
+            with override_settings(LLM_TYPES={**settings.LLM_TYPES, OPENAI_TYPE: {"models": {"gpt-x": model_def}}}):
+                with self.assertRaises(AssertionError):
+                    reload_llm_types()
+
+        self.addCleanup(reload_llm_types)
+
+        assert_invalid(128_000)  # old format of just max output tokens
+        assert_invalid({"max_output_tokens": 1_024, "roles": ""})
+        assert_invalid({"max_output_tokens": 1_024, "roles": "CX"})
+
+        with override_settings(LLM_TYPES={**settings.LLM_TYPES, OPENAI_TYPE: {"models": {"gpt-x": {"roles": "GC"}}}}):
+            reload_llm_types()
 
     def test_release_system(self):
         system = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "System", {})

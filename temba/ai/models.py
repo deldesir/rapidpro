@@ -25,9 +25,6 @@ class LLMType:
     # help text to show for the API key field
     api_key_help = None
 
-    # roles models of this type can perform, if not all, e.g. a type that can classify but not generate text
-    roles = None
-
     @property
     def settings(self) -> dict:
         """
@@ -76,37 +73,43 @@ class LLM(OrgAsset, DependencyMixin):
     org_limit_key = Org.LIMIT_LLMS
 
     @staticmethod
-    def _get_max_output_tokens(typ: LLMType, model: str) -> int:
+    def _get_model_def(typ: LLMType, model: str) -> dict:
         models_settings = typ.settings.get("models") or {}
         assert not models_settings or model in models_settings
 
-        return models_settings.get(model, LLM._meta.get_field("max_output_tokens").get_default())
+        model_def = models_settings.get(model, {})
+        return {
+            "max_output_tokens": model_def.get(
+                "max_output_tokens", LLM._meta.get_field("max_output_tokens").get_default()
+            ),
+            "roles": model_def.get("roles", LLM.ALL_ROLES),
+        }
 
     @classmethod
-    def create(cls, org, user, typ, model: str, name: str, config: dict, roles: str = None):
-        kwargs = dict(
+    def create(cls, org, user, typ, model: str, name: str, config: dict):
+        return cls.objects.create(
             org=org,
             name=name,
             llm_type=typ.slug,
             model=model,
             config=config,
-            roles=roles or typ.roles or cls.ALL_ROLES,
             created_by=user,
             modified_by=user,
-            max_output_tokens=cls._get_max_output_tokens(typ, model),
+            **cls._get_model_def(typ, model),
         )
 
-        return cls.objects.create(**kwargs)
-
     def update_config(self, user, typ: LLMType, model: str, name: str, config: dict):
-        if typ.slug != self.llm_type:
-            self.roles = typ.roles or self.ALL_ROLES
+        model_def = self._get_model_def(typ, model)
+
+        # roles only follow the model definition when the model changes, so an edit like a rename doesn't widen them
+        if typ.slug != self.llm_type or model != self.model:
+            self.roles = model_def["roles"]
 
         self.llm_type = typ.slug
         self.model = model
         self.name = name
         self.config = config
-        self.max_output_tokens = self._get_max_output_tokens(typ, model)
+        self.max_output_tokens = model_def["max_output_tokens"]
         self.modified_by = user
         self.save(
             update_fields=(
