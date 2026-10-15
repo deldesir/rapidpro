@@ -45,6 +45,7 @@ import {
 } from './AppState';
 import { StoreApi } from 'zustand/vanilla';
 import { normalizeUuid } from './identity';
+import { getPageLocale } from '../languages';
 
 const { setLocale } = configureLocalization({
   sourceLocale,
@@ -217,8 +218,6 @@ export class Store extends RapidElement {
   @property({ type: Object, attribute: false })
   private keyedAssets: KeyedAssets = {};
 
-  private locale = [...navigator.languages];
-
   private fields: { [key: string]: ContactField } = {};
   private groups: { [uuid: string]: CachedGroup } = {};
   private shortcuts: Shortcut[] = [];
@@ -292,7 +291,7 @@ export class Store extends RapidElement {
   }
 
   public getLocale() {
-    return this.locale[0];
+    return getPageLocale();
   }
 
   public clearCache() {
@@ -364,10 +363,6 @@ export class Store extends RapidElement {
       fetches.push(
         getUrl(this.workspaceEndpoint).then((response: WebResponse) => {
           this.workspace = response.json;
-          const lang = response.headers.get('content-language');
-          if (lang) {
-            this.locale = [lang, ...this.locale];
-          }
         })
       );
     }
@@ -455,10 +450,7 @@ export class Store extends RapidElement {
   }
 
   public getLanguageCode() {
-    if (this.locale.length > 0) {
-      return this.locale[0].split('-')[0];
-    }
-    return 'en';
+    return this.getLocale().split('-')[0];
   }
 
   public async refreshGlobals() {
@@ -530,7 +522,7 @@ export class Store extends RapidElement {
   public getShortDuration(scheduled: DateTime, compareDate: DateTime = null) {
     const now = compareDate || DateTime.now();
     return scheduled
-      .setLocale(this.locale[0])
+      .setLocale(this.getLocale())
       .toRelative({ base: now, style: 'long' });
   }
 

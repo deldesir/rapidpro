@@ -1,5 +1,5 @@
 import { expect } from '@open-wc/testing';
-import { getLanguageName } from '../src/languages';
+import { getLanguageLabel, getLanguageName } from '../src/languages';
 
 describe('getLanguageName', () => {
   it('returns "Unknown" for the "und" code', () => {
@@ -10,6 +10,23 @@ describe('getLanguageName', () => {
     expect(getLanguageName('eng')).to.equal('English');
     expect(getLanguageName('fra')).to.equal('French');
     expect(getLanguageName('spa')).to.equal('Spanish');
+  });
+
+  it('names languages in the language of the page', () => {
+    const original = document.documentElement.lang;
+    try {
+      document.documentElement.lang = 'fr';
+      expect(getLanguageName('eng')).to.equal('anglais');
+      expect(getLanguageName('kin')).to.equal('kinyarwanda');
+
+      // codes Intl can't name fall back to the English table
+      expect(getLanguageName('aar')).to.equal('Afar');
+
+      document.documentElement.lang = 'es';
+      expect(getLanguageName('fra')).to.equal('francés');
+    } finally {
+      document.documentElement.lang = original;
+    }
   });
 
   it('falls back to the additional lookup map for unsupported codes', () => {
@@ -33,5 +50,22 @@ describe('getLanguageName', () => {
   it('returns an empty string for empty or undefined input', () => {
     expect(getLanguageName('')).to.equal('');
     expect(getLanguageName(undefined as unknown as string)).to.equal('');
+  });
+});
+
+describe('getLanguageLabel', () => {
+  it('capitalizes names that the page language writes in lowercase', () => {
+    const original = document.documentElement.lang;
+    try {
+      document.documentElement.lang = 'fr';
+      expect(getLanguageName('eng')).to.equal('anglais');
+      expect(getLanguageLabel('eng')).to.equal('Anglais');
+
+      document.documentElement.lang = 'en';
+      expect(getLanguageLabel('eng')).to.equal('English');
+      expect(getLanguageLabel('')).to.equal('');
+    } finally {
+      document.documentElement.lang = original;
+    }
   });
 });
