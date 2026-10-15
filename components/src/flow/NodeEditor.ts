@@ -2824,8 +2824,16 @@ export class NodeEditor extends RapidElement {
     const sections = extrasConfig.sections.filter((section) => {
       const fieldsInSection = this.collectFieldsFromItems(section.items);
 
-      // When translating, leave out sections marked as not localizable
-      if (this.isTranslating && section.localizable === false) {
+      // When translating, leave out sections marked as not localizable, and
+      // sections whose fields the action doesn't translate
+      const localizable = (config as ActionConfig).localizable;
+      if (
+        this.isTranslating &&
+        (section.localizable === false ||
+          (Array.isArray(localizable) &&
+            fieldsInSection.length > 0 &&
+            fieldsInSection.every((f) => !localizable.includes(f))))
+      ) {
         fieldsInSection.forEach((f) => renderedFields.add(f));
         return false;
       }

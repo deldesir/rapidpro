@@ -1993,11 +1993,14 @@ describe('Localization Editing', () => {
     const extras = nodeEditor.shadowRoot.querySelector('.extras');
     expect(extras.classList.contains('translating')).to.be.true;
 
+    // runtime attachments aren't translated, so only quick replies is offered
+    const chips = Array.from(extras.querySelectorAll('.extra-chip'));
+    expect(chips.map((c) => c.textContent.trim())).to.deep.equal([
+      'Quick Replies'
+    ]);
+
     // nothing is translated yet, so quick replies are added from their chip
-    const chip = Array.from(extras.querySelectorAll('.extra-chip')).find(
-      (c) => c.textContent.trim() === 'Quick Replies'
-    ) as HTMLElement;
-    chip.click();
+    (chips[0] as HTMLElement).click();
     await nodeEditor.updateComplete;
 
     const section = extras.querySelector(
