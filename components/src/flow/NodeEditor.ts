@@ -399,13 +399,25 @@ export class NodeEditor extends RapidElement {
       .extras {
         display: flex;
         flex-direction: column;
-        gap: 15px;
+        gap: 6px;
       }
 
       .extra-section {
         display: flex;
         flex-direction: column;
         gap: 6px;
+      }
+
+      /* the heading's × lines up with the sentence strips' × */
+      .extra-section:not(.sentence) .extra-header {
+        margin-right: -6px;
+      }
+
+      /* stacked sections sit on the same panel as the sentence strips */
+      .extra-section:not(.sentence) {
+        padding: 12px 14px;
+        border-radius: 10px;
+        background: var(--bg, #f6f7f9);
       }
 
       .extra-header {
@@ -476,11 +488,6 @@ export class NodeEditor extends RapidElement {
         --checkbox-hover-bg: rgba(0, 0, 0, 0.05);
       }
 
-      /* neighboring strips sit closer together than other extras */
-      .extra-section.sentence + .extra-section.sentence {
-        margin-top: -9px;
-      }
-
       /* inline flow rather than flex, so long translations wrap like text */
       .extra-sentence {
         flex-grow: 1;
@@ -529,6 +536,7 @@ export class NodeEditor extends RapidElement {
         display: flex;
         flex-wrap: wrap;
         gap: 6px;
+        margin-top: 6px;
       }
 
       .extra-chip {
