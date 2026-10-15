@@ -1,3 +1,7 @@
+## v26.3.144 (2026-10-15)
+ * Define LLM roles per model in LLM_TYPES settings, validating model definitions on load
+ * Reserve some names for groups and flows
+
 ## v26.3.143 (2026-10-15)
  * Default the definitions endpoint's dependencies param to none
  * Remove gpt-4.1 and gpt-4o models from the OpenAI LLM type
