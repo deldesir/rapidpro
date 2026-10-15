@@ -1491,17 +1491,11 @@ class EndpointsTest(APITestMixin, TembaTest):
     def test_llms(self):
         endpoint_url = reverse("api.internal.llms") + ".json"
 
-        openai = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "GPT-4", {}, roles=LLM.ROLE_TRANSLATE)
+        openai = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "GPT-4", {})
         azure = LLM.create(self.org, self.admin, OpenAIAzureType(), "gpt-35-turbo", "Azure GPT", {})
-        classifier = LLM.create(
-            self.org,
-            self.admin,
-            OpenAIAzureType(),
-            "gpt-35-turbo",
-            "Classifier",
-            {},
-            roles=LLM.ROLE_CLASSIFY,
-        )
+        classifier = LLM.create(self.org, self.admin, OpenAIAzureType(), "gpt-35-turbo", "Classifier", {})
+        LLM.objects.filter(id=openai.id).update(roles=LLM.ROLE_TRANSLATE)
+        LLM.objects.filter(id=classifier.id).update(roles=LLM.ROLE_CLASSIFY)
         deleted = LLM.create(self.org, self.admin, OpenAIAzureType(), "gpt-35-turbo", "Deleted", {})
         deleted.release(self.admin)
         system = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "System", {})
