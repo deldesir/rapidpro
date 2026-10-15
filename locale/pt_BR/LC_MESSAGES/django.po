@@ -2425,6 +2425,9 @@ msgstr "Esta área de trabalho atingiu seu limite de grupos."
 msgid "Required."
 msgstr "Obrigatório."
 
+msgid "Is a reserved name."
+msgstr "É um nome reservado."
+
 msgid "Invalid group name."
 msgstr "Nome de grupo inválido."
 

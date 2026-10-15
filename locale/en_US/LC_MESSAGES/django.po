@@ -2407,6 +2407,9 @@ msgstr ""
 msgid "Required."
 msgstr ""
 
+msgid "Is a reserved name."
+msgstr ""
+
 msgid "Invalid group name."
 msgstr ""
 
