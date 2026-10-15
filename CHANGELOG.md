@@ -1,3 +1,9 @@
+## v26.3.145 (2026-10-15)
+ * Replace dialog accordions with add-chips and sentence extras
+ * Put every extras section on a panel and make list row controls easier to see
+ * Outline extras instead of filling them when translating
+ * Don't offer extras whose fields aren't translated when translating
+
 ## v26.3.144 (2026-10-15)
  * Define LLM roles per model in LLM_TYPES settings, validating model definitions on load
  * Reserve some names for groups and flows
