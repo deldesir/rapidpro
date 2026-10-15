@@ -101,12 +101,15 @@ class LLM(OrgAsset, DependencyMixin):
     def update_config(self, user, typ: LLMType, model: str, name: str, config: dict):
         model_def = self._get_model_def(typ, model)
 
+        # roles only follow the model definition when the model changes, so an edit like a rename doesn't widen them
+        if typ.slug != self.llm_type or model != self.model:
+            self.roles = model_def["roles"]
+
         self.llm_type = typ.slug
         self.model = model
         self.name = name
         self.config = config
         self.max_output_tokens = model_def["max_output_tokens"]
-        self.roles = model_def["roles"]
         self.modified_by = user
         self.save(
             update_fields=(

@@ -4,6 +4,7 @@ from django.conf import settings
 from django.test import override_settings
 
 from temba.ai.models import LLM
+from temba.ai.types import reload_llm_types
 from temba.ai.types.openai.type import OpenAIType
 from temba.ai.types.openai_azure.type import OpenAIAzureType
 from temba.tests import TembaTest, mock_mailroom
@@ -47,7 +48,13 @@ class LLMTest(TembaTest):
             general = LLM.create(self.org, self.admin, OpenAIAzureType(), "gpt-35-turbo", "General", {})
             self.assertEqual("TGC", general.roles)
 
-            # and they're updated when the model changes
+            # an edit that keeps the model keeps the roles
+            LLM.objects.filter(id=general.id).update(roles=LLM.ROLE_GENERATE)
+            general.refresh_from_db()
+            general.update_config(self.admin, OpenAIAzureType(), "gpt-35-turbo", "Renamed", {})
+            self.assertEqual("G", general.roles)
+
+            # but they're updated when the model changes
             classifier.update_config(self.admin, OpenAIAzureType(), "gpt-35-turbo", "Classifier", {})
             self.assertEqual("TGC", classifier.roles)
             self.assertEqual(4_096, classifier.max_output_tokens)
@@ -60,6 +67,21 @@ class LLMTest(TembaTest):
             anything = LLM.create(self.org, self.admin, OpenAIType(), "gpt-anything", "Anything", {})
             self.assertEqual("TGC", anything.roles)
             self.assertEqual(4_096, anything.max_output_tokens)
+
+    def test_settings_validation(self):
+        def assert_invalid(model_def):
+            with override_settings(LLM_TYPES={**settings.LLM_TYPES, OPENAI_TYPE: {"models": {"gpt-x": model_def}}}):
+                with self.assertRaises(AssertionError):
+                    reload_llm_types()
+
+        self.addCleanup(reload_llm_types)
+
+        assert_invalid(128_000)  # old format of just max output tokens
+        assert_invalid({"max_output_tokens": 1_024, "roles": ""})
+        assert_invalid({"max_output_tokens": 1_024, "roles": "CX"})
+
+        with override_settings(LLM_TYPES={**settings.LLM_TYPES, OPENAI_TYPE: {"models": {"gpt-x": {"roles": "GC"}}}}):
+            reload_llm_types()
 
     def test_release_system(self):
         system = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "System", {})
