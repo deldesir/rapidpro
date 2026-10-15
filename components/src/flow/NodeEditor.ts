@@ -420,6 +420,14 @@ export class NodeEditor extends RapidElement {
         background: var(--bg, #f6f7f9);
       }
 
+      /* when translating, a fill clashes with the original-text highlights,
+         so the panels are outlined instead */
+      .extras.translating .extra-section:not(.sentence),
+      .extras.translating .extra-line {
+        background: transparent;
+        border: 1px solid var(--border, #e6e8ec);
+      }
+
       .extra-header {
         display: flex;
         align-items: center;
@@ -2844,7 +2852,7 @@ export class NodeEditor extends RapidElement {
     }
 
     return html`
-      <div class="extras">
+      <div class="extras ${this.isTranslating ? 'translating' : ''}">
         ${shown.map((section) =>
           this.renderExtraSection(section, config, renderedFields)
         )}

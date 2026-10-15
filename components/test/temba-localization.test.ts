@@ -5,6 +5,7 @@ import { SendMsg, FlowDefinition } from '../src/store/flow-definition';
 import { zustand } from '../src/store/AppState';
 import { send_msg } from '../src/flow/actions/send_msg';
 import '../temba-modules';
+import { assertScreenshot, getClip } from './utils.test';
 
 describe('Localization Editing', () => {
   let editor: Editor;
@@ -1972,6 +1973,46 @@ describe('Localization Editing', () => {
     const dialog = nodeEditor.shadowRoot.querySelector('temba-dialog');
     expect(dialog).to.exist;
     expect(dialog.getAttribute('header')).to.equal('Spanish - Send Message');
+  });
+
+  it('outlines extras instead of filling them when translating', async () => {
+    zustand.getState().setLanguageCode('spa');
+
+    const action: SendMsg = {
+      type: 'send_msg',
+      uuid: 'outlined-extras-action',
+      text: 'Pick a color',
+      quick_replies: ['red', 'green', 'blue']
+    };
+
+    const nodeEditor: NodeEditor = await fixture(html`
+      <temba-node-editor .action=${action} .isOpen=${true}> </temba-node-editor>
+    `);
+    await nodeEditor.updateComplete;
+
+    const extras = nodeEditor.shadowRoot.querySelector('.extras');
+    expect(extras.classList.contains('translating')).to.be.true;
+
+    // nothing is translated yet, so quick replies are added from their chip
+    const chip = Array.from(extras.querySelectorAll('.extra-chip')).find(
+      (c) => c.textContent.trim() === 'Quick Replies'
+    ) as HTMLElement;
+    chip.click();
+    await nodeEditor.updateComplete;
+
+    const section = extras.querySelector(
+      '.extra-section[data-extra="Quick Replies"]'
+    );
+    const style = getComputedStyle(section);
+    expect(style.backgroundColor).to.equal('rgba(0, 0, 0, 0)');
+    expect(style.borderTopWidth).to.equal('1px');
+
+    const dialog = nodeEditor.shadowRoot.querySelector('temba-dialog') as any;
+    await dialog.updateComplete;
+    await assertScreenshot(
+      'editor/translating-quick-replies',
+      getClip(dialog.shadowRoot.querySelector('.dialog-container'))
+    );
   });
 
   it('should handle attachments in localization', () => {
