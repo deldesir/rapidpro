@@ -1,4 +1,4 @@
-import { property } from 'lit/decorators.js';
+import { property, state } from 'lit/decorators.js';
 import { TemplateResult, html, css, PropertyValues } from 'lit';
 import { Button } from '../display/Button';
 import { CustomEventType } from '../interfaces';
@@ -84,12 +84,14 @@ export class Dialog extends ResizeElement {
       .dialog-mask {
         width: 100%;
         height: 100%;
-        background: rgba(0, 0, 0, 0.5);
+        background: rgba(15, 22, 36, 0.42);
+        -webkit-backdrop-filter: blur(4px) saturate(120%);
+        backdrop-filter: blur(4px) saturate(120%);
         opacity: 0;
         position: fixed;
         top: 0px;
         left: 0px;
-        transition: opacity linear calc(var(--transition-speed) / 2ms);
+        transition: opacity calc(var(--transition-speed, 250ms) * 0.8) ease-out;
         pointer-events: none;
       }
 
@@ -100,20 +102,25 @@ export class Dialog extends ResizeElement {
       .dialog-mask .dialog-container {
         position: relative;
         transition:
-          transform var(--transition-speed) ease-in-out,
-          opacity ease-in-out calc(var(--transition-speed) - 50ms);
-        border-radius: var(--curvature);
-        box-shadow: 0px 0px 2px 4px rgba(0, 0, 0, 0.06);
+          transform calc(var(--transition-speed, 250ms) * 1.5)
+            cubic-bezier(0.16, 1, 0.3, 1),
+          opacity var(--transition-speed, 250ms) ease-out,
+          box-shadow 200ms ease-out;
+        border-radius: var(--dialog-radius, 18px);
+        box-shadow:
+          0 0 0 1px rgba(15, 22, 36, 0.06),
+          0 2px 6px rgba(15, 22, 36, 0.06),
+          0 24px 56px -12px rgba(15, 22, 36, 0.32);
         overflow: hidden;
-        transform: scale(0.9) translatey(2em);
-        background: white;
+        opacity: 0;
+        transform: translateY(16px) scale(0.97);
+        background: var(--surface, #fff);
         margin: auto;
         display: flex;
         flex-direction: column;
       }
 
       .dialog-body {
-        background: #fff;
         overflow-y: auto;
         overflow-x: hidden;
         flex-grow: 1;
@@ -126,10 +133,11 @@ export class Dialog extends ResizeElement {
 
       .dialog-mask.dialog-open .dialog-container {
         top: inherit;
+        opacity: 1;
       }
 
       .dialog-mask.dialog-animation-end .dialog-container {
-        transform: scale(1) translate(0, 0) !important;
+        transform: none !important;
       }
 
       .dialog-mask.dialog-ready .dialog-container {
@@ -140,33 +148,161 @@ export class Dialog extends ResizeElement {
         margin-top: -10000px;
       }
 
+      /* The dialog is a solid gradient of its color (--header-bg, or the
+         primary color) with the title on it, and a white sheet holding the
+         body and footer that overlaps the bottom of the header. */
+      .dialog-mask .dialog-container {
+        --dialog-color: var(--header-bg, rgb(var(--primary-rgb, 73, 127, 206)));
+        background: var(--dialog-color);
+      }
+
+      @supports (color: color-mix(in srgb, red, red)) {
+        .dialog-mask .dialog-container {
+          background: linear-gradient(
+            155deg,
+            color-mix(
+              in srgb,
+              var(--dialog-color) var(--dialog-shade, 93%),
+              #000
+            ),
+            var(--dialog-color) 45%,
+            color-mix(in srgb, var(--dialog-color) 70%, #fff)
+          );
+        }
+
+        /* an explicit color (a node type, say) keeps a deeper shade; the
+           primary color stays lighter, like the primary buttons */
+        .dialog-mask .dialog-container.themed {
+          --dialog-shade: 78%;
+          /* the highlighted row in dropdowns follows the theme too */
+          --temba-options-option-focus-bg: var(--focus-50);
+          --temba-options-option-focus-text: var(--focus-700);
+        }
+
+        /* so does the primary button, which draws from the accent ramp */
+        .dialog-mask .dialog-container.themed .dialog-footer temba-button {
+          --accent: var(--dialog-color);
+          --accent-500: color-mix(in srgb, var(--dialog-color) 90%, black);
+          --accent-600: color-mix(in srgb, var(--dialog-color) 80%, black);
+        }
+      }
+
+      /* Focus rings inside a themed dialog follow its color: --focus-rgb is
+         set on the container from --header-bg (see updateThemeFocus), and
+         the focus tokens are re-derived here so they reach slotted widgets
+         as well as the dialog's own buttons. */
+      .dialog-mask .dialog-container {
+        --focus: rgb(var(--focus-rgb, 91, 156, 229));
+        --focus-halo: 0 0 0 3px rgba(var(--focus-rgb, 91, 156, 229), 0.3);
+        --widget-box-shadow-focused: var(--focus-halo);
+      }
+
+      @supports (color: color-mix(in srgb, red, red)) {
+        .dialog-mask .dialog-container {
+          --focus-50: color-mix(in srgb, var(--focus) 12%, white);
+          --focus-100: color-mix(in srgb, var(--focus) 24%, white);
+          --focus-200: color-mix(in srgb, var(--focus) 40%, white);
+          --focus-300: color-mix(in srgb, var(--focus) 60%, white);
+          --focus-600: color-mix(in srgb, var(--focus) 60%, black);
+          --focus-700: color-mix(in srgb, var(--focus) 45%, black);
+          --focus-muted: color-mix(in srgb, var(--focus) 60%, white);
+          --focus-halo: 0 0 0 3px
+            color-mix(in srgb, var(--focus) 30%, transparent);
+          --color-focus: var(--focus-muted);
+        }
+      }
+
+      .dialog-mask .dialog-container.headless {
+        background: var(--surface, #fff);
+      }
+
+      .dialog-header {
+        position: relative;
+      }
+
+      /* the bottom padding includes the strip the sheet covers, so the
+         title sits centered in the visible part of the header */
       .header-text {
         display: flex;
         flex-direction: row;
         align-items: center;
-        font-size: 20px;
-        padding: 12px 20px var(--dialog-header-padding-bottom, 12px);
-        color: var(--header-text);
-        background: var(--header-bg);
+        gap: 12px;
+        padding: 15px 24px calc(15px + var(--dialog-sheet-overlap, 22px)) 24px;
+        color: var(--header-text, #fff);
       }
 
-      /* "flat" variant: header/footer share the body's white background
-         and lose their inner padding so the dialog reads as one
-         continuous surface. Use for content-focused dialogs that don't
-         need the tinted chrome. */
-      :host([variant='flat']) .header-text {
-        background: #fff;
-        color: var(--color-text);
-        padding-bottom: 0;
+      .header-text .titles {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        flex-grow: 1;
+        min-width: 0;
       }
 
-      :host([variant='flat']) .dialog-footer {
-        background: #fff;
-        padding-top: 0;
+      .header-text .title,
+      .header-text .subtitle {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
 
       .header-text .title {
+        font-size: 18.5px;
+        font-weight: var(--w-bold, 700);
+        letter-spacing: -0.02em;
+        line-height: 1.15;
+      }
+
+      .header-text .subtitle {
+        font-size: 13px;
+        font-weight: var(--w-regular, 400);
+        line-height: 1.35;
+        opacity: 0.85;
+      }
+
+      .dialog-sheet {
+        position: relative;
+        display: flex;
+        flex-direction: column;
         flex-grow: 1;
+        min-height: 0;
+        margin-top: calc(var(--dialog-sheet-overlap, 22px) * -1);
+        background: var(--surface, #fff);
+        border-radius: 16px 16px 0 0;
+        box-shadow: 0 -6px 18px -6px rgba(0, 0, 0, 0.22);
+      }
+
+      .headless .dialog-sheet {
+        margin-top: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+
+      /* "flat" variant: one continuous white surface with a plain title,
+         for content-focused dialogs. */
+      :host([variant='flat']) .dialog-mask .dialog-container {
+        background: var(--surface, #fff);
+      }
+
+      :host([variant='flat']) .header-text {
+        padding-bottom: 0;
+        color: var(--text-1, #1a1f26);
+      }
+
+      :host([variant='flat']) .header-text .title {
+        font-size: 17px;
+        font-weight: var(--w-semibold, 600);
+      }
+
+      :host([variant='flat']) .dialog-sheet {
+        margin-top: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+
+      :host([variant='flat']) .dialog-footer {
+        border-top: none;
+        padding-top: 0;
       }
 
       .header-text .status {
@@ -175,15 +311,13 @@ export class Dialog extends ResizeElement {
       }
 
       .dialog-footer {
-        background: var(--dialog-footer-background, var(--color-primary-light));
-        padding: var(--dialog-footer-padding-top, 10px) 10px 10px;
+        background: var(--dialog-footer-background, transparent);
+        border-top: 1px solid var(--border, #e6e8ec);
+        padding: var(--dialog-footer-padding-top, 12px) 16px 12px 24px;
         display: flex;
         flex-flow: row;
         align-items: center;
-      }
-
-      temba-button {
-        margin-left: 10px;
+        gap: 10px;
       }
 
       .dialog-body temba-loading {
@@ -224,6 +358,10 @@ export class Dialog extends ResizeElement {
 
   @property()
   header: string;
+
+  // optional second line under the header
+  @property()
+  subtitle: string;
 
   @property()
   body: string;
@@ -301,6 +439,22 @@ export class Dialog extends ResizeElement {
 
   scrollOffset: any = 0;
 
+  private wasVisible = false;
+
+  // the dialog color as an "r, g, b" triplet, used for focus rings
+  @state()
+  private themeFocusRgb = '';
+
+  private static colorCanvas: CanvasRenderingContext2D | null = null;
+
+  // set while the exit plays, so repeat calls share it
+  private exiting: Promise<void> | null = null;
+  private exitAnimations: Animation[] = [];
+
+  // whether the primary button was the last one used, which makes a close
+  // read as the action being submitted rather than dismissed
+  private primaryClicked = false;
+
   public constructor() {
     super();
   }
@@ -331,15 +485,32 @@ export class Dialog extends ResizeElement {
     }
 
     if (changes.has('open') && this.open) {
-      if (this.originX == null && this.originY == null) {
-        // Default animation (no origin): set animationEnd before render
-        this.animationEnd = true;
-      }
+      // the entrance is played by unfold(), so skip the css transform
+      this.animationEnd = true;
+
+      // clear what a previous exit left behind
+      this.exitAnimations.forEach((animation) => animation.cancel());
+      this.exitAnimations = [];
+      this.exiting = null;
+      this.primaryClicked = false;
     }
   }
 
   public updated(changes: Map<string, any>) {
     super.updated(changes);
+
+    const visible = this.open && !this.loading;
+    if (visible && !this.wasVisible) {
+      this.updateThemeFocus();
+      requestAnimationFrame(() => this.unfold());
+    }
+    this.wasVisible = visible;
+
+    // closing on our own (cancel, escape, or an owner like modax finishing
+    // its action) plays the exit
+    if (changes.has('open') && !this.open && changes.get('open')) {
+      this.exit(this.primaryClicked ? 'submit' : 'cancel');
+    }
 
     if (changes.has('open')) {
       this.contentEdited = false;
@@ -347,48 +518,12 @@ export class Dialog extends ResizeElement {
       const body = document.querySelector('body');
 
       if (this.open) {
-        if (this.originX != null && this.originY != null) {
-          // Spring-from-origin animation: measure final position, then
-          // set initial transform at click point and transition to center
-          const ox = this.originX;
-          const oy = this.originY;
-          this.originX = null;
-          this.originY = null;
-
-          requestAnimationFrame(() => {
-            const container = this.shadowRoot?.querySelector(
-              '.dialog-container'
-            ) as HTMLElement;
-            if (container) {
-              const rect = container.getBoundingClientRect();
-              const cx = rect.left + rect.width / 2;
-              const cy = rect.top + rect.height / 2;
-              const dx = ox - cx;
-              const dy = oy - cy;
-
-              // Disable transition so we can set the start position instantly
-              container.style.transition = 'none';
-              container.style.transform = `translate(${dx}px, ${dy}px) scale(0.2)`;
-              // Force reflow to register the start position
-              container.getBoundingClientRect();
-
-              // Re-enable transition and trigger animation to final position
-              container.style.transition = '';
-              this.animationEnd = true;
-              window.setTimeout(() => {
-                this.ready = true;
-                this.animationEnd = false;
-                container.style.transform = '';
-              }, 400);
-            }
-          });
-        } else {
-          // Default animation (no origin): animationEnd already set in willUpdate
-          window.setTimeout(() => {
-            this.ready = true;
-            this.animationEnd = false;
-          }, 400);
-        }
+        this.originX = null;
+        this.originY = null;
+        window.setTimeout(() => {
+          this.ready = true;
+          this.animationEnd = false;
+        }, 400);
 
         this.scrollOffset = -document.documentElement.scrollTop;
         body.style.position = 'fixed';
@@ -413,11 +548,228 @@ export class Dialog extends ResizeElement {
             if (button) button.submitting = false;
           });
       } else {
-        window.setTimeout(() => {
-          this.ready = false;
-        }, 400);
+        // holding the ready state through the exit keeps the css transform
+        // from pulling the card down while it plays
+        (this.exiting || Promise.resolve()).then(() =>
+          window.setTimeout(() => {
+            this.ready = false;
+          }, 400)
+        );
       }
     }
+  }
+
+  // read at the moment the dialog shows, since owners like modax set
+  // --header-bg once their content has loaded
+  private updateThemeFocus(): void {
+    const color = getComputedStyle(this).getPropertyValue('--header-bg').trim();
+    this.themeFocusRgb = color ? Dialog.toRgbTriplet(color) : '';
+  }
+
+  private static toRgbTriplet(color: string): string {
+    if (!Dialog.colorCanvas) {
+      Dialog.colorCanvas = document.createElement('canvas').getContext('2d');
+    }
+    const ctx = Dialog.colorCanvas;
+    if (!ctx) {
+      return '';
+    }
+
+    // the canvas normalizes any css color to #rrggbb, or rgba() when it
+    // has transparency
+    ctx.fillStyle = '#000';
+    ctx.fillStyle = color;
+    const normalized = String(ctx.fillStyle);
+    if (normalized.startsWith('#')) {
+      const n = parseInt(normalized.slice(1, 7), 16);
+      return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
+    }
+    const match = normalized.match(/rgba?\(([^)]+)\)/);
+    return match
+      ? match[1]
+          .split(',')
+          .slice(0, 3)
+          .map((part) => part.trim())
+          .join(', ')
+      : '';
+  }
+
+  /** The header unfurls from a thin line, then the sheet slides up into it. */
+  private unfold(): void {
+    const container = this.shadowRoot?.querySelector(
+      '.dialog-container'
+    ) as HTMLElement;
+    const header = this.shadowRoot?.querySelector(
+      '.dialog-header'
+    ) as HTMLElement;
+    if (
+      !container ||
+      !header ||
+      !container.animate ||
+      this.isMobile() ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+      return;
+    }
+
+    const sheet = this.shadowRoot.querySelector('.dialog-sheet') as HTMLElement;
+    const titles = this.shadowRoot.querySelector('.titles') as HTMLElement;
+    const overlap = sheet ? header.offsetHeight - sheet.offsetTop : 0;
+    const height = container.offsetHeight;
+    const width = container.offsetWidth;
+    const band = header.offsetHeight - overlap;
+
+    // the clip hides the shadow, so bring it back once the card is whole
+    container.style.boxShadow = 'none';
+    const card = container.animate(
+      [
+        {
+          clipPath: `inset(${band / 2}px ${width * 0.42}px ${height - band / 2}px round 4px)`,
+          offset: 0
+        },
+        {
+          clipPath: `inset(0px 0px ${height - band}px round 18px 18px 6px 6px)`,
+          offset: 0.45
+        },
+        { clipPath: 'inset(0px 0px 0px round 18px)', offset: 1 }
+      ],
+      { duration: 840, easing: 'cubic-bezier(.45,0,.2,1)' }
+    );
+    const restoreShadow = () => (container.style.boxShadow = '');
+    card.onfinish = restoreShadow;
+    card.oncancel = restoreShadow;
+
+    titles?.animate(
+      [
+        { opacity: 0, transform: 'translateY(10px)' },
+        { opacity: 1, transform: 'none' }
+      ],
+      {
+        delay: 360,
+        duration: 400,
+        easing: 'cubic-bezier(.16,1,.3,1)',
+        fill: 'backwards'
+      }
+    );
+
+    sheet?.animate(
+      [
+        { transform: 'translateY(72px)', opacity: 0 },
+        { opacity: 1, offset: 0.2 },
+        { transform: 'none', opacity: 1 }
+      ],
+      {
+        delay: 380,
+        duration: 660,
+        easing: 'cubic-bezier(.22,1.28,.36,1)',
+        fill: 'backwards'
+      }
+    );
+  }
+
+  /** Whether exit() will animate, or finish right away. */
+  public canAnimateExit(): boolean {
+    const container = this.shadowRoot?.querySelector(
+      '.dialog-container'
+    ) as HTMLElement;
+    return (
+      !!container?.animate &&
+      !this.isMobile() &&
+      !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    );
+  }
+
+  /**
+   * Plays the dialog's way out. A submit tucks the sheet up into the header
+   * and lifts the card away; a cancel dips the sheet and drops the card.
+   * Neither claims the action worked, since owners may still be waiting on
+   * it. Owners that remove the dialog when they're done can wait on this.
+   */
+  public exit(kind: 'submit' | 'cancel'): Promise<void> {
+    if (this.exiting) {
+      return this.exiting;
+    }
+    if (!this.canAnimateExit()) {
+      this.exiting = Promise.resolve();
+      return this.exiting;
+    }
+
+    const root = this.shadowRoot;
+    const container = root.querySelector('.dialog-container') as HTMLElement;
+    const header = root.querySelector('.dialog-header') as HTMLElement;
+    const sheet = root.querySelector('.dialog-sheet') as HTMLElement;
+    const mask = root.querySelector('.dialog-mask') as HTMLElement;
+
+    const run = (
+      el: HTMLElement,
+      keyframes: Keyframe[],
+      delay: number,
+      duration: number,
+      easing: string
+    ) => {
+      if (el) {
+        this.exitAnimations.push(
+          el.animate(keyframes, { delay, duration, easing, fill: 'both' })
+        );
+      }
+    };
+
+    const drop = [
+      { opacity: 1, transform: 'none' },
+      { opacity: 0, transform: 'translateY(14px) scale(0.96)' }
+    ];
+    const fade = [{ opacity: 1 }, { opacity: 0 }];
+    let total: number;
+
+    if (kind === 'submit' && header && sheet) {
+      const overlap = header.offsetHeight - sheet.offsetTop;
+      run(
+        sheet,
+        [{ transform: 'none' }, { transform: 'translateY(105%)' }],
+        0,
+        320,
+        'cubic-bezier(.5,0,.75,0)'
+      );
+      run(
+        container,
+        [
+          { height: `${container.offsetHeight}px` },
+          { height: `${header.offsetHeight - overlap}px` }
+        ],
+        60,
+        400,
+        'cubic-bezier(.16,1,.3,1)'
+      );
+      run(
+        container,
+        [
+          { opacity: 1, transform: 'none' },
+          { opacity: 0, transform: 'translateY(-12px) scale(0.98)' }
+        ],
+        420,
+        240,
+        'cubic-bezier(.4,0,.7,.2)'
+      );
+      run(mask, fade, 440, 300, 'ease');
+      total = 740;
+    } else {
+      run(
+        sheet,
+        [
+          { opacity: 1, transform: 'none' },
+          { opacity: 0, transform: 'translateY(10px)' }
+        ],
+        0,
+        180,
+        'ease-in'
+      );
+      run(container, drop, 80, 260, 'cubic-bezier(.4,0,.7,.2)');
+      run(mask, fade, 120, 300, 'ease');
+      total = 420;
+    }
+
+    this.exiting = new Promise((resolve) => window.setTimeout(resolve, total));
+    return this.exiting;
   }
 
   public focusFirstInput(): void {
@@ -443,6 +795,7 @@ export class Dialog extends ResizeElement {
         detail = this.buttons[button.index];
       }
 
+      this.primaryClicked = detail?.type === ButtonType.PRIMARY;
       this.fireCustomEvent(CustomEventType.ButtonClicked, { button, detail });
       if (button.name === this.cancelButtonName || (detail && detail.closes)) {
         this.open = false;
@@ -484,6 +837,11 @@ export class Dialog extends ResizeElement {
   }
 
   private handleContentInteraction(event: Event) {
+    // still working in the dialog after using the primary button (a submit
+    // that came back with errors, say), so a close from here is a cancel;
+    // the primary button sets this again on its own click
+    this.primaryClicked = false;
+
     // the path covers the interacted element and its ancestors, so a change
     // fired later by a containing component (e.g. a select whose inner input
     // was clicked) still matches
@@ -537,6 +895,10 @@ export class Dialog extends ResizeElement {
       dialogStyle['width'] = Dialog.widths[this.size];
     }
 
+    if (this.themeFocusRgb) {
+      dialogStyle['--focus-rgb'] = this.themeFocusRgb;
+    }
+
     if (this.isMobile()) {
       dialogStyle['width'] = '100%';
       dialogStyle['height'] = '100%';
@@ -547,7 +909,12 @@ export class Dialog extends ResizeElement {
       ? html`
           <div class="dialog-header">
             <div class="header-text">
-              <div class="title">${this.header}</div>
+              <div class="titles">
+                <div class="title">${this.header}</div>
+                ${this.subtitle
+                  ? html`<div class="subtitle">${this.subtitle}</div>`
+                  : null}
+              </div>
             </div>
           </div>
         `
@@ -586,42 +953,47 @@ export class Dialog extends ResizeElement {
             @input=${this.handleContentEdited}
             @change=${this.handleContentEdited}
             style=${styleMap(dialogStyle)}
-            class="dialog-container"
+            class="dialog-container ${getClasses({
+              headless: !this.header,
+              themed: !!this.themeFocusRgb
+            })}"
           >
             ${header}
-            <div class="dialog-body" @keypress=${this.handleKeyUp}>
-              ${this.body ? this.body : html`<slot></slot>`}
-              <temba-loading units="6" size="8"></temba-loading>
-            </div>
+            <div class="dialog-sheet">
+              <div class="dialog-body" @keypress=${this.handleKeyUp}>
+                ${this.body ? this.body : html`<slot></slot>`}
+                <temba-loading units="6" size="8"></temba-loading>
+              </div>
 
-            ${
-              // the gutter check is render-time only (not reactive) - fine
-              // while consumers slot gutter content declaratively up front
-              this.buttons.length > 0 || this.querySelector('[slot="gutter"]')
-                ? html`<div class="dialog-footer">
-                    <div class="flex-grow">
-                      <slot name="gutter"></slot>
-                    </div>
-                    ${this.buttons.map(
-                      (button: DialogButton, index) => html`
-                        <temba-button
-                          name=${button.name}
-                          ?destructive=${button.type == 'primary' &&
-                          this.destructive}
-                          ?primary=${button.type == 'primary' &&
-                          !this.destructive}
-                          ?secondary=${button.type == 'secondary'}
-                          ?submitting=${this.submitting &&
-                          button.type == 'primary'}
-                          ?disabled=${this.disabled && !button.closes}
-                          index=${index}
-                          @click=${this.handleClick}
-                        ></temba-button>
-                      `
-                    )}
-                  </div>`
-                : null
-            }
+              ${
+                // the gutter check is render-time only (not reactive) - fine
+                // while consumers slot gutter content declaratively up front
+                this.buttons.length > 0 || this.querySelector('[slot="gutter"]')
+                  ? html`<div class="dialog-footer">
+                      <div class="flex-grow">
+                        <slot name="gutter"></slot>
+                      </div>
+                      ${this.buttons.map(
+                        (button: DialogButton, index) => html`
+                          <temba-button
+                            name=${button.name}
+                            ?destructive=${button.type == 'primary' &&
+                            this.destructive}
+                            ?primary=${button.type == 'primary' &&
+                            !this.destructive}
+                            ?secondary=${button.type == 'secondary'}
+                            ?submitting=${this.submitting &&
+                            button.type == 'primary'}
+                            ?disabled=${this.disabled && !button.closes}
+                            index=${index}
+                            @click=${this.handleClick}
+                          ></temba-button>
+                        `
+                      )}
+                    </div>`
+                  : null
+              }
+            </div>
           </div>
           <div class="grow-bottom"></div>
         </div>

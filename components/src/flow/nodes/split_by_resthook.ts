@@ -9,6 +9,8 @@ import { renderClamped, validateWith } from '../utils';
 export const split_by_resthook: NodeConfig = {
   type: 'split_by_resthook',
   name: 'Call Resthook',
+  subtitle:
+    'Hand data to an integration like Zapier, then branch on the response.',
   group: ACTION_GROUPS.services,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   showAsAction: true,

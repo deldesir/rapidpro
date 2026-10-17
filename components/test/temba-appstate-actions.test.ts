@@ -574,6 +574,45 @@ describe('store/AppState actions', () => {
       expect(state().viewingRevision).to.equal(true);
     });
 
+    it('requests revisions at the spec version it was given', async () => {
+      clearMockGets();
+      mockGET(/\/flow\/revisions\/flow-1\/latest\/\?version=14\.7\.0$/, {
+        definition: definition(),
+        info: info()
+      });
+      state().setSpecVersion('14.7.0');
+      await state().fetchRevision(REVISION_URL);
+      expect(state().flowDefinition.uuid).to.equal('flow-1');
+    });
+
+    it('rejects with the server error when a revision cannot be served', async () => {
+      clearMockGets();
+      mockGET(
+        /\/flow\/revisions\/flow-1\//,
+        { error: 'Please refresh your browser.' },
+        {},
+        '409'
+      );
+      let error: Error = null;
+      await state()
+        .fetchRevision(REVISION_URL)
+        .catch((e) => (error = e));
+      expect(error?.message).to.equal('Please refresh your browser.');
+      expect(state().flowDefinition).to.equal(null);
+    });
+
+    it('rejects with a generic error when the server gives none', async () => {
+      clearMockGets();
+      mockGET(/\/flow\/revisions\/flow-1\//, {}, {}, '500');
+      let error: Error = null;
+      await state()
+        .fetchRevision(REVISION_URL)
+        .catch((e) => (error = e));
+      expect(error?.message).to.equal(
+        'Unable to load the flow. Please try again.'
+      );
+    });
+
     it('does not treat "latest" as viewing an older revision', async () => {
       mockRevision();
       await state().fetchRevision(REVISION_URL, 'latest');

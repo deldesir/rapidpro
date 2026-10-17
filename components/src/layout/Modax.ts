@@ -40,7 +40,7 @@ export class Modax extends RapidElement {
          lay itself out (a form that fills the dialog and scrolls a pane inside it, say): these styles are adopted,
          so they land after the <style> the body brings with it and win every tie. */
       .modax-body {
-        padding: 20px;
+        padding: 20px 24px;
         position: relative;
         background: var(--body-bg);
       }
@@ -50,7 +50,7 @@ export class Modax extends RapidElement {
         content: '';
         height: 100%;
         width: 100%;
-        margin-left: -20px;
+        margin-left: -24px;
         margin-top: -20px;
         background: rgba(200, 200, 200, 0.1);
         position: absolute;
@@ -208,7 +208,6 @@ export class Modax extends RapidElement {
         this.body = this.getLoading();
       } else if (changes.get('open') !== undefined) {
         // open can get reflected into undefined, make sure we've been open before
-        this.body = '';
         this.originX = null;
         this.originY = null;
       }
@@ -224,14 +223,28 @@ export class Modax extends RapidElement {
       } else {
         // open can get reflected into undefined, make sure we've been open before
         if (changes.get('open') !== undefined) {
-          // clear the modal body out when closed, note that js functions declared on the
-          // window will hang around
-          const scriptBlock = this.shadowRoot.querySelector('.scripts') as any;
-          if (scriptBlock) {
-            for (const child of Array.from(scriptBlock.children)) {
-              (child as Element).remove();
+          // clear the modal body out once the dialog has played its exit, note that js
+          // functions declared on the window will hang around
+          const dialog = this.shadowRoot.querySelector(
+            'temba-dialog'
+          ) as Dialog;
+          const exited = dialog
+            ? dialog.updateComplete.then(() => dialog.exit('cancel'))
+            : Promise.resolve();
+          exited.then(() => {
+            if (this.open) {
+              return;
             }
-          }
+            this.body = '';
+            const scriptBlock = this.shadowRoot.querySelector(
+              '.scripts'
+            ) as any;
+            if (scriptBlock) {
+              for (const child of Array.from(scriptBlock.children)) {
+                (child as Element).remove();
+              }
+            }
+          });
         }
       }
     }
@@ -529,7 +542,7 @@ export class Modax extends RapidElement {
         .size=${this.size}
         .width=${this.width}
         ?open=${this.open}
-        ?loading=${this.fetching && this.originX == null}
+        ?loading=${this.fetching}
         ?submitting=${this.submitting}
         ?destructive=${this.isDestructive()}
         ?noFocus=${true}

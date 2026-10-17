@@ -145,6 +145,7 @@
   {% endif %}
   <temba-flow-editor
     flow="{{ object.uuid }}"
+    spec-version="{{ spec_version }}"
     features="{{ feature_filters }}"
     -temba-contact-clicked="handleContactClicked"
     -temba-flow-clicked="handleFlowClicked"

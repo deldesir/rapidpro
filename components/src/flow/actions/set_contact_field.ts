@@ -5,6 +5,8 @@ import { renderClamped, renderHighlightedText } from '../utils';
 
 export const set_contact_field: ActionConfig = {
   name: 'Update Field',
+  subtitle:
+    'Store what you learn about the contact for later flows and reports.',
   group: ACTION_GROUPS.contacts,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   render: (_node: Node, action: SetContactField) => {

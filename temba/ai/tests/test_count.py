@@ -10,7 +10,7 @@ from temba.tests import TembaTest
 
 class LLMCountTest(TembaTest):
     def test_counts(self):
-        llm = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "GPT-4", {})
+        llm = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "GPT-4", {})
 
         self.assertEqual(0, LLMCount.objects.count())
 
@@ -67,7 +67,7 @@ class LLMCountTest(TembaTest):
         self.assertEqual({"tokens:in": 320, "tokens:out": 840}, llm.counts.prefix("tokens:").scope_totals())
 
     def test_trim(self):
-        llm = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "GPT-4", {})
+        llm = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "GPT-4", {})
 
         today = timezone.now().date()
         old = today - timedelta(days=31)
@@ -81,7 +81,7 @@ class LLMCountTest(TembaTest):
         self.assertEqual([recent], list(LLMCount.objects.values_list("day", flat=True)))
 
     def test_release_keeps_counts_delete_drops_them(self):
-        llm = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "GPT-4", {})
+        llm = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "GPT-4", {})
         LLMCount.objects.create(llm=llm, day=date(2025, 5, 1), scope=LLMCount.SCOPE_CALLS, count=1)
 
         # release is a soft-delete and leaves counts alone

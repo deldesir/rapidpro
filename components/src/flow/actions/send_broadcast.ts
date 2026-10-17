@@ -15,6 +15,7 @@ import { CustomEventType } from '../../interfaces';
 
 export const send_broadcast: ActionConfig = {
   name: 'Send Broadcast',
+  subtitle: 'Reach other contacts or groups, not just the one in this flow.',
   group: ACTION_GROUPS.broadcast,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   render: (_node: Node, action: SendBroadcast) => {
@@ -99,16 +100,13 @@ export const send_broadcast: ActionConfig = {
     'recipients',
     'text',
     {
-      type: 'accordion',
+      type: 'extras',
       sections: [
         {
           label: 'WhatsApp Template',
-          collapsed: true,
           localizable: false,
-          getValueCount: (formData: FormData) => {
-            return !!formData.template;
-          },
-          items: ['template']
+          items: ['template'],
+          onRemove: () => ({ template: null, template_variables: [] })
         }
       ]
     }

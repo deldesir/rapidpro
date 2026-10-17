@@ -4,6 +4,7 @@ from uuid import UUID
 
 import regex
 from django_valkey import get_valkey_connection
+from packaging.version import InvalidVersion, Version
 from smartmin.views import (
     SmartCreateView,
     SmartCRUDL,
@@ -236,6 +237,11 @@ class FlowCRUDL(SmartCRUDL):
 
         permission = "flows.flow_editor"
 
+        UPGRADED_ERROR = _(
+            "Your flow has been upgraded to the latest version. "
+            "In order to continue editing, please refresh your browser."
+        )
+
         @classmethod
         def derive_url_pattern(cls, path, action):
             return r"^%s/%s/(?P<uuid>[0-9a-f-]+)/((?P<revision_id>\d+|latest)/)?$" % (path, action)
@@ -244,9 +250,12 @@ class FlowCRUDL(SmartCRUDL):
             flow = self.get_object()
             revision_id = self.kwargs.get("revision_id")
 
-            # the editor requests the spec version it supports which allows us to add support for new versions
-            # on the goflow/mailroom side before updating the editor to use that new version
-            requested_version = request.GET.get("version", Flow.CURRENT_SPEC_VERSION)
+            # the editor requests the spec version of the server which served it, which may differ from ours
+            # during a deploy or if the editor was loaded before an upgrade
+            try:
+                requested_version = Version(request.GET.get("version", Flow.CURRENT_SPEC_VERSION))
+            except InvalidVersion:
+                return JsonResponse({"error": "invalid version"}, status=400)
 
             # we are looking for a specific revision, fetch it and migrate it forward
             if revision_id:
@@ -255,7 +264,12 @@ class FlowCRUDL(SmartCRUDL):
                 else:
                     revision = get_object_or_404(flow.revisions.filter(id=revision_id))
 
-                definition = revision.get_migrated_definition(to_version=requested_version)
+                # migrations only go forward, so an editor that predates the revision's minor version (e.g. one
+                # loaded before an upgrade) can't be given something it understands and needs reloading
+                if Version(revision.spec_version).release[:2] > requested_version.release[:2]:
+                    return JsonResponse({"error": self.UPGRADED_ERROR}, status=409)
+
+                definition = revision.get_migrated_definition(to_version=str(requested_version))
 
                 # inspect to get up to date info about the flow
                 info = mailroom.get_client().flow_inspect(flow.org, definition)
@@ -294,10 +308,7 @@ class FlowCRUDL(SmartCRUDL):
                 error = _("Your flow failed validation. Please refresh your browser.")
                 detail = str(e)
             except FlowVersionConflictException:
-                error = _(
-                    "Your flow has been upgraded to the latest version. "
-                    "In order to continue editing, please refresh your browser."
-                )
+                error = self.UPGRADED_ERROR
                 detail = None
             except FlowUserConflictException as e:
                 error = (
@@ -755,6 +766,7 @@ class FlowCRUDL(SmartCRUDL):
 
             context["active_start"] = flow.get_active_start()
             context["feature_filters"] = json.dumps(self.get_features(flow.org))
+            context["spec_version"] = Flow.CURRENT_SPEC_VERSION
             context["default_topic"] = json.dumps(flow.org.default_topic.as_engine_ref())
             return context
 

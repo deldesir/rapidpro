@@ -1,6 +1,3 @@
-from temba.ai.models import LLM
-from temba.ai.types.anthropic.type import AnthropicType
-from temba.ai.types.openai.type import OpenAIType
 from temba.tests import MigrationTest
 
 
@@ -10,11 +7,23 @@ class SplitEngineRoleTest(MigrationTest):
     migrate_to = "0014_split_engine_role"
 
     def setUpBeforeMigration(self, apps):
-        self.llm1 = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "Both", {}, roles="TF")
-        self.llm2 = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "Editing", {}, roles="T")
-        self.llm3 = LLM.create(
-            self.org, self.admin, AnthropicType(), "claude-haiku-4-5-20251001", "Engine", {}, roles="F"
-        )
+        LLM = apps.get_model("ai", "LLM")
+
+        def create_llm(name: str, roles: str):
+            return LLM.objects.create(
+                org_id=self.org.id,
+                name=name,
+                llm_type="openai",
+                model="gpt-5.4-mini",
+                config={},
+                roles=roles,
+                created_by_id=self.admin.id,
+                modified_by_id=self.admin.id,
+            )
+
+        self.llm1 = create_llm("Both", "TF")
+        self.llm2 = create_llm("Editing", "T")
+        self.llm3 = create_llm("Engine", "F")
 
     def test_migration(self):
         def assert_roles(llm, roles: str):

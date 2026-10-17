@@ -14,13 +14,10 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-msgid "You can find your API key at https://console.anthropic.com/settings/keys"
+msgid "You can find your API key at https://platform.openai.com/account/api-key"
 msgstr ""
 
 msgid "Invalid API Key."
-msgstr ""
-
-msgid "You can find your API key at https://platform.openai.com/account/api-key"
 msgstr ""
 
 msgid "API keys are provided by the UNICEF ICTD team."
@@ -2410,6 +2407,9 @@ msgstr ""
 msgid "Required."
 msgstr ""
 
+msgid "Is a reserved name."
+msgstr ""
+
 msgid "Invalid group name."
 msgstr ""
 
@@ -2530,10 +2530,10 @@ msgstr ""
 msgid "Labels"
 msgstr ""
 
-msgid "Your flow failed validation. Please refresh your browser."
+msgid "Your flow has been upgraded to the latest version. In order to continue editing, please refresh your browser."
 msgstr ""
 
-msgid "Your flow has been upgraded to the latest version. In order to continue editing, please refresh your browser."
+msgid "Your flow failed validation. Please refresh your browser."
 msgstr ""
 
 #, python-format

@@ -5,6 +5,7 @@ import { renderHighlightedText } from '../utils';
 
 export const play_audio: ActionConfig = {
   name: 'Play Recording',
+  subtitle: 'Use a recorded prompt instead of text-to-speech.',
   group: ACTION_GROUPS.send,
   flowTypes: [FlowTypes.VOICE],
   render: (_node: Node, action: PlayAudio) => {

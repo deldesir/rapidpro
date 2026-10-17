@@ -126,7 +126,7 @@ export const designTokens = css`
        components pick up the new design language without code changes */
     --font-family: var(--font);
     --curvature: var(--r-sm);
-    --curvature-widget: var(--r-sm);
+    --curvature-widget: var(--r);
     /* Focus styling.
        --focus is the single hue, kept separate from --accent so
        changing the focus color doesn't shift chip / recipient hues.
@@ -168,7 +168,7 @@ export const designTokens = css`
     --color-text: var(--text-1);
     --color-widget-text: var(--text-1);
     --color-borders: var(--border);
-    --color-placeholder: var(--text-3);
+    --color-placeholder: var(--text-4);
     --color-primary-light: var(--sunken);
     --color-label: var(--text-1);
     --color-text-help: var(--text-3);

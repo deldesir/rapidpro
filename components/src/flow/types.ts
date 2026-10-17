@@ -132,6 +132,7 @@ export interface FormConfig {
 export interface NodeConfig extends FormConfig {
   type: string;
   name?: string;
+  subtitle?: string; // a short line under the name in the editor dialog's header
   aliases?: string[]; // alternate type names for backwards compatibility (won't show in selector)
   group?: ActionGroup | SplitGroup; // Nodes can use either when showAsAction is true
   dialogSize?: 'small' | 'medium' | 'large' | 'xlarge';
@@ -370,13 +371,43 @@ export interface AccordionSection {
   items: LayoutItem[];
   collapsed?: boolean | ((formData: FormData) => boolean);
   getValueCount?: (formData: FormData) => number | boolean;
+  getSummary?: (formData: FormData) => string; // short description of the value, shown in the section's row
+  emptySummary?: string; // shown instead of the summary when there's no value (default: 'None')
   localizable?: boolean;
 }
 
 export interface AccordionLayoutConfig {
   type: 'accordion';
   sections: AccordionSection[];
-  multi?: boolean; // allow multiple sections open at once (default: false)
+  multi?: boolean; // allow multiple sections open at once (default: true)
+}
+
+/**
+ * An optional part of a form. It's shown when it has a value (or an error),
+ * otherwise it's offered as an "add" chip that reveals it.
+ */
+export interface ExtrasSection {
+  label: string;
+  items: LayoutItem[];
+  // renders the section as a line of text instead of a heading over its fields, e.g.
+  // () => msg("If there's no reply after {duration} go to **No Response**"). Each {token}
+  // becomes its field and **text** is bold, so the string has no markup to translate.
+  sentence?: () => string;
+  // which field each {token} in the sentence stands for (default: the token is the field name)
+  tokens?: Record<string, string>;
+  // whether the section has a value worth showing (default: any of its fields is non-empty)
+  hasValue?: (formData: FormData) => boolean;
+  // the values to set when the section is added from its chip
+  onAdd?: (formData: FormData) => FormData;
+  // the values to set when the section is removed (default: its fields are emptied)
+  onRemove?: (formData: FormData) => FormData;
+  removable?: boolean; // whether the section can be removed once shown (default: true)
+  localizable?: boolean;
+}
+
+export interface ExtrasLayoutConfig {
+  type: 'extras';
+  sections: ExtrasSection[];
 }
 
 export type LayoutItem =
@@ -384,6 +415,7 @@ export type LayoutItem =
   | RowLayoutConfig
   | GroupLayoutConfig
   | AccordionLayoutConfig
+  | ExtrasLayoutConfig
   | SpacerLayoutConfig
   | TextLayoutConfig
   | string; // string is shorthand for field
@@ -479,6 +511,7 @@ export const SPLIT_GROUP_METADATA: Record<SplitGroup, GroupMetadata> = {
 
 export interface ActionConfig extends FormConfig {
   name: string;
+  subtitle?: string; // a short line under the name in the editor dialog's header
   aliases?: string[]; // alternate type names for backwards compatibility (won't show in selector)
   group: ActionGroup;
   dialogSize?: 'small' | 'medium' | 'large' | 'xlarge';

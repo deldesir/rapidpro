@@ -11,7 +11,7 @@ import {
   resultNameField,
   localizeRulesField,
   localizeCategoriesField,
-  nodeOptionsAccordion
+  nodeOptions
 } from './shared';
 import {
   createRulesArrayConfig,
@@ -56,6 +56,7 @@ const DELIMIT_BY_OPTIONS = [
 export const split_by_run_result: NodeConfig = {
   type: 'split_by_run_result',
   name: 'Split by Result',
+  subtitle: 'Branch on an answer collected earlier in this flow.',
   aliases: ['split_by_run_result_delimited'], // backwards compatibility with old flow editor
   group: SPLIT_GROUPS.split,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
@@ -123,7 +124,7 @@ export const split_by_run_result: NodeConfig = {
       items: ['result', 'delimit_by', 'delimit_index']
     },
     'rules',
-    nodeOptionsAccordion
+    nodeOptions
   ],
   validate: validateWith((formData, errors) => {
     if (!formData.result || formData.result.length === 0) {

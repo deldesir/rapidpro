@@ -22,10 +22,18 @@ def reload_llm_types():
     """
     Re-loads the dynamic llm types
     """
+    from temba.ai.models import LLM
+
     global TYPES  # noqa: PLW0603 - rebuilt by reassignment so a concurrent reader never sees it half-built
 
     TYPES = OrderedDict({})
-    for class_name in settings.LLM_TYPES.keys():
+    for class_name, type_settings in settings.LLM_TYPES.items():
+        for model, model_def in (type_settings.get("models") or {}).items():
+            assert isinstance(model_def, dict), f"model {model} of {class_name} must be defined as a dict"
+
+            roles = model_def.get("roles", LLM.ALL_ROLES)
+            assert roles and set(roles) <= set(LLM.ALL_ROLES), f"model {model} of {class_name} has invalid roles"
+
         register_llm_type(import_string(class_name))
 
 

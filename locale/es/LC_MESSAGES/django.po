@@ -20,14 +20,11 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=3; plural=n == 1 ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;\n"
 
-msgid "You can find your API key at https://console.anthropic.com/settings/keys"
-msgstr "Puede encontrar su clave de API en https://console.anthropic.com/settings/keys"
+msgid "You can find your API key at https://platform.openai.com/account/api-key"
+msgstr "Puede encontrar su clave de API en https://platform.openai.com/account/api-key"
 
 msgid "Invalid API Key."
 msgstr "Clave de API no válida."
-
-msgid "You can find your API key at https://platform.openai.com/account/api-key"
-msgstr "Puede encontrar su clave de API en https://platform.openai.com/account/api-key"
 
 msgid "API keys are provided by the UNICEF ICTD team."
 msgstr "Las claves de API las proporciona el equipo ICTD de UNICEF."
@@ -2424,6 +2421,9 @@ msgstr "Este workspace ha alcanzado su límite de grupos."
 msgid "Required."
 msgstr "Requerido."
 
+msgid "Is a reserved name."
+msgstr "Es un nombre reservado."
+
 msgid "Invalid group name."
 msgstr "Nombre de grupo inválido."
 
@@ -2544,11 +2544,11 @@ msgstr "Historia"
 msgid "Labels"
 msgstr "Etiquetas"
 
-msgid "Your flow failed validation. Please refresh your browser."
-msgstr "Su flujo falló en la validación. Por favor refresque su navegador."
-
 msgid "Your flow has been upgraded to the latest version. In order to continue editing, please refresh your browser."
 msgstr "Su flujo se ha actualizado a la última versión. Para continuar con la edición, actualice su navegador."
+
+msgid "Your flow failed validation. Please refresh your browser."
+msgstr "Su flujo falló en la validación. Por favor refresque su navegador."
 
 #, python-format
 msgid "%s is currently editing this Flow. Your changes will not be saved until you refresh your browser."

@@ -40,7 +40,7 @@ export function shouldExcludeFlow(flow: any): boolean {
   );
 }
 
-export type LLMRole = 'translation' | 'generation' | 'classification';
+export type LLMRole = 'translate' | 'generate' | 'classify';
 
 export interface LLMModel {
   uuid: string;

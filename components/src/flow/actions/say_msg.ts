@@ -6,6 +6,8 @@ import { renderClamped, renderHighlightedText } from '../utils';
 
 export const say_msg: ActionConfig = {
   name: 'Say Message',
+  subtitle:
+    'Spoken to the caller with text-to-speech, or played from a recording.',
   group: ACTION_GROUPS.send,
   flowTypes: [FlowTypes.VOICE],
   render: (_node: Node, action: SayMsg) => {

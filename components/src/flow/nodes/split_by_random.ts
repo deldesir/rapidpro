@@ -4,13 +4,14 @@ import { Node } from '../../store/flow-definition.d';
 import { validateWith } from '../utils';
 import {
   resultNameField,
-  nodeOptionsAccordionSimple,
+  nodeOptionsSimple,
   buildCategoriesExitsCases
 } from './shared';
 
 export const split_by_random: NodeConfig = {
   type: 'split_by_random',
   name: 'Random Split',
+  subtitle: 'Useful for A/B tests and spreading contacts across paths.',
   group: SPLIT_GROUPS.split,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   form: {
@@ -36,7 +37,7 @@ export const split_by_random: NodeConfig = {
     },
     result_name: resultNameField
   },
-  layout: ['categories', nodeOptionsAccordionSimple],
+  layout: ['categories', nodeOptionsSimple],
   validate: validateWith((formData, errors) => {
     if (!formData.categories || !Array.isArray(formData.categories)) return;
 

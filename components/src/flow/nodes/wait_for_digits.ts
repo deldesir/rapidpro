@@ -10,7 +10,7 @@ import {
   resultNameField,
   localizeRulesField,
   localizeCategoriesField,
-  nodeOptionsAccordion
+  nodeOptions
 } from './shared';
 import {
   createRulesArrayConfig,
@@ -21,6 +21,7 @@ import {
 export const wait_for_digits: NodeConfig = {
   type: 'wait_for_digits',
   name: 'Wait for Digits',
+  subtitle: 'Collect a number from the keypad, like a PIN or account number.',
   group: SPLIT_GROUPS.wait,
   flowTypes: [FlowTypes.VOICE],
   dialogSize: 'large',
@@ -39,7 +40,7 @@ export const wait_for_digits: NodeConfig = {
       text: 'Rules match against all digits pressed by the caller followed by the # sign.'
     },
     'rules',
-    nodeOptionsAccordion
+    nodeOptions
   ],
   validate: (_formData: FormData) => {
     return {

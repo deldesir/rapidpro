@@ -50,6 +50,32 @@ class FlowTest(TembaTest, CRUDLTestMixin):
 
         self.assertEqual(f"{'X' * 62} 2", Flow.get_unique_name(self.org, "X" * 64))
 
+        # reserved names are treated as taken
+        self.assertEqual("Ticket 2", Flow.get_unique_name(self.org, "Ticket"))
+        self.assertTrue(Flow.is_valid_name("Tickets"))
+        self.assertFalse(Flow.is_valid_name("ticket"))
+
+        # unless they're the ignored object's existing name
+        ticket = self.create_flow("Tickets")
+        Flow.objects.filter(id=ticket.id).update(name="Ticket")
+        ticket.refresh_from_db()
+        self.assertEqual("TICKET", Flow.get_unique_name(self.org, "TICKET", ignore=ticket))
+        self.assertEqual("Ticket 2", Flow.get_unique_name(self.org, "Ticket", ignore=testing))
+
+    def test_reimport_with_reserved_name(self):
+        # a flow which already has a reserved name keeps it when re-imported
+        flow = self.create_flow("Tickets")
+        Flow.objects.filter(id=flow.id).update(name="Ticket")
+        components = self.org.resolve_dependencies([flow], [], include_triggers=False)
+        export_def = self.org.export_definitions("http://rapidpro.io", components)
+        export_def["flows"][0]["name"] = "Ticket"
+
+        self.org.import_app(export_def, self.admin)
+
+        flow.refresh_from_db()
+        self.assertEqual("Ticket", flow.name)
+        self.assertEqual(1, self.org.flows.filter(is_active=True, name__istartswith="Ticket").count())
+
     @mock_mailroom
     def test_publishes_asset_changed(self, mr_mocks):
         # creating a flow doesn't publish as no client acts on that
@@ -282,6 +308,10 @@ class FlowTest(TembaTest, CRUDLTestMixin):
 
         response = self.client.get(flow_editor_url)
         self.assertEqual(response.status_code, 200)
+
+        # the editor requests revisions at the spec version of the server which served it
+        self.assertContains(response, f'spec-version="{Flow.CURRENT_SPEC_VERSION}"')
+
         self.assertIsNone(response.context["active_start"])
         self.assertNotContains(response, "<temba-start-progress")
 
@@ -358,6 +388,43 @@ class FlowTest(TembaTest, CRUDLTestMixin):
             rev_after_trim_fail, _ = flow.save_revision(self.admin, dict(latest_def))
         self.assertIsNotNone(rev_after_trim_fail)
         self.assertTrue(FlowRevision.objects.filter(id=rev_after_trim_fail.id).exists())
+
+        # definitions are saved at their own spec version, whether that's older or newer than ours
+        for spec_version in ("14.3.0", "99.0.0"):
+            flow.name = f"Spec {spec_version}"
+            flow.save(update_fields=("name",))
+            definition = flow.revisions.order_by("id").last().definition
+            definition["spec_version"] = spec_version
+
+            rev, _ = flow.save_revision(self.admin, definition)
+            flow.refresh_from_db()
+            self.assertEqual(spec_version, rev.spec_version)
+            self.assertEqual(spec_version, rev.definition["spec_version"])
+            self.assertEqual(spec_version, flow.version_number)
+
+        # re-saving the same content at a newer spec version diffs against the prior migrated to that version
+        prior = flow.revisions.order_by("id").last()
+        definition = prior.definition
+        definition["spec_version"] = "99.1.0"
+
+        with patch.object(
+            FlowRevision, "get_migrated_definition", autospec=True, side_effect=lambda r, to_version: dict(r.definition)
+        ) as mock_migrate:
+            rev, _ = flow.save_revision(self.admin, dict(definition))
+
+        mock_migrate.assert_called_once_with(prior, to_version="99.1.0")
+        self.assertEqual({"tags": ["spec"]}, rev.changes)
+
+        # re-saving it at an older spec version than the prior doesn't try to migrate the prior down
+        definition = rev.definition
+        definition["spec_version"] = "99.0.0"
+
+        with patch("temba.flows.models.FlowRevision.get_migrated_definition") as mock_migrate:
+            rev, _ = flow.save_revision(self.admin, dict(definition))
+
+        mock_migrate.assert_not_called()
+        self.assertEqual({"tags": ["spec"]}, rev.changes)
+        self.assertEqual("99.0.0", rev.spec_version)
 
         # can't save older spec version over newer
         definition = flow.revisions.order_by("id").last().definition

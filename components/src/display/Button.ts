@@ -20,20 +20,21 @@ export class Button extends LitElement {
           'tnum' 0;
       }
 
-      /* DS .btn-sm — sizing, type, transition, shape */
+      /* Sizing, type and shape: soft corners, medium weight, and
+         ring-style edges (box-shadow) in place of hard borders. */
       .button-container {
         display: inline-flex;
         align-items: center;
         justify-content: var(--button-justify, center);
         gap: 6px;
         flex-grow: 1;
-        height: var(--button-height, 28px);
-        padding: 0 10px;
-        border: 1px solid transparent;
-        border-radius: var(--r-sm);
-        font-size: 12.5px;
-        font-weight: var(--w-regular);
-        letter-spacing: -0.005em;
+        height: var(--button-height, 30px);
+        padding: 0 11px;
+        border: none;
+        border-radius: var(--r, 8px);
+        font-size: 13px;
+        font-weight: var(--w-medium, 500);
+        letter-spacing: -0.006em;
         line-height: 1;
         white-space: nowrap;
         cursor: pointer;
@@ -42,10 +43,14 @@ export class Button extends LitElement {
         outline: none;
         box-sizing: border-box;
         transition:
-          background 120ms,
-          border-color 120ms,
-          color 120ms,
-          box-shadow 120ms;
+          background 120ms ease,
+          box-shadow 120ms ease,
+          color 120ms ease,
+          transform 80ms ease;
+      }
+
+      .button-container:active {
+        transform: scale(0.97);
       }
 
       .button-mask {
@@ -66,41 +71,49 @@ export class Button extends LitElement {
         height: var(--button-small-height, 24px);
         padding: 0 var(--button-small-x-pad, 8px);
         font-size: var(--button-small-font-size, 12px);
+        border-radius: var(--r-sm, 6px);
       }
 
-      /* DS .btn-primary — solid accent fill with a faint top
-         highlight and a ground shadow so it sits a touch above the
-         surface. The base 1px transparent border stays in the box
-         model so the primary's footprint matches the secondary's. */
+      /* solid accent fill with a faint top highlight, a darker ring and
+         a ground shadow so it sits a touch above the surface */
       .primary-button {
-        background: var(--accent-600);
+        background: var(--accent, #497fce);
         color: #fff;
         box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.18),
-          0 1px 1px rgba(15, 22, 36, 0.1);
+          inset 0 1px 0 rgba(255, 255, 255, 0.14),
+          0 0 0 1px var(--accent-600, #3a66a5),
+          0 1px 3px rgba(15, 22, 36, 0.16);
       }
       .primary-button:hover {
-        background: var(--accent-700);
+        background: var(--accent-500, #4272b9);
       }
 
-      /* Ghost-style secondary — transparent fill so it blends into
-         any surface (the dialog gutter's grey, a white card, etc.),
-         no border, with a semi-transparent wash on hover that shows
-         up regardless of the underlying colour. */
-      .secondary-button {
-        background: transparent;
-        color: var(--text-1);
+      /* white with a ring edge, for everything that isn't the main
+         action on a surface */
+      .secondary-button,
+      .light-button,
+      .lined-button {
+        background: var(--surface, #fff);
+        color: var(--text-1, #1a1f26);
+        box-shadow:
+          0 0 0 1px var(--border-strong, #d2d6dc),
+          0 1px 2px rgba(15, 22, 36, 0.06);
       }
-      .secondary-button:hover {
-        background: rgba(0, 0, 0, 0.05);
+      .secondary-button:hover,
+      .light-button:hover,
+      .lined-button:hover {
+        background: var(--bg, #f6f7f9);
       }
 
-      /* Flat success fill — mirrors the DS .btn-danger chrome (no
-         lift), tinted green for go-ahead CTAs. */
+      /* success fill for go-ahead CTAs, built like the primary */
       .attention-button,
       .affirmative {
         background: var(--success, #16a34a);
         color: #fff;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.14),
+          0 0 0 1px #138f41,
+          0 1px 3px rgba(15, 22, 36, 0.16);
       }
       /* Hover darkening: static pre-mixed values first for browsers
          without color-mix(), re-derived from the token below. */
@@ -109,10 +122,13 @@ export class Button extends LitElement {
         background: #138f41;
       }
 
-      /* DS .btn-danger — flat danger fill (no lift). */
       .destructive-button {
         background: var(--danger, #d03f3f);
         color: #fff;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.14),
+          0 0 0 1px #b73737,
+          0 1px 3px rgba(15, 22, 36, 0.16);
       }
       .destructive-button:hover {
         background: #b73737;
@@ -128,24 +144,12 @@ export class Button extends LitElement {
         }
       }
 
-      /* DS .btn-ghost — text-only, hover fills with sunken */
-      .light-button,
-      .lined-button {
-        background: var(--surface);
-        border-color: var(--border-strong);
-        color: var(--text-1);
-      }
-      .light-button:hover,
-      .lined-button:hover {
-        background: var(--sunken);
-      }
-
       /* icon-only button — square footprint, ghost chrome */
       .icon-button {
-        width: var(--button-height, 28px);
+        width: var(--button-height, 30px);
         padding: 0;
         background: transparent;
-        border-color: transparent;
+        box-shadow: none;
         color: var(--text-2);
       }
       .icon-button:hover {
@@ -160,8 +164,13 @@ export class Button extends LitElement {
       .button-container.active-button {
         box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12);
       }
-      .secondary-button.active-button {
-        background: rgba(0, 0, 0, 0.08);
+      .secondary-button.active-button,
+      .light-button.active-button,
+      .lined-button.active-button {
+        background: var(--sunken, #f1f3f5);
+        box-shadow:
+          inset 0 1px 2px rgba(0, 0, 0, 0.08),
+          0 0 0 1px var(--border-strong, #d2d6dc);
       }
 
       /* disabled */
@@ -171,9 +180,10 @@ export class Button extends LitElement {
         pointer-events: none;
       }
 
-      /* focus ring — keyboard nav only */
-      .button-container:focus-visible {
-        box-shadow: var(--widget-box-shadow-focused);
+      /* focus ring — keyboard nav only; qualified so it wins over the
+         variants' ring edges */
+      .button-container.button-container:focus-visible {
+        box-shadow: var(--focus-halo, 0 0 0 3px rgba(91, 156, 229, 0.3));
       }
 
       .submit-animation {
@@ -273,6 +283,7 @@ export class Button extends LitElement {
 
     return html`
       <div
+        part="button"
         class="button-container 
           v-${this.v}
           ${getClasses({

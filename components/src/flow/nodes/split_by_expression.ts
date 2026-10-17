@@ -11,7 +11,7 @@ import {
   resultNameField,
   localizeRulesField,
   localizeCategoriesField,
-  nodeOptionsAccordion
+  nodeOptions
 } from './shared';
 import {
   createRulesArrayConfig,
@@ -23,6 +23,7 @@ import { validateWith } from '../utils';
 export const split_by_expression: NodeConfig = {
   type: 'split_by_expression',
   name: 'Split by Expression',
+  subtitle: 'Branch on any value you can build, like a date or a calculation.',
   group: SPLIT_GROUPS.split,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   dialogSize: 'large',
@@ -44,7 +45,7 @@ export const split_by_expression: NodeConfig = {
     localizeRules: localizeRulesField,
     localizeCategories: localizeCategoriesField
   },
-  layout: ['operand', 'rules', nodeOptionsAccordion],
+  layout: ['operand', 'rules', nodeOptions],
   validate: validateWith((formData, errors) => {
     if (!formData.operand || formData.operand.trim() === '') {
       errors.operand = msg('Expression is required');

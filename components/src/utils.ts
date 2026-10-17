@@ -7,6 +7,7 @@ import { Dialog } from './layout/Dialog';
 import { Attachment, ContactField, Shortcut, Ticket, User } from './interfaces';
 import ColorHash from 'color-hash';
 import { Toast } from './display/Toast';
+import { getPageLocale } from './languages';
 import { v4 as generateUUID, v7 as generateUUIDv7 } from 'uuid';
 import {
   categoryNamesEqual,
@@ -432,7 +433,7 @@ export const plural = (count: number, singular: string, plural: string) => {
   return count === 1 ? singular : plural;
 };
 
-export const formatCount = (count: number, locale = navigator.language) =>
+export const formatCount = (count: number, locale = getPageLocale()) =>
   count.toLocaleString(locale);
 
 /** Formats a duration in seconds as `m:ss`, or `h:mm:ss` once it
@@ -537,7 +538,9 @@ export const serializeFiles = function (form: any): FormData | null {
     const field = form.elements[i];
     if (field.name && !field.disabled && field.value instanceof FormData) {
       files = files || new FormData();
-      field.value.forEach((value: any, key: string) => files.append(key, value));
+      field.value.forEach((value: any, key: string) =>
+        files.append(key, value)
+      );
     }
   }
   return files;
@@ -913,7 +916,7 @@ export enum COOKIE_KEYS {
 
 export const capitalize = (
   [first, ...rest]: string[] | string,
-  locale = navigator.language
+  locale = getPageLocale()
 ) =>
   first === undefined ? '' : first.toLocaleUpperCase(locale) + rest.join('');
 

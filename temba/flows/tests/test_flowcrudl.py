@@ -157,6 +157,14 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
             form_errors={"name": "Must be unique."},
         )
 
+        # try to submit with a reserved name
+        self.assertCreateSubmit(
+            create_url,
+            self.admin,
+            {"name": "Ticket", "flow_type": "M", "base_language": "eng"},
+            form_errors={"name": "Is a reserved name."},
+        )
+
         response = self.assertCreateSubmit(
             create_url,
             self.admin,
@@ -417,6 +425,18 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual(302, response.status_code)
         self.assertEqual(language_flow.base_language, "eng")
 
+    def test_update_with_reserved_name(self):
+        # a flow which already has a reserved name can keep it
+        flow = self.create_flow("Tickets")
+        Flow.objects.filter(id=flow.id).update(name="Ticket")
+        update_url = reverse("flows.flow_update", args=[flow.uuid])
+
+        self.assertUpdateSubmit(update_url, self.admin, {"name": "Ticket", "expires_after_minutes": 10})
+
+        flow.refresh_from_db()
+        self.assertEqual("Ticket", flow.name)
+        self.assertEqual(10, flow.expires_after_minutes)
+
     def test_update_messaging_flow(self):
         flow = self.create_flow("Test")
         update_url = reverse("flows.flow_update", args=[flow.uuid])
@@ -462,6 +482,15 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual("New Name", flow.name)
         self.assertEqual(10, flow.expires_after_minutes)
         self.assertTrue(flow.ignore_triggers)
+
+        # try to rename to a reserved name
+        self.assertUpdateSubmit(
+            update_url,
+            self.admin,
+            {"name": "Ticket", "expires_after_minutes": 10},
+            form_errors={"name": "Is a reserved name."},
+            object_unchanged=flow,
+        )
 
         assert_triggers([{"keywords": ["test", "help"], "is_archived": False}])
 
@@ -920,6 +949,29 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
 
         # should only have been migrated to that version
         self.assertEqual("13.0.0", response.json()["definition"]["spec_version"])
+
+        # an editor on an older minor version can't be given a revision which can't be migrated down to it
+        major, minor, _ = Flow.CURRENT_SPEC_VERSION.split(".")
+        response = self.client.get(f"{revisions_url}{revisions[0].id}/?version={major}.{int(minor) - 1}.0")
+        self.assertEqual(409, response.status_code)
+        self.assertEqual(
+            {
+                "error": "Your flow has been upgraded to the latest version. In order to continue editing, please "
+                "refresh your browser."
+            },
+            response.json(),
+        )
+
+        # a malformed version is rejected
+        response = self.client.get(f"{revisions_url}{revisions[0].id}/?version=abc")
+        self.assertEqual(400, response.status_code)
+
+        # but it can be given a revision which is only a newer patch version
+        revisions[0].spec_version = f"{major}.{minor}.99"
+        revisions[0].save(update_fields=("spec_version",))
+
+        response = self.client.get(f"{revisions_url}{revisions[0].id}/?version={major}.{minor}.0")
+        self.assertEqual(200, response.status_code)
 
         # check 404 for invalid revision number
         response = self.requestView(f"{revisions_url}12345678/", self.admin)

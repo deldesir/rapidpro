@@ -5,6 +5,7 @@ import { renderClamped, renderHighlightedText } from '../utils';
 
 export const set_contact_email: ActionConfig = {
   name: 'Update Email',
+  subtitle: 'Keep the address the contact gave you on their profile.',
   group: ACTION_GROUPS.contacts,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   render: (_node: Node, action: SetContactEmail) => {

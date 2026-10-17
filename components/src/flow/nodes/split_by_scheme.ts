@@ -4,7 +4,7 @@ import { Node, Case } from '../../store/flow-definition.d';
 import { SCHEMES, validateWith } from '../utils';
 import {
   resultNameField,
-  nodeOptionsAccordionSimple,
+  nodeOptionsSimple,
   buildCategoriesExitsCases,
   appendOtherCategory
 } from './shared';
@@ -22,6 +22,8 @@ const getSchemeName = (scheme: string) =>
 export const split_by_scheme: NodeConfig = {
   type: 'split_by_scheme',
   name: 'Split by URN Type',
+  subtitle:
+    'Branch on how the contact reaches you, like SMS, WhatsApp or email.',
   group: SPLIT_GROUPS.split,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   form: {
@@ -38,7 +40,7 @@ export const split_by_scheme: NodeConfig = {
     },
     result_name: resultNameField
   },
-  layout: ['schemes', nodeOptionsAccordionSimple],
+  layout: ['schemes', nodeOptionsSimple],
   validate: validateWith((formData, errors) => {
     if (
       !formData.schemes ||

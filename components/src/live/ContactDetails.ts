@@ -4,7 +4,7 @@ import { msg, str } from '@lit/localize';
 import { property, state } from 'lit/decorators.js';
 import { Icon } from '../Icons';
 import { Contact, CustomEventType, Group, URN } from '../interfaces';
-import { getLanguageName } from '../languages';
+import { getLanguageLabel } from '../languages';
 import { capitalize, WebResponse } from '../utils';
 import { Select } from '../form/select/Select';
 import { TextInput } from '../form/TextInput';
@@ -358,7 +358,7 @@ export class ContactDetails extends ContactStoreElement {
     }
     return [
       { value: 'none', name: msg('No Preference') },
-      ...codes.map((code) => ({ value: code, name: getLanguageName(code) }))
+      ...codes.map((code) => ({ value: code, name: getLanguageLabel(code) }))
     ];
   }
 
@@ -1030,7 +1030,7 @@ export class ContactDetails extends ContactStoreElement {
   }
 
   private renderReadonly(): TemplateResult {
-    const lang = getLanguageName(this.data.language);
+    const lang = getLanguageLabel(this.data.language);
     const manualGroups = this.getManualGroups();
     return html`
       ${this.renderPrimaryUrn(false)} ${this.renderEmail(false)}

@@ -5,6 +5,14 @@ import { CustomEventType } from '../interfaces';
 import { getUrl } from '../utils';
 import { designTokens } from '../styles/designTokens';
 import { ContentMenuItem, ContentMenuItemType } from '../list/ContentMenu';
+import {
+  buttonChrome,
+  buttonChromeCompact,
+  buttonChromeActive,
+  buttonChromeHover,
+  buttonChromePrimary,
+  buttonChromePrimaryHover
+} from '../styles/buttonChrome';
 
 /** Request headers that ask the server for the page's content menu
  * payload (`{ items: ContentMenuItem[] }`) — the rapidpro contract
@@ -103,50 +111,22 @@ export class PageHeader extends RapidElement {
         font-size: 13px;
       }
 
-      /* Content-menu action buttons — match the design system's
-         .btn.btn-sm / .btn-primary / .btn-secondary so the inbox CTA
-         reads identically to the styleguide. 28px tall, regular
-         weight, 12.5px font, the same transitions and faint top
-         highlight + ground-shadow on the primary fill. */
+      /* Content-menu action buttons — the shared button look. */
       .menu-button {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        /* border-box so height: 28px includes the 1px border the
-           same way .ds * does in the styleguide — otherwise the
-           border adds 2px and the button computes 2px taller. */
-        box-sizing: border-box;
-        height: 26px;
-        padding: 0 10px;
-        border: 1px solid var(--border-strong);
-        border-radius: var(--r-sm);
-        font-size: 12.5px;
-        font-weight: var(--w-regular);
-        letter-spacing: -0.005em;
-        cursor: pointer;
-        user-select: none;
-        background: var(--surface);
-        color: var(--text-1);
-        white-space: nowrap;
-        transition:
-          background 120ms,
-          border-color 120ms,
-          color 120ms,
-          box-shadow 120ms;
+        ${buttonChrome}
+        ${buttonChromeCompact}
       }
       .menu-button:hover {
-        background: var(--sunken);
+        ${buttonChromeHover}
       }
       .menu-button.primary {
-        background: var(--accent-600);
-        border-color: transparent;
-        color: white;
-        box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.18),
-          0 1px 1px rgba(15, 22, 36, 0.1);
+        ${buttonChromePrimary}
       }
       .menu-button.primary:hover {
-        background: var(--accent-700);
+        ${buttonChromePrimaryHover}
+      }
+      .menu-button:active {
+        ${buttonChromeActive}
       }
 
       /* Overflow toggle — the trailing ⋮ that opens the rest of the

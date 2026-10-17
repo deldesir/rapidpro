@@ -20,6 +20,7 @@ from django.contrib.auth.models import Group
 from django.contrib.postgres.fields import ArrayField
 from django.contrib.postgres.indexes import OpClass
 from django.contrib.postgres.validators import ArrayMinLengthValidator
+from django.contrib.staticfiles import finders
 from django.core.files import File
 from django.core.files.storage import FileSystemStorage, default_storage, storages
 from django.db import models, transaction
@@ -948,10 +949,10 @@ class Org(LegacyIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
         return membership.role if membership else None
 
     def create_sample_flows(self, api_url):
-        # get our sample dir
-        filename = os.path.join(settings.STATICFILES_DIRS[0], "examples", "sample_flows.json")
+        # use the static finders so that a deployment's static dirs can override the samples
+        filename = finders.find("examples/sample_flows.json")
+        assert filename, "unable to find examples/sample_flows.json in static files"
 
-        # for each of our samples
         with open(filename, "r") as example_file:
             samples = example_file.read()
 
@@ -1361,7 +1362,12 @@ class Invitation(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
         assert not team or org == team.org
 
         return cls.objects.create(
-            org=org, email=email, role_code=role.code, team=team, created_by=user, modified_by=user
+            org=org,
+            email=User.objects.normalize_email(email),
+            role_code=role.code,
+            team=team,
+            created_by=user,
+            modified_by=user,
         )
 
     def save(self, *args, **kwargs):

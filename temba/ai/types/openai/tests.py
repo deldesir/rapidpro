@@ -32,13 +32,13 @@ class OpenAITypeTest(TembaTest, CRUDLTestMixin):
 
         # get our model list from an api key
         mock_client.return_value.models.list.return_value = [
-            Mock(id="gpt-4o"),
-            Mock(id="gpt-4.1"),
+            Mock(id="gpt-5.4-mini"),
+            Mock(id="gpt-5.4"),
             Mock(id="gpt-turbo-3.5"),
         ]
         response = self.process_wizard("connect", connect_url, {"credentials": {"api_key": "good_key"}})
         self.assertEqual(
-            response.context["form"].fields["model"].choices, [("gpt-4o", "gpt-4o"), ("gpt-4.1", "gpt-4.1")]
+            response.context["form"].fields["model"].choices, [("gpt-5.4-mini", "gpt-5.4-mini"), ("gpt-5.4", "gpt-5.4")]
         )
         self.assertNotIn("name", response.context["form"].initial)
         self.assertEqual(
@@ -55,7 +55,7 @@ class OpenAITypeTest(TembaTest, CRUDLTestMixin):
             connect_url,
             {
                 "credentials": {"api_key": "good_key"},
-                "model": {"model": "gpt-4o", "name": "Translation Assistant"},
+                "model": {"model": "gpt-5.4-mini", "name": "Translation Assistant"},
             },
         )
         self.assertRedirects(response, reverse("ai.llm_list"))
@@ -63,7 +63,7 @@ class OpenAITypeTest(TembaTest, CRUDLTestMixin):
         # check that we created our model
         llm = LLM.objects.get(org=self.org, llm_type="openai")
         self.assertEqual("Translation Assistant", llm.name)
-        self.assertEqual("gpt-4o", llm.model)
+        self.assertEqual("gpt-5.4-mini", llm.model)
         self.assertEqual("good_key", llm.config["api_key"])
 
         # try to create another model with same name
@@ -73,7 +73,7 @@ class OpenAITypeTest(TembaTest, CRUDLTestMixin):
             {
                 "provider": {"provider": "openai"},
                 "credentials": {"api_key": "good_key"},
-                "model": {"model": "gpt-4o", "name": "Translation Assistant"},
+                "model": {"model": "gpt-5.4-mini", "name": "Translation Assistant"},
             },
         )
 
