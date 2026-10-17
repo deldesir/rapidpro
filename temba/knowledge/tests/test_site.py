@@ -278,6 +278,11 @@ class SiteViewsTest(TembaTest):
         self.assertEqual(301, response.status_code)
         self.assertEqual("/flows/", response.url)
 
+        # an index of the old site goes home
+        response = self.public("/en/")
+        self.assertEqual(301, response.status_code)
+        self.assertEqual("/", response.url)
+
         # but not to a page the site doesn't have - an address that was never mapped, or one whose article isn't
         # published, or a section with nothing published in it
         for path in ("/en/article/other-abc123/", "/en/category/hidden-1abc2d/", "/robots.txt"):

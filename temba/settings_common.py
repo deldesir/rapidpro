@@ -905,46 +905,29 @@ CHANNEL_TYPES = [
 HELPDESK_IMPORT_TYPES = []
 
 LLM_TYPES = {
-    "temba.ai.types.anthropic.type.AnthropicType": {
-        # model id -> max output tokens
-        "models": {
-            "claude-fable-5-1": 128_000,
-            "claude-fable-5": 128_000,
-            "claude-opus-5-5": 128_000,
-            "claude-opus-5": 128_000,
-            "claude-opus-4-8": 128_000,
-            "claude-opus-4-7": 128_000,
-            "claude-opus-4-5-20251101": 64_000,
-            "claude-sonnet-5-5": 128_000,
-            "claude-sonnet-5": 128_000,
-            "claude-sonnet-4-6": 128_000,
-            "claude-haiku-4-5-20251001": 64_000,
-        },
-    },
     "temba.ai.types.openai.type.OpenAIType": {
+        # model id -> max output tokens and, if it can't perform all LLM roles, the roles it can (e.g. "C")
         "models": {
-            "gpt-6-astra": 128_000,
-            "gpt-6-sol": 128_000,
-            "gpt-6-luna": 128_000,
-            "gpt-5.6-sol": 128_000,
-            "gpt-5.6-terra": 128_000,
-            "gpt-5.6-luna": 128_000,
-            "gpt-5.5": 128_000,
-            "gpt-5.4": 128_000,
-            "gpt-5.4-mini": 128_000,
-            "gpt-4.1": 32_768,
-            "gpt-4.1-mini": 32_768,
-            "gpt-4o": 16_384,
-            "gpt-4o-mini": 16_384,
+            "gpt-6-astra": {"max_output_tokens": 128_000},
+            "gpt-6-sol": {"max_output_tokens": 128_000},
+            "gpt-6-luna": {"max_output_tokens": 128_000},
+            "gpt-5.6-sol": {"max_output_tokens": 128_000},
+            "gpt-5.6-terra": {"max_output_tokens": 128_000},
+            "gpt-5.6-luna": {"max_output_tokens": 128_000},
+            "gpt-5.5": {"max_output_tokens": 128_000},
+            "gpt-5.4": {"max_output_tokens": 128_000},
+            "gpt-5.4-mini": {"max_output_tokens": 128_000},
         },
     },
     "temba.ai.types.custom_ai.type.CustomAIType": {
         # any OpenAI-compatible endpoint, e.g. a local AI gateway; the endpoint lives in the model's config
-        "models": {"custom_ai": 8_192},
+        "models": {"custom_ai": {"max_output_tokens": 8_192}},
     },
 }
 if TESTING:
-    LLM_TYPES["temba.ai.types.openai_azure.type.OpenAIAzureType"] = {"models": {"gpt-35-turbo": 4_096}}
+    LLM_TYPES["temba.ai.types.openai_azure.type.OpenAIAzureType"] = {
+        "models": {"gpt-35-turbo": {"max_output_tokens": 4_096}}
+    }
 
 
 # set of ISO-639-3 codes of languages to allow in addition to all ISO-639-1 languages
@@ -1063,8 +1046,11 @@ SOCIALACCOUNT_ADAPTER = "temba.users.adapter.TembaSocialAccountAdapter"
 
 MFA_ADAPTER = "temba.users.adapter.TembaMFAAdapter"
 
-SOCIALACCOUNT_PROVIDERS = {}
-SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
+# existing users are only logged in by a social login with a matching verified email if its provider is trusted for
+# this via EMAIL_AUTHENTICATION - which Google is, as it only reports addresses its users own as verified. Settings that
+# replace SOCIALACCOUNT_PROVIDERS should keep this for google. Providers that don't report whether emails are verified
+# (e.g. Azure AD) also need VERIFIED_EMAIL, ideally as a list of the domains they're trusted for.
+SOCIALACCOUNT_PROVIDERS = {"google": {"EMAIL_AUTHENTICATION": True}}
 SOCIALACCOUNT_LOGIN_ON_GET = True
 
 # maps email domains whose users can only login or signup with SSO (any configured social provider) to the

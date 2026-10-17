@@ -5,6 +5,7 @@ import { SendMsg, FlowDefinition } from '../src/store/flow-definition';
 import { zustand } from '../src/store/AppState';
 import { send_msg } from '../src/flow/actions/send_msg';
 import '../temba-modules';
+import { assertScreenshot, getClip } from './utils.test';
 
 describe('Localization Editing', () => {
   let editor: Editor;
@@ -305,9 +306,9 @@ describe('Localization Editing', () => {
     // Includes an generation-only model that should be filtered out of the
     // auto-translate picker, plus two valid translation models.
     (storeElement as any).getResults = async () => [
-      { uuid: 'llm-1', name: 'GPT-4', roles: ['translation'] },
-      { uuid: 'llm-2', name: 'Claude', roles: ['translation', 'generation'] },
-      { uuid: 'llm-generation', name: 'GenerationOnly', roles: ['generation'] }
+      { uuid: 'llm-1', name: 'GPT-4', roles: ['translate'] },
+      { uuid: 'llm-2', name: 'Claude', roles: ['translate', 'generate'] },
+      { uuid: 'llm-generation', name: 'GenerationOnly', roles: ['generate'] }
     ];
 
     const autoTranslateBtn = editor
@@ -339,8 +340,8 @@ describe('Localization Editing', () => {
     );
     // and the temba-select shouldExclude predicate also rejects generation-only
     const shouldExclude = (modelSelect as any).shouldExclude;
-    expect(shouldExclude({ roles: ['generation'] })).to.be.true;
-    expect(shouldExclude({ roles: ['translation'] })).to.be.false;
+    expect(shouldExclude({ roles: ['generate'] })).to.be.true;
+    expect(shouldExclude({ roles: ['translate'] })).to.be.false;
   });
 
   it('should keep auto translate visible when everything is translated', async () => {
@@ -362,8 +363,8 @@ describe('Localization Editing', () => {
     // Generation-only model is present but should be filtered out, leaving a
     // single translation-capable model — the picker should still auto-skip.
     (storeElement as any).getResults = async () => [
-      { uuid: 'llm-only', name: 'SoloGPT', roles: ['translation'] },
-      { uuid: 'llm-generation', name: 'GenerationOnly', roles: ['generation'] }
+      { uuid: 'llm-only', name: 'SoloGPT', roles: ['translate'] },
+      { uuid: 'llm-generation', name: 'GenerationOnly', roles: ['generate'] }
     ];
 
     const autoTranslateBtn = editor
@@ -383,40 +384,11 @@ describe('Localization Editing', () => {
     expect(dialog?.textContent).to.not.contain('SoloGPT');
   });
 
-  it('should include the brand name in the dialog copy when set', async () => {
-    zustand.setState({ brand: 'TextIt' });
-    try {
-      await selectLanguageInToolbar(editor, 'French', 'fra');
-
-      (storeElement as any).getResults = async () => [
-        { uuid: 'llm-only', name: 'SoloGPT', roles: ['translation'] }
-      ];
-
-      const autoTranslateBtn = editor
-        .querySelector('temba-editor-toolbar')
-        ?.shadowRoot?.querySelector(
-          '.toolbar-btn[aria-label="Auto translate"]'
-        ) as HTMLButtonElement;
-      autoTranslateBtn.click();
-      await editor.updateComplete;
-      await new Promise((r) => setTimeout(r, 0));
-      const at = editor.querySelector('temba-auto-translate') as any;
-      await at.updateComplete;
-
-      const dialog = at.shadowRoot.querySelector('.auto-translate-body');
-      expect(dialog?.textContent).to.contain(
-        'TextIt uses AI for automatic translation'
-      );
-    } finally {
-      zustand.setState({ brand: '' });
-    }
-  });
-
-  it('should fall back to a generic AI clause when no brand is set', async () => {
+  it('should name the target language in the dialog copy', async () => {
     await selectLanguageInToolbar(editor, 'French', 'fra');
 
     (storeElement as any).getResults = async () => [
-      { uuid: 'llm-only', name: 'SoloGPT', roles: ['translation'] }
+      { uuid: 'llm-only', name: 'SoloGPT', roles: ['translate'] }
     ];
 
     const autoTranslateBtn = editor
@@ -431,7 +403,7 @@ describe('Localization Editing', () => {
     await at.updateComplete;
 
     const dialog = at.shadowRoot.querySelector('.auto-translate-body');
-    expect(dialog?.textContent).to.contain('Automatic translation uses AI');
+    expect(dialog?.querySelector('strong')?.textContent).to.equal('French');
   });
 
   it('should show empty state when no LLMs are configured', async () => {
@@ -1813,7 +1785,7 @@ describe('Localization Editing', () => {
     await selectLanguageInToolbar(editor, 'French', 'fra');
 
     (storeElement as any).getResults = async () => [
-      { uuid: 'llm-only', name: 'SoloGPT', roles: ['translation'] }
+      { uuid: 'llm-only', name: 'SoloGPT', roles: ['translate'] }
     ];
 
     const autoTranslateBtn = editor
@@ -1972,6 +1944,49 @@ describe('Localization Editing', () => {
     const dialog = nodeEditor.shadowRoot.querySelector('temba-dialog');
     expect(dialog).to.exist;
     expect(dialog.getAttribute('header')).to.equal('Spanish - Send Message');
+  });
+
+  it('outlines extras instead of filling them when translating', async () => {
+    zustand.getState().setLanguageCode('spa');
+
+    const action: SendMsg = {
+      type: 'send_msg',
+      uuid: 'outlined-extras-action',
+      text: 'Pick a color',
+      quick_replies: ['red', 'green', 'blue']
+    };
+
+    const nodeEditor: NodeEditor = await fixture(html`
+      <temba-node-editor .action=${action} .isOpen=${true}> </temba-node-editor>
+    `);
+    await nodeEditor.updateComplete;
+
+    const extras = nodeEditor.shadowRoot.querySelector('.extras');
+    expect(extras.classList.contains('translating')).to.be.true;
+
+    // runtime attachments aren't translated, so only quick replies is offered
+    const chips = Array.from(extras.querySelectorAll('.extra-chip'));
+    expect(chips.map((c) => c.textContent.trim())).to.deep.equal([
+      'Quick Replies'
+    ]);
+
+    // nothing is translated yet, so quick replies are added from their chip
+    (chips[0] as HTMLElement).click();
+    await nodeEditor.updateComplete;
+
+    const section = extras.querySelector(
+      '.extra-section[data-extra="Quick Replies"]'
+    );
+    const style = getComputedStyle(section);
+    expect(style.backgroundColor).to.equal('rgba(0, 0, 0, 0)');
+    expect(style.borderTopWidth).to.equal('1px');
+
+    const dialog = nodeEditor.shadowRoot.querySelector('temba-dialog') as any;
+    await dialog.updateComplete;
+    await assertScreenshot(
+      'editor/translating-quick-replies',
+      getClip(dialog.shadowRoot.querySelector('.dialog-container'))
+    );
   });
 
   it('should handle attachments in localization', () => {

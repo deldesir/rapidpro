@@ -1,3 +1,82 @@
+## v26.3.146 (2026-10-15)
+ * Use the website language setting for component locale and language names
+ * Simplify the auto translation dialog copy
+
+## v26.3.145 (2026-10-15)
+ * Replace dialog accordions with add-chips and sentence extras
+ * Put every extras section on a panel and make list row controls easier to see
+ * Outline extras instead of filling them when translating
+ * Don't offer extras whose fields aren't translated when translating
+
+## v26.3.144 (2026-10-15)
+ * Define LLM roles per model in LLM_TYPES settings, validating model definitions on load
+ * Reserve some names for groups and flows
+
+## v26.3.143 (2026-10-15)
+ * Default the definitions endpoint's dependencies param to none
+ * Remove gpt-4.1 and gpt-4o models from the OpenAI LLM type
+
+## v26.3.142 (2026-10-14)
+ * Refresh dialogs and buttons
+ * Rename LLM role constants to match role names
+
+## v26.3.141 (2026-10-14)
+ * Use goflow's verb names for LLM roles in the internal API and editor
+ * Never collapse system revisions into user revisions or revisions by different authors in the revision browser, hide spec-only revisions, and always keep the newest revision
+
+## v26.3.140 (2026-10-14)
+ * Save flow revisions at their own spec version, request them at the serving server's version, and refuse to serve revisions to editors on an older minor spec version
+ * Only migrate prior revisions forward when diffing flows, and skip flows already ahead of current in migrate_flows
+ * Show flow load errors wherever the editor reloads a revision, and reject malformed spec versions
+ * Remove the Anthropic LLM type
+ * Bump multidict to 6.9.1
+
+## v26.3.139 (2026-10-13)
+ * Request flow spec 14.7.0 from the flow editor
+
+## v26.3.138 (2026-10-13)
+ * Bump flow spec version to 14.7.0
+
+## v26.3.137 (2026-10-13)
+ * Redirect old index pages and home-mapped addresses to the help site's home page
+ * Treat an index mapped to a missing page like an unmapped one
+
+## v26.3.136 (2026-10-12)
+ * Add a live article search to the helpdesk editor that searches articles only, keeps unmatched cards at full strength and skips highlights that lowercasing would misplace
+ * Add fallback names for languages missing from browser locale data
+
+## v26.3.135 (2026-10-08)
+ * Redesign helpdesk editor as a numbered outline with an overview rail
+ * Keep the full featured set when starring fields during a field list search
+
+## v26.3.134 (2026-10-06)
+ * Add another AI provider icon and fix default LLM type icon
+
+## v26.3.133 (2026-10-06)
+ * Require verified emails from trusted providers to connect SSO logins to existing users, and the invited email for SSO signup
+ * Enforce signup via the query string invite, making its email the user's email, closing signup if that email already belongs to someone, and showing the invite on the form
+ * Wipe passwords of unverified users when connecting social logins
+ * Drop unused email authentication auto connect setting
+
+## v26.3.132 (2026-10-06)
+ * Exclude archived flows from flow pickers in the flow editor
+ * Find sample flows via the static file finders
+
+## v26.3.131 (2026-10-06)
+ * Require a trusted provider and verified id_token claims when matching social logins to users by email
+
+## v26.3.130 (2026-10-06)
+ * Fix connecting OpenID Connect logins to existing users by email
+
+## v26.3.129 (2026-10-06)
+ * Drop columns for removed audit fields on imports and boundary aliases
+
+## v26.3.128 (2026-10-06)
+ * Store user emails lowercased and compare them case-insensitively for basic auth, invitations and staff updates
+
+## v26.3.127 (2026-10-06)
+ * Match existing users case-insensitively when connecting social logins by email
+
 ## v26.3.126 (2026-10-05)
  * Keep the rich editor caret in place in Safari
 

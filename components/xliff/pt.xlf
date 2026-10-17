@@ -282,21 +282,6 @@
   <source>Manage AI models</source>
   <target>Gerenciar modelos de IA</target>
 </trans-unit>
-<trans-unit id="he300070d2bbe90b2">
-  <source><x id="0" equiv-text="${this.brand}"/> uses AI for automatic translation, which can make
-          mistakes,</source>
-  <target><x id="0" equiv-text="${this.brand}"/> usa IA para a tradução automática, que pode cometer erros,</target>
-</trans-unit>
-<trans-unit id="hdecb189d6744e811">
-  <source>Automatic translation uses AI, which can make mistakes,</source>
-  <target>A tradução automática usa IA, que pode cometer erros,</target>
-</trans-unit>
-<trans-unit id="hca6320b0951b742e">
-  <source>All remaining text for <x id="0" equiv-text="&lt;strong&gt;${languageName}&lt;/strong&gt;"/> will be
-            translated automatically. <x id="1" equiv-text="${aiClause}"/> so it is important to review
-            all of your translations to verify they are correct.</source>
-  <target>Todo o texto restante para <x id="0" equiv-text="&lt;strong&gt;${languageName}&lt;/strong&gt;"/> será traduzido automaticamente. <x id="1" equiv-text="${aiClause}"/> por isso é importante revisar todas as suas traduções para verificar se estão corretas.</target>
-</trans-unit>
 <trans-unit id="s41a09142cb4913db">
   <source>Select an AI model</source>
   <target>Selecione um modelo de IA</target>
@@ -485,10 +470,6 @@
 <trans-unit id="s747f2353f55641aa">
   <source>Duplicate category names found: <x id="0" equiv-text="${uniqueDuplicates.join(', ')}"/></source>
   <target>Nomes de categoria duplicados encontrados: <x id="0" equiv-text="${uniqueDuplicates.join(', ')}"/></target>
-</trans-unit>
-<trans-unit id="s3ce63bb0b028cfde">
-  <source>Categorize with <x id="0" equiv-text="${callLlmAction.llm.name}"/></source>
-  <target>Categorizar com <x id="0" equiv-text="${callLlmAction.llm.name}"/></target>
 </trans-unit>
 <trans-unit id="se1650831e07202d0">
   <source>Configure AI instructions</source>
@@ -1670,6 +1651,63 @@
 <trans-unit id="s776c9901ec5a724b">
   <source>This address may not belong to this contact</source>
   <target>Este endereço pode não pertencer a este contato</target>
+</trans-unit>
+<trans-unit id="s6b42d98464d12106">
+  <source>Load Failed</source>
+  <target>Falha ao carregar</target>
+</trans-unit>
+<trans-unit id="s18a531ff4c1c40b6">
+  <source>Every category with a description needs a name</source>
+  <target>Toda categoria com descrição precisa de um nome</target>
+</trans-unit>
+<trans-unit id="s8532931c81aff363">
+  <source>Category names can't be <x id="0" equiv-text="${reserved.join(', ')}"/></source>
+  <target>Os nomes de categoria não podem ser <x id="0" equiv-text="${reserved.join(', ')}"/></target>
+</trans-unit>
+<trans-unit id="sfee301adc4cebf77">
+  <source>Classify with <x id="0" equiv-text="${model.name}"/></source>
+  <target>Classificar com <x id="0" equiv-text="${model.name}"/></target>
+</trans-unit>
+<trans-unit id="s0c328e625017555f">
+  <source>Unable to load the flow. Please try again.</source>
+  <target>Não foi possível carregar o fluxo. Tente novamente.</target>
+</trans-unit>
+<trans-unit id="s33d494d91061e06d">
+  <source>Save the result as {name}</source>
+  <note from="lit-localize">{name} is a text box for the result name. Keep {name} as it is.</note>
+</trans-unit>
+<trans-unit id="se94c8ac46fa79972">
+  <source>Each language must specify its own rules for this node</source>
+</trans-unit>
+<trans-unit id="s2f1345908b7598ed">
+  <source>Each language must translate its {categories}</source>
+  <note from="lit-localize">{categories} is a checkbox labeled "categories". Keep it as it is.</note>
+</trans-unit>
+<trans-unit id="s07638cdeb02122f4">
+  <source>Each language must translate its {rules} {categories}</source>
+  <note from="lit-localize">{rules} and {categories} are checkboxes labeled "rules" and "categories". Keep them as they are.</note>
+</trans-unit>
+<trans-unit id="s67124f6a285153c0">
+  <source>rules</source>
+  <note from="lit-localize">A checkbox in "Each language must translate its {rules} {categories}"</note>
+</trans-unit>
+<trans-unit id="sa9b45f49b577aded">
+  <source>categories</source>
+  <note from="lit-localize">A checkbox in "Each language must translate its {rules} {categories}"</note>
+</trans-unit>
+<trans-unit id="s1c0a25d505a394f0">
+  <source>If there's no reply after {duration} go to **No Response**</source>
+  <note from="lit-localize">{duration} is a dropdown of times, e.g. "5 minutes". Keep {duration} and the ** markers as they are.</note>
+</trans-unit>
+<trans-unit id="s74b6c3618d370674">
+  <source>Require {confidence} confidence or higher, or go to **Other**</source>
+  <note from="lit-localize">{confidence} is a dropdown of "low", "medium" and "high". Keep {confidence} and the ** markers as they are.</note>
+</trans-unit>
+<trans-unit id="ha37d55c66580b850">
+  <source>Text will be translated into
+            <x id="0" equiv-text="&lt;strong&gt;${languageName}&lt;/strong&gt;"/> automatically. Translations can
+            contain mistakes, so review them.</source>
+  <target>O texto será traduzido para <x id="0" equiv-text="&lt;strong&gt;${languageName}&lt;/strong&gt;"/> automaticamente. As traduções podem conter erros, então revise-as.</target>
 </trans-unit>
 </body>
 </file>

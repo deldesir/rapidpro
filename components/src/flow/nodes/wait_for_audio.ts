@@ -5,6 +5,7 @@ import { generateUUID } from '../../utils';
 export const wait_for_audio: NodeConfig = {
   type: 'wait_for_audio',
   name: 'Make Recording',
+  subtitle: "Capture the caller's voice, like a voicemail or a spoken answer.",
   group: SPLIT_GROUPS.wait,
   flowTypes: [FlowTypes.VOICE],
   form: {

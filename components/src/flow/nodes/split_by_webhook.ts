@@ -3,7 +3,7 @@ import { ACTION_GROUPS, FormData, NodeConfig, FlowTypes } from '../types';
 import { CallWebhook, Node } from '../../store/flow-definition';
 import { generateUUID, createSuccessFailureRouter } from '../../utils';
 import { html } from 'lit';
-import { resultNameField } from './shared';
+import { resultNameField, resultNameSection } from './shared';
 import { renderClamped, renderHighlightedText } from '../utils';
 
 // Default headers as {key, value} arrays (format used by key-value editor)
@@ -41,6 +41,13 @@ function getDefaultHeaders(method: string): { key: string; value: string }[] {
   return defaultGetHeaders.map((h) => ({ ...h }));
 }
 
+// the selected method, whether the select's value is an option or a plain string
+function getMethod(values: Record<string, any>): string {
+  return Array.isArray(values.method) && values.method.length > 0
+    ? values.method[0].value || values.method[0].name
+    : values.method;
+}
+
 // Default headers as Record format (for toFormData, before processFormDataForEditing converts them)
 function getDefaultHeadersRecord(method: string): Record<string, string> {
   if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
@@ -65,6 +72,8 @@ const defaultPost = `@(json(object(
 export const split_by_webhook: NodeConfig = {
   type: 'split_by_webhook',
   name: 'Call Webhook',
+  subtitle:
+    'Send or fetch data from your own systems, then branch on the response.',
   group: ACTION_GROUPS.services,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   showAsAction: true,
@@ -98,10 +107,7 @@ export const split_by_webhook: NodeConfig = {
         currentValue: any,
         _originalValues?: Record<string, any>
       ) => {
-        const method =
-          Array.isArray(values.method) && values.method.length > 0
-            ? values.method[0].value || values.method[0].name
-            : values.method;
+        const method = getMethod(values);
 
         if (headersMatchDefaults(currentValue)) {
           return getDefaultHeaders(method);
@@ -122,11 +128,7 @@ export const split_by_webhook: NodeConfig = {
         currentValue: any,
         originalValues?: Record<string, any>
       ) => {
-        // Check if method is POST (handle both string and select object formats)
-        const method =
-          Array.isArray(values.method) && values.method.length > 0
-            ? values.method[0].value || values.method[0].name
-            : values.method;
+        const method = getMethod(values);
 
         if (method === 'POST') {
           // For POST, provide the template if body is empty or was never set by user
@@ -157,31 +159,33 @@ export const split_by_webhook: NodeConfig = {
   layout: [
     { type: 'row', items: ['method', 'url'] },
     {
-      type: 'accordion',
+      type: 'extras',
       sections: [
         {
           label: 'Headers',
-          collapsed: true,
-          getValueCount: (formData: FormData) => {
-            return formData.headers?.length || 0;
-          },
+          hasValue: (formData: FormData) =>
+            !headersMatchDefaults(formData.headers),
+          onRemove: (formData: FormData) => ({
+            headers: getDefaultHeaders(getMethod(formData))
+          }),
           items: ['headers']
         },
         {
           label: 'Body',
-          collapsed: true,
-          getValueCount: (formData: FormData) => {
-            return !!(
+          hasValue: (formData: FormData) =>
+            !!(
               formData.body &&
               formData.body.trim() !== '' &&
               formData.body !== defaultPost
-            );
-          },
+            ),
+          onRemove: (formData: FormData) => ({
+            body: getMethod(formData) === 'POST' ? defaultPost : ''
+          }),
           items: ['body']
-        }
+        },
+        resultNameSection
       ]
-    },
-    'result_name'
+    }
   ],
   render: (node: Node) => {
     const callWebhookAction = node.actions?.find(

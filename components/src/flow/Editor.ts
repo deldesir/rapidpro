@@ -26,9 +26,11 @@ import {
   getNodeBounds,
   calculateReflowPositions,
   NodeBounds,
+  showErrorDialog,
+  showLoadErrorDialog,
   snapToGrid
 } from './utils';
-import { getLanguageName } from '../languages';
+import { getLanguageLabel, getLanguageName } from '../languages';
 import {
   ACTION_CONFIG,
   NODE_CONFIG,
@@ -205,6 +207,9 @@ export class Editor extends RapidElement {
 
   @property({ type: String })
   public version: string;
+
+  @property({ type: String, attribute: 'spec-version' })
+  public specVersion: string;
 
   @property({ type: String })
   public flowType: FlowType = FlowTypes.MESSAGE;
@@ -1258,7 +1263,11 @@ export class Editor extends RapidElement {
         if (!this.isConnected || !this.flow) {
           return;
         }
-        getStore().getState().fetchRevision(`/flow/revisions/${this.flow}`);
+        const state = getStore().getState();
+        state.setSpecVersion(this.specVersion);
+        state
+          .fetchRevision(`/flow/revisions/${this.flow}`)
+          .catch(showLoadErrorDialog);
       }, 0);
     }
 
@@ -1497,7 +1506,7 @@ export class Editor extends RapidElement {
     }
 
     if (changes.has('saveError') && this.saveError) {
-      this.showSaveErrorDialog(this.saveError);
+      showErrorDialog(msg('Save Failed'), this.saveError);
       setTimeout(() => {
         this.saveError = null;
       }, 0);
@@ -1671,25 +1680,6 @@ export class Editor extends RapidElement {
     content.textContent = msg(
       'This action is no longer supported and should be removed.'
     );
-    dialog.appendChild(content);
-
-    document.body.appendChild(dialog);
-    dialog.open = true;
-
-    dialog.addEventListener('temba-dialog-hidden', () => {
-      document.body.removeChild(dialog);
-    });
-  }
-
-  private showSaveErrorDialog(message: string): void {
-    const dialog = document.createElement('temba-dialog') as Dialog;
-    dialog.header = msg('Save Failed');
-    dialog.primaryButtonName = '';
-    dialog.cancelButtonName = msg('Dismiss');
-
-    const content = document.createElement('div');
-    content.style.cssText = 'padding: 20px; font-size: 14px; line-height: 1.5;';
-    content.textContent = message;
     dialog.appendChild(content);
 
     document.body.appendChild(dialog);
@@ -2057,7 +2047,13 @@ export class Editor extends RapidElement {
 
       // reload the swapped definition; fetchRevision resets the editing
       // language to the new base language
-      await getStore().getState().fetchRevision(`/flow/revisions/${this.flow}`);
+      try {
+        await getStore()
+          .getState()
+          .fetchRevision(`/flow/revisions/${this.flow}`);
+      } catch (error) {
+        return { error: error.message, flushFailed: false };
+      }
 
       // refresh the revisions list if it's currently open
       this.getRevisionsWindow()?.refresh();
@@ -2075,7 +2071,7 @@ export class Editor extends RapidElement {
     // Use languages from workspace if available
     if (this.workspace?.languages && this.workspace.languages.length > 0) {
       return this.workspace.languages
-        .map((code) => ({ code, name: getLanguageName(code) }))
+        .map((code) => ({ code, name: getLanguageLabel(code) }))
         .filter((lang) => lang.code && lang.name);
     }
 
@@ -2086,7 +2082,7 @@ export class Editor extends RapidElement {
     ) {
       return this.definition._ui.languages.map((lang: any) => {
         const code = typeof lang === 'string' ? lang : lang.iso || lang.code;
-        return { code, name: getLanguageName(code) };
+        return { code, name: getLanguageLabel(code) };
       });
     }
 
@@ -4031,6 +4027,7 @@ export class Editor extends RapidElement {
     getStore()
       .getState()
       .fetchRevision(`/flow/revisions/${this.flow}`)
+      .catch(showLoadErrorDialog)
       .finally(() => {
         if (languageCode) {
           this.handleLanguageChange(languageCode);
@@ -4044,7 +4041,7 @@ export class Editor extends RapidElement {
     const baseLanguage = this.definition?.language;
     const baseLanguageName =
       availableLanguages.find((lang) => lang.code === baseLanguage)?.name ||
-      (baseLanguage ? getLanguageName(baseLanguage) : '') ||
+      (baseLanguage ? getLanguageLabel(baseLanguage) : '') ||
       msg('Primary language');
     const isBaseSelected =
       !this.languageCode ||

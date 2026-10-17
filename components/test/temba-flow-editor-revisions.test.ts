@@ -369,11 +369,7 @@ describe('Editor Revisions', () => {
     expect(revisions[0].id).to.equal(5);
   });
 
-  it('collapses a system spec-only revision into adjacent edits despite a different author', async () => {
-    // The system bumps the spec version on its own behalf, which would
-    // normally fragment a real user's run of edits because the author
-    // differs. No-op revisions (empty tags or only "spec") should bypass
-    // that author barrier so the row reflects the user's actual session.
+  it('drops spec-only revisions so they never split or join a row', async () => {
     const adam = { email: 'adam@example.com', name: 'Adam McAdmin' };
     const system = { email: 'system', name: 'System' };
     const mockRevisions = [
@@ -394,12 +390,6 @@ describe('Editor Revisions', () => {
         created_on: '2024-06-01T12:06:00Z',
         user: adam,
         changes: { tags: ['layout'] }
-      },
-      {
-        id: 1,
-        created_on: '2024-06-01T12:04:00Z',
-        user: system,
-        changes: null
       }
     ];
 
@@ -412,52 +402,35 @@ describe('Editor Revisions', () => {
     const revisions = (revisionsWindow as any).revisions;
     expect(revisions.length).to.equal(1);
     expect(revisions[0].id).to.equal(4);
+    expect(revisions[0].created_on).to.equal('2024-06-01T12:10:00Z');
     expect(revisions[0].user.email).to.equal('adam@example.com');
-    // "spec" is stripped at the normalization boundary, so the merged tag
-    // set only carries the real edits.
     expect(revisions[0].changes.tags.sort()).to.deep.equal([
       'actions',
       'layout'
     ]);
   });
 
-  it('absorbs a long chain of no-op revisions plus the next real change into one row', async () => {
-    // System spec bumps land months or years apart and carry no editorial
-    // intent. A chain of them should fold into a single row — and that row
-    // must reach forward to swallow the first real edit too, otherwise we'd
-    // present the user a revision where nothing actually changed.
-    const system = { email: 'system', name: '' };
-    const eric = { email: 'eric@textit.com', name: 'Gustavo Fring' };
+  it('keeps a spec-only newest revision so it stays the current row', async () => {
+    const adam = { email: 'adam@example.com', name: 'Adam McAdmin' };
+    const system = { email: 'system', name: 'System' };
     const mockRevisions = [
       {
-        id: 1253,
-        created_on: '2026-03-19T19:47:41Z',
-        user: system,
-        changes: { tags: [] }
-      },
-      {
-        id: 1254,
-        created_on: '2025-04-29T22:03:54Z',
-        user: system,
-        changes: { tags: [] }
-      },
-      {
-        id: 1255,
-        created_on: '2025-04-22T21:14:42Z',
+        id: 3,
+        created_on: '2026-03-19T00:00:00Z',
         user: system,
         changes: { tags: ['spec'] }
       },
       {
-        id: 1256,
-        created_on: '2024-12-11T18:39:58Z',
+        id: 2,
+        created_on: '2025-01-01T00:00:00Z',
         user: system,
-        changes: { tags: [] }
+        changes: { tags: ['spec'] }
       },
       {
-        id: 1261,
-        created_on: '2023-02-10T18:32:44Z',
-        user: eric,
-        changes: { tags: ['layout'] }
+        id: 1,
+        created_on: '2024-01-01T00:00:00Z',
+        user: adam,
+        changes: { tags: ['actions'] }
       }
     ];
 
@@ -468,14 +441,94 @@ describe('Editor Revisions', () => {
     await (revisionsWindow as any).fetchRevisions();
 
     const revisions = (revisionsWindow as any).revisions;
-    expect(revisions.length).to.equal(1);
-    // The id/created_on stay anchored to the newest revision so the row
-    // sits at the correct point in time, but the displayed user is eric —
-    // the system no-ops shouldn't claim authorship of his layout edit.
-    expect(revisions[0].id).to.equal(1253);
-    expect(revisions[0].created_on).to.equal('2026-03-19T19:47:41Z');
-    expect(revisions[0].user.email).to.equal('eric@textit.com');
-    expect(revisions[0].changes.tags).to.deep.equal(['layout']);
+    expect(revisions.map((r: any) => r.id)).to.deep.equal([3, 1]);
+    expect(revisions[0].user.email).to.equal('system');
+    expect(revisions[0].created_on).to.equal('2026-03-19T00:00:00Z');
+    expect(revisions[0].changes).to.equal(null);
+    expect(revisions[1].changes.tags).to.deep.equal(['actions']);
+  });
+
+  it('never filters the list down to nothing', async () => {
+    const system = { email: 'system', name: 'System' };
+    const mockRevisions = [
+      {
+        id: 2,
+        created_on: '2026-03-19T00:00:00Z',
+        user: system,
+        changes: { tags: ['spec'] }
+      },
+      {
+        id: 1,
+        created_on: '2025-01-01T00:00:00Z',
+        user: system,
+        changes: { tags: ['spec'] }
+      }
+    ];
+
+    fetchStub.resolves(
+      new Response(JSON.stringify({ results: mockRevisions }), { status: 200 })
+    );
+
+    await (revisionsWindow as any).fetchRevisions();
+
+    const revisions = (revisionsWindow as any).revisions;
+    expect(revisions.map((r: any) => r.id)).to.deep.equal([2]);
+  });
+
+  it('never collapses system revisions with user revisions', async () => {
+    // Merging would anchor the row at the system revision's time while
+    // showing the user as the editor, i.e. a change they never made then.
+    const system = { email: 'system', name: '' };
+    const eric = { email: 'eric@textit.com', name: 'Eric' };
+    const mockRevisions = [
+      {
+        id: 5,
+        created_on: '2026-03-19T19:47:41Z',
+        user: system,
+        changes: { tags: [] }
+      },
+      {
+        id: 4,
+        created_on: '2025-04-29T22:03:54Z',
+        user: system,
+        changes: { tags: [] }
+      },
+      {
+        id: 3,
+        created_on: '2023-02-10T18:32:44Z',
+        user: eric,
+        changes: { tags: ['layout'] }
+      },
+      {
+        id: 2,
+        created_on: '2023-02-10T18:31:00Z',
+        user: system,
+        changes: { tags: ['actions'] }
+      },
+      {
+        id: 1,
+        created_on: '2023-02-10T18:30:00Z',
+        user: eric,
+        changes: null
+      }
+    ];
+
+    fetchStub.resolves(
+      new Response(JSON.stringify({ results: mockRevisions }), { status: 200 })
+    );
+
+    await (revisionsWindow as any).fetchRevisions();
+
+    const revisions = (revisionsWindow as any).revisions;
+    expect(revisions.map((r: any) => r.id)).to.deep.equal([5, 3, 2, 1]);
+    // the system no-op chain still folds into a single system row
+    expect(revisions[0].user.email).to.equal('system');
+    expect(revisions[0].changes).to.equal(null);
+    expect(revisions[1].user.email).to.equal('eric@textit.com');
+    expect(revisions[1].changes.tags).to.deep.equal(['layout']);
+    expect(revisions[2].user.email).to.equal('system');
+    expect(revisions[2].changes.tags).to.deep.equal(['actions']);
+    expect(revisions[3].user.email).to.equal('eric@textit.com');
   });
 
   it('absorbs the first real change even when it would exceed the label cap on its own', async () => {
@@ -484,20 +537,19 @@ describe('Editor Revisions', () => {
     // was reaching forward to grab its first real change, the merge
     // would fail and the no-op group would flush alone with no summary
     // — the empty-row case the absorb-forward rule exists to avoid.
-    const system = { email: 'system', name: '' };
     const eric = { email: 'eric@textit.com', name: 'Eric' };
     const mockRevisions = [
       {
         id: 3,
         created_on: '2026-03-19T00:00:00Z',
-        user: system,
+        user: eric,
         changes: { tags: [] }
       },
       {
         id: 2,
         created_on: '2025-01-01T00:00:00Z',
-        user: system,
-        changes: { tags: ['spec'] }
+        user: eric,
+        changes: { tags: [] }
       },
       {
         id: 1,
@@ -531,7 +583,6 @@ describe('Editor Revisions', () => {
     // no-op landing right behind it contributes zero labels and shouldn't
     // be stranded by a cap check that no longer makes sense.
     const eric = { email: 'eric@textit.com', name: 'Eric' };
-    const system = { email: 'system', name: '' };
     const mockRevisions = [
       {
         id: 2,
@@ -542,8 +593,8 @@ describe('Editor Revisions', () => {
       {
         id: 1,
         created_on: '2024-06-01T12:08:00Z',
-        user: system,
-        changes: { tags: ['spec'] }
+        user: eric,
+        changes: { tags: [] }
       }
     ];
 
@@ -565,24 +616,24 @@ describe('Editor Revisions', () => {
     ]);
   });
 
-  it('stops absorbing after the first real change is pulled in', async () => {
-    // Once a no-op chain has reached forward to grab a real edit, normal
-    // barriers resume — a second far-away real edit should NOT be swept up.
-    const system = { email: 'system', name: '' };
+  it("never lets one user's no-op revisions absorb another user's edit", async () => {
+    // A no-op chain may reach forward through time, but never across
+    // authors — otherwise Bob's recent row would show Eric's old edit.
+    const bob = { email: 'bob@example.com', name: 'Bob' };
     const eric = { email: 'eric@textit.com', name: 'Eric' };
     const ann = { email: 'ann@example.com', name: 'Ann' };
     const mockRevisions = [
       {
         id: 4,
         created_on: '2026-03-19T00:00:00Z',
-        user: system,
+        user: bob,
         changes: { tags: [] }
       },
       {
         id: 3,
         created_on: '2025-01-01T00:00:00Z',
-        user: system,
-        changes: { tags: ['spec'] }
+        user: bob,
+        changes: { tags: [] }
       },
       {
         id: 2,
@@ -605,11 +656,13 @@ describe('Editor Revisions', () => {
     await (revisionsWindow as any).fetchRevisions();
 
     const revisions = (revisionsWindow as any).revisions;
-    expect(revisions.length).to.equal(2);
-    expect(revisions[0].id).to.equal(4);
-    expect(revisions[0].changes.tags).to.deep.equal(['layout']);
-    expect(revisions[1].id).to.equal(1);
-    expect(revisions[1].changes.tags).to.deep.equal(['actions']);
+    expect(revisions.map((r: any) => r.id)).to.deep.equal([4, 2, 1]);
+    expect(revisions[0].user.email).to.equal('bob@example.com');
+    expect(revisions[0].changes).to.equal(null);
+    expect(revisions[1].user.email).to.equal('eric@textit.com');
+    expect(revisions[1].changes.tags).to.deep.equal(['layout']);
+    expect(revisions[2].user.email).to.equal('ann@example.com');
+    expect(revisions[2].changes.tags).to.deep.equal(['actions']);
   });
 
   it('does not count the "spec" tag toward the label cap when collapsing', async () => {

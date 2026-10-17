@@ -39,7 +39,7 @@
 
     --disabled-opacity: 0.6;
     --curvature: 6px;
-    --curvature-widget: 6px;
+    --curvature-widget: 8px;
     --focus: rgb(var(--focus-rgb, 91, 156, 229));
     /* Static values pre-mixed from the default focus hue for browsers
        without color-mix(); re-derived in the @supports block below. */
@@ -171,7 +171,6 @@
     --font-size: 14px;
     --button-font-size: 1.125rem;
 
-    --header-bg: var(--color-primary-dark);
     --header-text: var(--color-text-light);
 
     --temba-textinput-padding: 7px var(--pad);

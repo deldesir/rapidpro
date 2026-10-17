@@ -4,8 +4,10 @@ import { Article } from '../src/interfaces';
 import {
   groupSections,
   HelpdeskCards,
+  matchesQuery,
   moveArticle,
   Section,
+  toFullIndex,
   toOrder
 } from '../src/list/HelpdeskCards';
 import {
@@ -276,6 +278,46 @@ describe(TAG, () => {
     });
   });
 
+  describe('matchesQuery', () => {
+    it('matches part of a title, ignoring case and surrounding space', () => {
+      const item = { ...article('x'), title: 'Configuring Channels' };
+      expect(matchesQuery(item, 'chan')).to.equal(true);
+      expect(matchesQuery(item, '  CONFIG ')).to.equal(true);
+      expect(matchesQuery(item, 'flows')).to.equal(false);
+      expect(matchesQuery(item, '   ')).to.equal(true);
+    });
+  });
+
+  describe('toFullIndex', () => {
+    const all = ['a', 'b', 'c', 'd', 'e'].map((uuid) => article(uuid));
+    const shown = (...uuids: string[]) =>
+      all.filter((item) => uuids.includes(item.uuid));
+
+    it('lands before the shown article the slot sits above', () => {
+      // b and d showing, c hidden between them
+      expect(toFullIndex(all, shown('b', 'd'), 1, 'x')).to.equal(3);
+      expect(toFullIndex(all, shown('b', 'd'), 0, 'x')).to.equal(1);
+    });
+
+    it('lands just after the last shown article, not at the very end', () => {
+      expect(toFullIndex(all, shown('b', 'd'), 2, 'x')).to.equal(4);
+    });
+
+    it('lands at the end when nothing is showing', () => {
+      expect(toFullIndex(all, [], 0, 'x')).to.equal(5);
+    });
+
+    it('counts with the dragged article out', () => {
+      // b moves below d, past the hidden c - d sits at 2 once b is out
+      expect(toFullIndex(all, shown('b', 'd'), 1, 'b')).to.equal(3);
+      expect(toFullIndex(all, shown('b', 'd'), 0, 'd')).to.equal(1);
+    });
+
+    it('is the slot itself when nothing is hidden', () => {
+      expect(toFullIndex(all, all, 3, 'a')).to.equal(3);
+    });
+  });
+
   it('shows what the host puts above the cards, and nothing when it puts nothing', async () => {
     const plain = await getCards();
     assert.isNull(plain.shadowRoot.querySelector('.banner'));
@@ -309,10 +351,10 @@ describe(TAG, () => {
     expect(elements[0].getAttribute('label')).to.equal('Getting Started');
     expect(elements[1].getAttribute('label')).to.equal('Flows');
 
-    // a section is picked up by its folder rather than the card's usual grip
+    // each card says how much is in it, whether or not it's open
     expect(
-      elements[0].shadowRoot.querySelector('.grip').getAttribute('name')
-    ).to.equal('folder');
+      elements[0].querySelector('.meta .count').textContent.trim()
+    ).to.equal('2 articles');
 
     // sections arrive shut - a helpdesk is scanned by its sections first
     elements.forEach((card: any) => expect(card.collapsed).to.be.true);
@@ -416,10 +458,58 @@ describe(TAG, () => {
     expect(description.textContent.trim()).to.equal(
       'Setting up and finding your way around.'
     );
-    expect(description.getAttribute('slot')).to.equal('description');
-    expect(gettingStarted.classList.contains('described')).to.be.true;
-    expect(flows.classList.contains('described')).to.be.false;
+    expect(description.closest('[slot]').getAttribute('slot')).to.equal(
+      'description'
+    );
     expect(flows.querySelector('.description')).to.not.exist;
+  });
+
+  it('jumps to a section from the overview, opening its card', async () => {
+    // wide enough for the overview to stand beside the outline
+    const cards = await getCards({}, 1200);
+    const overview = cards.shadowRoot.querySelector('.overview');
+    expect(getComputedStyle(overview).display).to.equal('block');
+
+    // each one a button, so it's announced and activated as one
+    const items = Array.from(
+      overview.querySelectorAll('button.toc-item')
+    ) as HTMLElement[];
+    expect(
+      items.map((item) => item.querySelector('.toc-title').textContent.trim())
+    ).to.deep.equal(['Getting Started', 'Flows']);
+
+    await assertScreenshot('helpdesk-cards/overview', getClip(cards));
+
+    const flows = getCardElements(cards)[1] as any;
+    expect(flows.collapsed).to.be.true;
+    items[1].click();
+    expect(flows.collapsed).to.be.false;
+    expect(flows.classList.contains('flash')).to.be.true;
+  });
+
+  it('opens and shuts every card from the overview', async () => {
+    const cards = await getCards({}, 1200);
+    const button = cards.shadowRoot.querySelector('.expand-all') as HTMLElement;
+    expect(button.textContent.trim()).to.equal('Expand all');
+
+    button.click();
+    await cards.updateComplete;
+    getCardElements(cards).forEach(
+      (card: any) => expect(card.collapsed).to.be.false
+    );
+    expect(button.textContent.trim()).to.equal('Collapse all');
+
+    button.click();
+    await cards.updateComplete;
+    getCardElements(cards).forEach(
+      (card: any) => expect(card.collapsed).to.be.true
+    );
+  });
+
+  it('keeps the overview out of a narrow page', async () => {
+    const cards = await getCards();
+    const overview = cards.shadowRoot.querySelector('.overview');
+    expect(getComputedStyle(overview).display).to.equal('none');
   });
 
   it('offers to add an article only with somewhere to create one', async () => {
@@ -440,6 +530,37 @@ describe(TAG, () => {
 
     // and asking doesn't collapse the card
     expect((getCardElements(creating)[1] as any).collapsed).to.be.true;
+  });
+
+  it('offers an empty section its first article', async () => {
+    // Flows with nothing filed under it yet
+    clearMockGets();
+    mockGET(/\/api\/internal\/articles\.json/, {
+      results: ARTICLES.filter((row) => row.uuid !== 'nodes')
+    });
+
+    const cards = await getCards();
+    await expandAll(cards);
+    const flows = getCardElements(cards)[1];
+    expect(flows.querySelector('.empty-note')).to.exist;
+    expect(flows.querySelector('.empty-add')).to.not.exist;
+
+    const creating = await getCards({ 'create-endpoint': CREATE_URL });
+    const add = getCardElements(creating)[1].querySelector(
+      '.empty-add'
+    ) as HTMLElement;
+    expect(add).to.exist;
+
+    let requested = oneEvent(creating, 'temba-article-add-requested', false);
+    add.click();
+    expect((await requested).detail.section.uuid).to.equal('flows');
+
+    // and from the keyboard, by either key a button answers to
+    for (const key of ['Enter', ' ']) {
+      requested = oneEvent(creating, 'temba-article-add-requested', false);
+      add.dispatchEvent(new KeyboardEvent('keydown', { key }));
+      expect((await requested).detail.section.uuid).to.equal('flows');
+    }
   });
 
   it('opens an article from its row', async () => {
@@ -600,5 +721,178 @@ describe(TAG, () => {
       { uuid: 'installing', parent: 'getting-started', sort_order: 0 },
       { uuid: 'configuring', parent: 'getting-started', sort_order: 1 }
     ]);
+  });
+
+  describe('search', () => {
+    const search = async (cards: HelpdeskCards, query: string) => {
+      const input = cards.shadowRoot.querySelector(
+        '.searchbar input'
+      ) as HTMLInputElement;
+      input.value = query;
+      input.dispatchEvent(new InputEvent('input'));
+      await cards.updateComplete;
+      // the cards open and shut to the search, then settle
+      await waitFor(250);
+    };
+
+    const rowIds = (cards: HelpdeskCards, cardIndex: number) =>
+      getRows(cards, cardIndex).map((row) => row.id);
+
+    it('narrows each card to its matching articles', async () => {
+      const cards = await getCards();
+      await search(cards, 'conf');
+
+      const [gettingStarted, flows] = getCardElements(cards) as any[];
+      expect(rowIds(cards, 0)).to.deep.equal(['configuring']);
+      expect(gettingStarted.collapsed).to.equal(false);
+      expect(gettingStarted.hasAttribute('no-match')).to.equal(false);
+
+      // the card without a match stays as a place to drop, shut and dimmed
+      expect(flows.collapsed).to.equal(true);
+      expect(flows.hasAttribute('no-match')).to.equal(true);
+
+      // the row keeps its real position in its section
+      const row = getRows(cards, 0)[0];
+      expect(row.style.getPropertyValue('counter-set')).to.equal('article 2');
+      expect(row.querySelector('mark').textContent).to.equal('Conf');
+
+      // every card says how much of it matched, at full strength
+      const count = (card: HTMLElement) =>
+        card.querySelector('.meta .count').textContent.trim();
+      expect(count(gettingStarted)).to.equal('1 of 2 articles matches');
+      expect(count(flows)).to.equal('No matching articles');
+
+      expect(
+        cards.shadowRoot.querySelector('.search-count').textContent.trim()
+      ).to.equal('1 match');
+
+      // clear of any card, so none is drawn hovered
+      await moveMouse(0, 0);
+      await assertScreenshot('helpdesk-cards/search', getClip(cards));
+    });
+
+    it("doesn't count a match on a section's own title", async () => {
+      const cards = await getCards();
+      await search(cards, 'getting');
+
+      expect(rowIds(cards, 0)).to.deep.equal([]);
+      expect(getCardElements(cards)[0].hasAttribute('no-match')).to.equal(true);
+      expect(
+        cards.shadowRoot.querySelector('.no-matches').textContent
+      ).to.contain('No articles match "getting"');
+    });
+
+    it('moves an article within a filtered card', async () => {
+      const cards = await getCards();
+      await search(cards, 'ing');
+      expect(rowIds(cards, 0)).to.deep.equal(['installing', 'configuring']);
+
+      // Installing below Configuring
+      await dragArticle(cards, 0, 0, () => {
+        const below = getRows(cards, 0)[1].getBoundingClientRect();
+        return [below.left + 40, below.bottom + 2];
+      });
+
+      await waitForCondition(() => getSortPosts().length > 0);
+      expect(getSortPosts()[0]).to.deep.equal([
+        { uuid: 'getting-started', parent: null, sort_order: 0 },
+        { uuid: 'configuring', parent: 'getting-started', sort_order: 0 },
+        { uuid: 'installing', parent: 'getting-started', sort_order: 1 },
+        { uuid: 'flows', parent: null, sort_order: 1 },
+        { uuid: 'nodes', parent: 'flows', sort_order: 0 }
+      ]);
+    });
+
+    it('marks no part of a title whose case changes its length', async () => {
+      const cards = await getCards();
+      const [, flows] = (cards as any).sections;
+      flows.articles[0] = { ...flows.articles[0], title: 'İstanbul Nodes' };
+      (cards as any).sections = [...(cards as any).sections];
+      await search(cards, 'nodes');
+
+      const row = getRows(cards, 1)[0];
+      expect(row.querySelector('mark')).to.equal(null);
+      expect(row.querySelector('.title').textContent.trim()).to.equal(
+        'İstanbul Nodes'
+      );
+    });
+
+    it('says when nothing matches', async () => {
+      const cards = await getCards();
+      await search(cards, 'zzz');
+
+      expect(
+        cards.shadowRoot.querySelector('.no-matches').textContent
+      ).to.contain('No articles match "zzz"');
+      getCardElements(cards).forEach((card) =>
+        expect(card.hasAttribute('no-match')).to.equal(true)
+      );
+    });
+
+    it('puts the cards back the way they were when cleared', async () => {
+      const cards = await getCards();
+      const [first, second] = getCardElements(cards) as any[];
+      second.setCollapsed(false);
+      await waitFor(250);
+
+      await search(cards, 'install');
+      expect(first.collapsed).to.equal(false);
+      expect(second.collapsed).to.equal(true);
+
+      const input = cards.shadowRoot.querySelector(
+        '.searchbar input'
+      ) as HTMLInputElement;
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      await cards.updateComplete;
+      await waitFor(250);
+
+      expect(input.value).to.equal('');
+      expect(first.collapsed).to.equal(true);
+      expect(second.collapsed).to.equal(false);
+      expect(rowIds(cards, 0)).to.deep.equal(['installing', 'configuring']);
+    });
+
+    it('drags a matching article into a card without a match', async () => {
+      const cards = await getCards();
+      await search(cards, 'conf');
+
+      // Flows is shut by the search, so the drop files at its end
+      await dragArticle(cards, 0, 0, () => {
+        const target = getCardElements(cards)[1].getBoundingClientRect();
+        return [target.left + 40, target.bottom - 2];
+      });
+
+      await waitForCondition(() => getSortPosts().length > 0);
+      expect(getSortPosts()[0]).to.deep.equal([
+        { uuid: 'getting-started', parent: null, sort_order: 0 },
+        { uuid: 'installing', parent: 'getting-started', sort_order: 0 },
+        { uuid: 'flows', parent: null, sort_order: 1 },
+        { uuid: 'nodes', parent: 'flows', sort_order: 0 },
+        { uuid: 'configuring', parent: 'flows', sort_order: 1 }
+      ]);
+    });
+
+    it('drops amongst the shown articles of another card', async () => {
+      const cards = await getCards();
+      // Configuring and Nodes, each alone in its card
+      await search(cards, 'o');
+      expect(rowIds(cards, 0)).to.deep.equal(['configuring']);
+      expect(rowIds(cards, 1)).to.deep.equal(['nodes']);
+
+      // Configuring above Nodes
+      await dragArticle(cards, 0, 0, () => {
+        const target = getRows(cards, 1)[0].getBoundingClientRect();
+        return [target.left + 40, target.top + 2];
+      });
+
+      await waitForCondition(() => getSortPosts().length > 0);
+      expect(getSortPosts()[0]).to.deep.equal([
+        { uuid: 'getting-started', parent: null, sort_order: 0 },
+        { uuid: 'installing', parent: 'getting-started', sort_order: 0 },
+        { uuid: 'flows', parent: null, sort_order: 1 },
+        { uuid: 'configuring', parent: 'flows', sort_order: 0 },
+        { uuid: 'nodes', parent: 'flows', sort_order: 1 }
+      ]);
+    });
   });
 });

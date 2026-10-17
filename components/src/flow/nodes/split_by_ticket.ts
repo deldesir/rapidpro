@@ -7,8 +7,9 @@ import { html } from 'lit';
 export const split_by_ticket: NodeConfig = {
   type: 'split_by_ticket',
   name: 'Open Ticket',
+  subtitle: 'A person on your team will be able to follow up.',
   group: ACTION_GROUPS.trigger,
-  flowTypes: [FlowTypes.MESSAGE],
+  flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   showAsAction: true,
   form: {
     topic: {

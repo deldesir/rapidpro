@@ -1,4 +1,4 @@
-import { TemplateResult, html } from 'lit';
+import { TemplateResult, css, html } from 'lit';
 import { property } from 'lit/decorators.js';
 import { FieldElement } from './FieldElement';
 
@@ -36,6 +36,34 @@ export abstract class BaseListEditor<
   @property({ type: Boolean })
   maintainEmptyItem = false;
 
+  static get styles() {
+    return css`
+      ${super.styles}
+
+      .remove-btn {
+        padding: 4px;
+        border: 1px solid var(--border-strong, #d2d6dc);
+        border-radius: var(--curvature-widget);
+        background: var(--surface);
+        color: var(--text-2, #4d5664);
+        cursor: pointer;
+        font-size: 14px;
+      }
+
+      .remove-btn:hover:not(:disabled) {
+        background: var(--sunken);
+      }
+
+      /* translucent rather than faded, so it reads on white or tinted panels */
+      .remove-btn:disabled {
+        background: transparent;
+        border-color: rgba(0, 0, 0, 0.1);
+        color: rgba(0, 0, 0, 0.22);
+        cursor: default;
+      }
+    `;
+  }
+
   // Abstract methods that must be implemented by subclasses
   abstract isEmptyItem(item: T): boolean;
   abstract createEmptyItem(): T;
@@ -50,6 +78,19 @@ export abstract class BaseListEditor<
     return html`
       <button class="add-btn" @click=${() => this.addItem()}>Add Item</button>
     `;
+  }
+
+  // the × at the end of each row, faded while the row can't be removed
+  protected renderRemoveButton(index: number): TemplateResult {
+    const canRemove = this.canRemoveItem(index);
+    return html`<button
+      type="button"
+      class="remove-btn"
+      ?disabled=${!canRemove}
+      @click=${() => this.removeItem(index)}
+    >
+      <temba-icon name="x"></temba-icon>
+    </button>`;
   }
 
   protected shouldShowAddButton(): boolean {

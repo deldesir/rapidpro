@@ -253,6 +253,12 @@ export class CanvasNode extends RapidElement {
         background: #fff;
       }
 
+      /* node text sits a touch under the editor's own fields */
+      .action .body,
+      .router .body {
+        font-size: 13px;
+      }
+
       .action .body {
         padding: 0.75em;
         word-wrap: break-word;
@@ -422,7 +428,7 @@ export class CanvasNode extends RapidElement {
 
       .category .cn-title {
         font-weight: normal;
-        font-size: 1em;
+        font-size: 13px;
         max-width: 150px;
         white-space: nowrap;
         overflow: hidden;

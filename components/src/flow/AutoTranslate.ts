@@ -5,7 +5,7 @@ import { msg, str } from '@lit/localize';
 import { property, state } from 'lit/decorators.js';
 import { RapidElement } from '../RapidElement';
 import { getStore } from '../store/Store';
-import { AppState, fromStore, zustand } from '../store/AppState';
+import { zustand } from '../store/AppState';
 import { FlowDefinition } from '../store/flow-definition';
 import { TranslationEntry, buildTranslationBundles } from './flow-translations';
 import { getLanguageName } from '../languages';
@@ -140,9 +140,6 @@ export class AutoTranslate extends RapidElement {
   @property({ type: Boolean })
   disabled = false;
 
-  @fromStore(zustand, (state: AppState) => state.brand)
-  private brand!: string;
-
   // Reactive flag the host can read to show "translating" state in UI
   // adjacent to this component (e.g. the toolbar button).
   @property({ type: Boolean, reflect: true })
@@ -214,7 +211,7 @@ export class AutoTranslate extends RapidElement {
         ? ((await store.getResults(MODELS_ENDPOINT, { force: true })) ?? [])
         : [];
       this.models = results
-        .filter((r) => hasLLMRole(r, 'translation'))
+        .filter((r) => hasLLMRole(r, 'translate'))
         .map((r) => ({
           uuid: r.uuid,
           name: r.name
@@ -707,18 +704,12 @@ export class AutoTranslate extends RapidElement {
 
     const selected = this.selectedModel ? [this.selectedModel] : [];
     const languageName = getLanguageName(this.languageCode);
-    const aiClause = this.brand
-      ? msg(
-          html`${this.brand} uses AI for automatic translation, which can make
-          mistakes,`
-        )
-      : msg(html`Automatic translation uses AI, which can make mistakes,`);
     return html`
       <p>
         ${msg(
-          html`All remaining text for <strong>${languageName}</strong> will be
-            translated automatically. ${aiClause} so it is important to review
-            all of your translations to verify they are correct.`
+          html`Text will be translated into
+            <strong>${languageName}</strong> automatically. Translations can
+            contain mistakes, so review them.`
         )}
       </p>
       ${this.models.length > 1
@@ -728,7 +719,7 @@ export class AutoTranslate extends RapidElement {
             valueKey="uuid"
             .values=${selected}
             .shouldExclude=${(option: LLMModel) =>
-              !hasLLMRole(option, 'translation')}
+              !hasLLMRole(option, 'translate')}
             ?searchable=${true}
             placeholder=${msg('Select an AI model')}
             @change=${this.handleModelChange}

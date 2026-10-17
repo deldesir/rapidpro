@@ -1,5 +1,6 @@
 import { expect } from '@open-wc/testing';
 import {
+  isHousekeepingOnly,
   isNoOpChanges,
   normalizeChanges,
   summarizeChanges
@@ -112,5 +113,16 @@ describe('isNoOpChanges', () => {
     expect(isNoOpChanges({ tags: ['spec', 'actions'] })).to.equal(false);
     expect(isNoOpChanges({ tags: ['actions'] })).to.equal(false);
     expect(isNoOpChanges({ tags: ['localization:spa'] })).to.equal(false);
+  });
+});
+
+describe('isHousekeepingOnly', () => {
+  it('is true only for non-empty tag lists made up of housekeeping tags', () => {
+    expect(isHousekeepingOnly({ tags: ['spec'] })).to.equal(true);
+    expect(isHousekeepingOnly({ tags: ['spec', 'spec'] })).to.equal(true);
+    expect(isHousekeepingOnly(null)).to.equal(false);
+    expect(isHousekeepingOnly(undefined)).to.equal(false);
+    expect(isHousekeepingOnly({ tags: [] })).to.equal(false);
+    expect(isHousekeepingOnly({ tags: ['spec', 'actions'] })).to.equal(false);
   });
 });

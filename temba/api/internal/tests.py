@@ -6,8 +6,8 @@ from django.utils import timezone
 
 from temba import mailroom
 from temba.ai.models import LLM
-from temba.ai.types.anthropic.type import AnthropicType
 from temba.ai.types.openai.type import OpenAIType
+from temba.ai.types.openai_azure.type import OpenAIAzureType
 from temba.api.tests.mixins import APITestMixin
 from temba.campaigns.models import Campaign, CampaignEvent
 from temba.contacts.models import Contact, ContactExport, ContactField, ContactGroup, ContactURN
@@ -797,7 +797,7 @@ class EndpointsTest(APITestMixin, TembaTest):
         field = self.create_field("favorite_color", "Favorite Color")
         global_ = Global.get_or_create(self.org, self.admin, "company_name", "Company Name", "Acme")
         label = FlowLabel.create(self.org, self.admin, "Important")
-        llm = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "GPT-4", {})
+        llm = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "GPT-4", {})
         template = Template.get_or_create(self.org, "welcome_message")
         topic = Topic.create(self.org, self.admin, "Support")
         other_flow = self.create_flow("Other Org", org=self.org2)
@@ -1491,20 +1491,14 @@ class EndpointsTest(APITestMixin, TembaTest):
     def test_llms(self):
         endpoint_url = reverse("api.internal.llms") + ".json"
 
-        openai = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "GPT-4", {}, roles=LLM.ROLE_TRANSLATION)
-        anthropic = LLM.create(self.org, self.admin, AnthropicType(), "claude-haiku-4-5-20251001", "Claude", {})
-        classifier = LLM.create(
-            self.org,
-            self.admin,
-            AnthropicType(),
-            "claude-haiku-4-5-20251001",
-            "Classifier",
-            {},
-            roles=LLM.ROLE_CLASSIFICATION,
-        )
-        deleted = LLM.create(self.org, self.admin, AnthropicType(), "claude-haiku-4-5-20251001", "Deleted", {})
+        openai = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "GPT-4", {})
+        azure = LLM.create(self.org, self.admin, OpenAIAzureType(), "gpt-35-turbo", "Azure GPT", {})
+        classifier = LLM.create(self.org, self.admin, OpenAIAzureType(), "gpt-35-turbo", "Classifier", {})
+        LLM.objects.filter(id=openai.id).update(roles=LLM.ROLE_TRANSLATE)
+        LLM.objects.filter(id=classifier.id).update(roles=LLM.ROLE_CLASSIFY)
+        deleted = LLM.create(self.org, self.admin, OpenAIAzureType(), "gpt-35-turbo", "Deleted", {})
         deleted.release(self.admin)
-        system = LLM.create(self.org, self.admin, OpenAIType(), "gpt-4o", "System", {})
+        system = LLM.create(self.org, self.admin, OpenAIType(), "gpt-5.4-mini", "System", {})
         system.is_system = True
         system.save(update_fields=("is_system",))
 
@@ -1517,28 +1511,28 @@ class EndpointsTest(APITestMixin, TembaTest):
             [self.admin],
             results=[
                 {
-                    "uuid": str(classifier.uuid),
-                    "name": "Classifier",
-                    "type": "anthropic",
-                    "roles": ["classification"],
+                    "uuid": str(azure.uuid),
+                    "name": "Azure GPT",
+                    "type": "openai_azure",
+                    "roles": ["translate", "generate", "classify"],
                 },
                 {
-                    "uuid": str(anthropic.uuid),
-                    "name": "Claude",
-                    "type": "anthropic",
-                    "roles": ["translation", "generation", "classification"],
+                    "uuid": str(classifier.uuid),
+                    "name": "Classifier",
+                    "type": "openai_azure",
+                    "roles": ["classify"],
                 },
                 {
                     "uuid": str(openai.uuid),
                     "name": "GPT-4",
                     "type": "openai",
-                    "roles": ["translation"],
+                    "roles": ["translate"],
                 },
                 {
                     "uuid": str(system.uuid),
                     "name": "System",
                     "type": "openai",
-                    "roles": ["translation", "generation", "classification"],
+                    "roles": ["translate", "generate", "classify"],
                 },
             ],
         )

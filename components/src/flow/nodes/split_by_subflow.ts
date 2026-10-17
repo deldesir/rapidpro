@@ -9,6 +9,8 @@ import { shouldExcludeFlow } from '../flow-utils';
 export const split_by_subflow: NodeConfig = {
   type: 'split_by_subflow',
   name: 'Enter a Flow',
+  subtitle:
+    'Run another flow, then come back here when it completes or expires.',
   group: ACTION_GROUPS.trigger,
   flowTypes: [FlowTypes.VOICE, FlowTypes.MESSAGE, FlowTypes.BACKGROUND],
   showAsAction: true,
@@ -20,13 +22,14 @@ export const split_by_subflow: NodeConfig = {
       placeholder: 'Select a flow...',
       helpText:
         'Once the subflow is complete or expires, the contact will return here',
-      endpoint: '/api/v2/flows.json',
+      endpoint: '/api/v2/flows.json?archived=false',
       valueKey: 'uuid',
       nameKey: 'name',
       shouldExclude: shouldExcludeFlow
     },
     params: {
       type: 'key-value',
+      label: 'Parameters',
       keyPlaceholder: 'Parameter name',
       valuePlaceholder: 'Value',
       minRows: 0,
@@ -71,32 +74,7 @@ export const split_by_subflow: NodeConfig = {
       }
     }
   },
-  layout: [
-    'flow',
-    {
-      type: 'accordion',
-      sections: [
-        {
-          label: 'Parameters',
-          collapsed: false,
-          getValueCount: (formData: FormData) => {
-            const params = formData.params;
-            if (Array.isArray(params)) {
-              return params.filter((p: any) => p.value && p.value.trim() !== '')
-                .length;
-            }
-            if (params && typeof params === 'object') {
-              return Object.values(params).filter(
-                (v) => typeof v === 'string' && v.trim() !== ''
-              ).length;
-            }
-            return 0;
-          },
-          items: ['params']
-        }
-      ]
-    }
-  ],
+  layout: ['flow', 'params'],
   resolveFormData: async (formData: FormData) => {
     const flow =
       Array.isArray(formData.flow) && formData.flow.length > 0

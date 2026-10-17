@@ -1,5 +1,6 @@
 import { createStore, StoreApi } from 'zustand/vanilla';
 import { rootUrl } from '../root';
+import { msg } from '@lit/localize';
 import { generateUUID } from '../utils';
 import { getLanguageName } from '../languages';
 import {
@@ -22,7 +23,6 @@ import {
   resolveDependencyNames
 } from '../flow/dependencies';
 
-export const FLOW_SPEC_VERSION = '14.3';
 const CANVAS_PADDING = 800;
 
 // how long a revision load will wait on canonical names before rendering the
@@ -228,7 +228,6 @@ export interface Activity {
 
 export interface AppState {
   features: string[];
-  brand: string;
 
   flowDefinition: FlowDefinition;
   flowInfo: FlowInfo;
@@ -247,6 +246,10 @@ export interface AppState {
   simulatorActivity: Activity | null;
   activityEndpoint: string | null;
   simulatorActive: boolean;
+
+  // spec version to request revisions at, from the server which served the editor
+  specVersion: string | null;
+  setSpecVersion: (version: string) => void;
 
   getCurrentActivity: () => Activity | null;
   fetchRevision: (endpoint: string, id?: string) => Promise<void>;
@@ -308,7 +311,6 @@ export const zustand = createStore<AppState>()(
   subscribeWithSelector(
     immer((set, get) => ({
       features: [] as string[],
-      brand: '',
       canvasSize: { width: 0, height: 0 },
       languageCode: '',
       workspace: null,
@@ -323,6 +325,7 @@ export const zustand = createStore<AppState>()(
       simulatorActivity: null,
       activityEndpoint: null,
       simulatorActive: false,
+      specVersion: null,
       flushSave: null,
 
       setFlushSave: (fn: (() => Promise<void>) | null) => {
@@ -340,12 +343,22 @@ export const zustand = createStore<AppState>()(
         if (!id) {
           id = 'latest';
         }
+        const specVersion = get().specVersion;
         const response = await fetch(
-          rootUrl(`${endpoint}/${id}/?version=${FLOW_SPEC_VERSION}`)
-        );
+          rootUrl(
+            specVersion
+              ? `${endpoint}/${id}/?version=${specVersion}`
+              : `${endpoint}/${id}/`
+          )
+        ).catch(() => null);
 
-        if (!response.ok) {
-          throw new Error('Network response was not ok');
+        if (!response?.ok) {
+          // surface the server's explanation, e.g. that the flow was upgraded
+          // and this editor needs reloading
+          const body = await response?.json().catch(() => null);
+          throw new Error(
+            body?.error || msg('Unable to load the flow. Please try again.')
+          );
         }
         const data = (await response.json()) as FlowContents;
         // reclassify while the definition is still the mutable response JSON -
@@ -408,6 +421,10 @@ export const zustand = createStore<AppState>()(
 
       setActivityEndpoint: (endpoint: string) => {
         set({ activityEndpoint: endpoint });
+      },
+
+      setSpecVersion: (version: string) => {
+        set({ specVersion: version });
       },
 
       fetchActivity: async (endpoint: string) => {

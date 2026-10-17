@@ -1264,6 +1264,8 @@ class HelpSite(CreatedByMixin, ModifiedByMixin):
     SEARCH_CACHE_KEY = "helpsite_search:%d:%s"
     SEARCH_CACHE_TTL = 60 * 5
 
+    REDIRECT_HOME = "home"  # what an old address can be mapped to in place of a uuid, to lead to the home page
+
     uuid = models.UUIDField(unique=True, default=uuid4)
     source = models.OneToOneField(KnowledgeSource, on_delete=models.PROTECT, related_name="site")
 
@@ -1283,8 +1285,9 @@ class HelpSite(CreatedByMixin, ModifiedByMixin):
 
     config = models.JSONField(default=dict)
 
-    # the addresses of the site the org moved from, by path, to the uuid of the article or section each is now -
-    # written by whatever brought the articles over, and only ever consulted for an address the site doesn't have
+    # the addresses of the site the org moved from, by path, to the uuid of the article or section each is now (or
+    # REDIRECT_HOME) - written by whatever brought the articles over, and only ever consulted for an address the site
+    # doesn't have
     redirects = models.JSONField(default=dict)
 
     @classmethod
@@ -1555,10 +1558,23 @@ class HelpSite(CreatedByMixin, ModifiedByMixin):
 
     def get_redirect(self, path: str, prefix: str = "") -> str | None:
         """
-        Where an address of the site the org moved from leads now, if the mapping has it and it's a page.
+        Where an address of the site the org moved from leads now, if anywhere. One the mapping has leads to its page,
+        if that's still a page, or home if it's mapped there. Otherwise one that leads to addresses the mapping has - an
+        index of the old site, like its root for a language - leads home too.
         """
-        uuid = self.redirects.get(self.normalize_path(path))
-        return self.get_link_targets(prefix).get(uuid) if uuid else None
+        path = self.normalize_path(path)
+        home = f"{prefix}/"
+
+        uuid = self.redirects.get(path)
+        if uuid == self.REDIRECT_HOME:
+            return home
+        if uuid and (address := self.get_link_targets(prefix).get(uuid)):
+            return address
+
+        if path != "/" and any(old.startswith(path + "/") for old in self.redirects):
+            return home
+
+        return None
 
     def get_popular(self, limit: int = POPULAR_LIMIT) -> list:
         """
