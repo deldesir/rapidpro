@@ -1,3 +1,9 @@
+## v26.3.149 (2026-10-19)
+ * Rename the WebChat channel type's code to CHP and its module to chip
+ * Only reuse a failed send's external id on the chat it failed on
+ * Render channel configuration templates with the request
+ * Point the webchat widget at the webchat service
+
 ## v26.3.148 (2026-10-19)
  * Add a partial index for finding inactive open tickets by last activity
  * Render an overridable workspace alerts include on every page
