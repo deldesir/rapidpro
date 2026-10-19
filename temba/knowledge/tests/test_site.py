@@ -102,7 +102,7 @@ class SiteViewsTest(TembaTest):
         # there's no chat widget until the site has a chat channel
         self.assertNotContains(response, "<temba-webchat")
 
-        webchat = self.create_channel("WCH", "Site Chat", None)
+        webchat = self.create_channel("CHP", "Site Chat", None)
         self.site.set_config(self.admin, chat_channel=str(webchat.uuid))
 
         with override_settings(HOSTNAME="app.nyaruka.com"):

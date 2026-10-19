@@ -6,9 +6,9 @@ from temba.tests import CRUDLTestMixin, TembaTest
 from .views import CONFIG_ALLOWED_DOMAINS
 
 
-class WebChatTypeTest(CRUDLTestMixin, TembaTest):
+class ChipTypeTest(CRUDLTestMixin, TembaTest):
     def test_claim(self):
-        claim_url = reverse("channels.types.webchat.claim")
+        claim_url = reverse("channels.types.chip.claim")
 
         # not available to regular users
         self.login(self.admin)
@@ -29,7 +29,7 @@ class WebChatTypeTest(CRUDLTestMixin, TembaTest):
         response = self.client.post(claim_url, {})
         self.assertEqual(302, response.status_code)
 
-        channel = Channel.objects.get(channel_type="WCH")
+        channel = Channel.objects.get(channel_type="CHP")
         self.assertEqual("WebChat", channel.name)
         self.assertIsNone(channel.address)
         self.assertEqual(["webchat"], channel.schemes)
@@ -46,7 +46,7 @@ class WebChatTypeTest(CRUDLTestMixin, TembaTest):
         self.assertContains(response, "any website can embed")
 
     def test_update(self):
-        channel = self.create_channel("WCH", "WebChat", "123")
+        channel = self.create_channel("CHP", "WebChat", "123")
         update_url = reverse("channels.channel_update", args=[channel.id])
         config_url = reverse("channels.channel_configuration", args=[channel.uuid])
 

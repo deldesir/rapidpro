@@ -638,6 +638,19 @@ msgstr "URL de resposta"
 msgid "This URL should be called by BurstSMS when messages are replied to.You can set it on your settings page."
 msgstr "Esta URL deve ser chamada pelo BurstSMS quando as mensagens são respondidas. Você pode configurar isto na sua página de configurações."
 
+msgid "Chat with visitors on your website via an embedded chat widget."
+msgstr "Converse com os visitantes do seu site através de um widget de chat incorporado."
+
+msgid "Allowed Domains"
+msgstr "Domínios permitidos"
+
+msgid "The domains of the websites that can embed this channel's chat widget, one per line or comma separated, e.g. example.com or example.com:8080. If empty, any website can embed it."
+msgstr "Os domínios dos sites que podem incorporar o widget de chat deste canal, um por linha ou separados por vírgulas, ex. example.com ou example.com:8080. Se vazio, qualquer site pode incorporá-lo."
+
+#, python-format
+msgid "%(domain)s is not a valid domain. Enter domains without schemes or paths, e.g. example.com."
+msgstr "%(domain)s não é um domínio válido. Insira domínios sem esquemas ou caminhos, ex. example.com."
+
 #, python-format
 msgid "Connect your %(link)s number, we'll walk you through the steps necessary to get your Clickatell connection working in a few minutes."
 msgstr "Conecte seu número %(link)s, nós te guiaremos pelos passos necessários para possuir sua conexão Clickatell em poucos minutos."
@@ -1857,19 +1870,6 @@ msgstr "O nome de usuário da sua conta Movile/Wavy"
 
 msgid "The Authentication Token for your Movile/Wavy account"
 msgstr "O token de autenticação da sua conta Movile/Wavy"
-
-msgid "Chat with visitors on your website via an embedded chat widget."
-msgstr "Converse com os visitantes do seu site através de um widget de chat incorporado."
-
-msgid "Allowed Domains"
-msgstr "Domínios permitidos"
-
-msgid "The domains of the websites that can embed this channel's chat widget, one per line or comma separated, e.g. example.com or example.com:8080. If empty, any website can embed it."
-msgstr "Os domínios dos sites que podem incorporar o widget de chat deste canal, um por linha ou separados por vírgulas, ex. example.com ou example.com:8080. Se vazio, qualquer site pode incorporá-lo."
-
-#, python-format
-msgid "%(domain)s is not a valid domain. Enter domains without schemes or paths, e.g. example.com."
-msgstr "%(domain)s não é um domínio válido. Insira domínios sem esquemas ou caminhos, ex. example.com."
 
 #, python-format
 msgid "Add a %(link)s bot to send and receive messages to WeChat users for free. Your users will need an Android, Windows or iOS device and a WeChat account to send and receive messages."
@@ -4633,6 +4633,27 @@ msgstr "Insira o seu código de requisição"
 msgid "When you first open %(brand)s, the app will register your device with Google and our servers. Once that is complete, it will display a claim code. Enter that claim code in the form to the left and click \"Add Phone\" to connect your device."
 msgstr "Quando você abre %(brand)s pela primeira vez, o aplicativo vai registrar seu dispositivo com o Google e nossos servidores. Estando essa etapa completa, um código de requisição será exibido. Coloque esse código de requisição no formulário à esquerda e clique \"Adicionar telefone\" para conectar seu dispositivo."
 
+msgid "Visitors chat with this channel through a widget embedded on your website."
+msgstr "Os visitantes conversam com este canal através de um widget incorporado no seu site."
+
+msgid "Channel UUID"
+msgstr "UUID do Canal"
+
+msgid "The embedded widget uses this UUID to identify this channel when connecting."
+msgstr "O widget incorporado usa este UUID para identificar este canal ao se conectar."
+
+msgid "Embed"
+msgstr "Incorporar"
+
+msgid "Add the following to your website to embed the chat widget. The script only needs to be included once per page."
+msgstr "Adicione o seguinte ao seu site para incorporar o widget de chat. O script só precisa ser incluído uma vez por página."
+
+msgid "Only websites on the following domains can embed this channel's chat widget. This can be changed in the channel settings."
+msgstr "Apenas os sites nos seguintes domínios podem incorporar o widget de chat deste canal. Isso pode ser alterado nas configurações do canal."
+
+msgid "Currently any website can embed this channel's chat widget. Setting allowed domains in the channel settings stops other websites from embedding it."
+msgstr "Atualmente qualquer site pode incorporar o widget de chat deste canal. Definir domínios permitidos nas configurações do canal impede que outros sites o incorporem."
+
 msgid "To connect a <a href=\"https://clickatell.com\">Clickatell</a> number, first create an HTTP integration for a two way number, then enter the number and API key below."
 msgstr "Para conectar um número da <a href=\"https://clickatell.com\">Clickatell</a>, primeiro crie uma integração HTTP para um número de duas vias, depois digite o número e a chave de API abaixo."
 
@@ -5152,27 +5173,6 @@ msgstr "<div class=\"code mt-4\">Manage > API Usage > Callback API > Server Sett
 #, python-format
 msgid "To connect your Vonage Account you will need to provide us your API key and secret. Both values can be found on your <a target=\"vonage\" href=\"%(settings_url)s\">Vonage settings</a> page in the API Settings section."
 msgstr "Para conectar a sua conta da Vonage, você precisará nos fornecer a sua chave e o seu segredo de API. Ambos os valores podem ser encontrados na página de <a target=\"vonage\" href=\"%(settings_url)s\">configurações da Vonage</a>, na seção API Settings."
-
-msgid "Visitors chat with this channel through a widget embedded on your website."
-msgstr "Os visitantes conversam com este canal através de um widget incorporado no seu site."
-
-msgid "Channel UUID"
-msgstr "UUID do Canal"
-
-msgid "The embedded widget uses this UUID to identify this channel when connecting."
-msgstr "O widget incorporado usa este UUID para identificar este canal ao se conectar."
-
-msgid "Embed"
-msgstr "Incorporar"
-
-msgid "Add the following to your website to embed the chat widget. The script only needs to be included once per page."
-msgstr "Adicione o seguinte ao seu site para incorporar o widget de chat. O script só precisa ser incluído uma vez por página."
-
-msgid "Only websites on the following domains can embed this channel's chat widget. This can be changed in the channel settings."
-msgstr "Apenas os sites nos seguintes domínios podem incorporar o widget de chat deste canal. Isso pode ser alterado nas configurações do canal."
-
-msgid "Currently any website can embed this channel's chat widget. Setting allowed domains in the channel settings stops other websites from embedding it."
-msgstr "Atualmente qualquer site pode incorporar o widget de chat deste canal. Definir domínios permitidos nas configurações do canal impede que outros sites o incorporem."
 
 msgid "You can connect your WhatsApp number by clicking on it below."
 msgstr "Você pode conectar o seu número do WhatsApp clicando nele abaixo."
