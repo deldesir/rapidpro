@@ -1,4 +1,5 @@
 from unittest.mock import call, patch
+from uuid import uuid4
 
 from django.urls import reverse
 
@@ -100,11 +101,15 @@ class ArticlesEndpointTest(APITest):
 
         # filter by section
         self.assertGet(endpoint_url + f"?section={flows.uuid}", [self.editor], results=[nodes])
+        self.assertGet(endpoint_url + f"?section={uuid4()}", [self.editor], results=[])
 
         # reverse the order and filter by modified_on
         self.assertGet(endpoint_url + "?reverse=true", [self.editor], results=[flows, nodes, contacts])
         self.assertGet(
             endpoint_url + f"?after={format_datetime(nodes.modified_on)}", [self.editor], results=[contacts, nodes]
+        )
+        self.assertGet(
+            endpoint_url + f"?before={format_datetime(nodes.modified_on)}", [self.editor], results=[nodes, flows]
         )
 
         # an API token works too
@@ -261,6 +266,23 @@ class ArticlesEndpointTest(APITest):
         self.assertIsNone(opening.published_on)
         self.assertEqual([call(self.org, self.helpdesk)], mr_mocks.calls["knowledge_index"])
 
+        # publish it again along with an edit, which renders its body just the once
+        mr_mocks.calls["knowledge_index"].clear()
+        with patch.object(Article, "prerender", autospec=True, side_effect=Article.prerender) as mock_prerender:
+            self.assertPost(
+                endpoint_url + f"?uuid={opening.uuid}",
+                self.editor,
+                {"body": "# Again", "language": "eng", "status": "published"},
+            )
+        self.assertEqual(1, mock_prerender.call_count)
+
+        opening.refresh_from_db()
+        self.assertEqual(Article.STATUS_PUBLISHED, opening.status)
+        self.assertIsNotNone(opening.published_on)
+        self.assertEqual("eng", opening.language)
+        self.assertIn("Again", opening.body_html)
+        self.assertEqual([call(self.org, self.helpdesk)], mr_mocks.calls["knowledge_index"])
+
         # publishing an already published article leaves when it was published alone
         published_on = nodes.published_on
         self.assertPost(endpoint_url + f"?uuid={nodes.uuid}", self.editor, {"status": "published"})
@@ -282,19 +304,32 @@ class ArticlesEndpointTest(APITest):
             errors={None: "A section with articles in it can't be deleted."},
         )
 
-        # delete an article
+        # delete a published article, which is indexed so its chunks are dropped
+        mr_mocks.calls["knowledge_index"].clear()
         self.assertDelete(endpoint_url + f"?uuid={opening.uuid}", self.admin)
         opening.refresh_from_db()
         self.assertFalse(opening.is_active)
+        self.assertEqual([call(self.org, self.helpdesk)], mr_mocks.calls["knowledge_index"])
+
+        # delete a section that's empty
+        self.assertDelete(endpoint_url + f"?uuid={ticketing.uuid}", self.admin)
+        ticketing.refresh_from_db()
+        self.assertFalse(ticketing.is_active)
 
         # try to delete an article in another workspace
         self.assertDelete(endpoint_url + f"?uuid={other.uuid}", self.admin, status=404)
 
         # try to create once the helpdesk is full
-        with patch.object(Article, "MAX_ARTICLES", 4):
+        with patch.object(Article, "MAX_ARTICLES", 3):
             self.assertPost(
                 endpoint_url,
                 self.admin,
                 {"title": "One Too Many"},
-                errors={"non_field_errors": "Helpdesk can't have more than 4 articles."},
+                errors={"non_field_errors": "Helpdesk can't have more than 3 articles."},
             )
+
+        # nobody can use it if the workspace has no helpdesk
+        self.helpdesk.is_active = False
+        self.helpdesk.save(update_fields=("is_active",))
+
+        self.assertGetNotPermitted(endpoint_url, [self.editor, self.admin])

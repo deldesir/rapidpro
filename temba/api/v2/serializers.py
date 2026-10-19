@@ -8,6 +8,8 @@ import pycountry
 import regex
 from rest_framework import serializers
 
+from django.utils import timezone
+
 from temba import mailroom
 from temba.archives.models import Archive
 from temba.campaigns.models import Campaign, CampaignEvent
@@ -259,6 +261,12 @@ class ArticleWriteSerializer(WriteSerializer):
                 article.parent = section
                 article.sort_order = (last.sort_order + 1) if last else 0
 
+            # a change of status rides the same save, since saving a published article renders its body
+            if status == Article.STATUS_PUBLISHED and not was_published:
+                article.status, article.published_on = Article.STATUS_PUBLISHED, timezone.now()
+            elif status == Article.STATUS_DRAFT and was_published:
+                article.status, article.published_on = Article.STATUS_DRAFT, None
+
             article.modified_by = user
             article.save()
         else:
@@ -273,10 +281,8 @@ class ArticleWriteSerializer(WriteSerializer):
                 language=self.validated_data.get("language"),
             )
 
-        if status == Article.STATUS_PUBLISHED and not was_published:
-            article.publish(user)
-        elif status == Article.STATUS_DRAFT and was_published:
-            article.unpublish(user)
+            if status == Article.STATUS_PUBLISHED:
+                article.publish(user)
 
         # a draft isn't indexed, so only changes to what is or was published need to be
         if was_published or article.status == Article.STATUS_PUBLISHED:
