@@ -13,6 +13,7 @@ import { generateUUID, getCookie, setCookie } from '../utils';
 import { Chat, MsgEvent } from '../display/Chat';
 import { QuickReply } from '../interfaces';
 import { EMOJI, getFrequentEmoji, recordEmojiUse, searchEmoji } from './emoji';
+import { AckStatus, StatusReporter } from './StatusReporter';
 import {
   ConnectionState,
   SocketManager,
@@ -38,6 +39,8 @@ import {
  *                   external_id} answered with the message's uuid
  *   GET  history  - a page of the conversation, newest first: ?chat_id&before
  *   POST upload   - a file to attach to a later message: multipart chat_id, file
+ *   POST status   - which messages reached the visitor: {chat_id, status,
+ *                   msg_uuids}, see StatusReporter
  *
  * A refused request is answered with an error status and {"error": "..."}.
  *
@@ -855,6 +858,9 @@ export class WebChat extends LitElement {
   private chat: Chat;
   private sockets: SocketProvider;
 
+  // tells the service which replies reached the visitor and which they saw
+  private reporter: StatusReporter;
+
   // the last send that failed, so that trying it again on the same chat
   // carries the same external id and isn't recorded twice if the first did
   // get through
@@ -894,6 +900,10 @@ export class WebChat extends LitElement {
 
   public connectedCallback(): void {
     super.connectedCallback();
+    document.addEventListener('visibilitychange', this.handleVisibility);
+    if (this.reporter) {
+      this.reporter.resume();
+    }
 
     // re-attached while open, so pick the conversation back up
     if (this.chat && this.open && !this.subscription) {
@@ -903,6 +913,10 @@ export class WebChat extends LitElement {
 
   public disconnectedCallback(): void {
     super.disconnectedCallback();
+    document.removeEventListener('visibilitychange', this.handleVisibility);
+    if (this.reporter) {
+      this.reporter.pause();
+    }
     this.closeEmojiPicker();
     this.teardown();
   }
@@ -917,6 +931,7 @@ export class WebChat extends LitElement {
       if (!this.subscription) {
         this.connect();
       }
+      this.markShown();
     }
 
     if (changed.has('status') && this.status === ConnectionState.Connected) {
@@ -995,6 +1010,50 @@ export class WebChat extends LitElement {
 
   private cookieName(): string {
     return `${CHAT_COOKIE_PREFIX}${this.channel}`;
+  }
+
+  // whether the visitor can see the conversation right now
+  private isShowing(): boolean {
+    return this.open && document.visibilityState !== 'hidden';
+  }
+
+  private handleVisibility = (): void => {
+    this.markShown();
+  };
+
+  // whatever has been delivered has now been seen
+  private markShown(): void {
+    if (this.reporter && this.isShowing()) {
+      this.reporter.shown();
+    }
+  }
+
+  // acks the replies in the given events, as seen if the visitor is looking
+  private reportReceived(events: ChatMsgEvent[]): void {
+    const uuids = events
+      .filter((e) => e.type === 'msg_out')
+      .map((e) => e.msg_uuid);
+    if (uuids.length === 0 || !this.chatId) {
+      return;
+    }
+    if (!this.reporter || this.reporter.chatId !== this.chatId) {
+      this.reporter = new StatusReporter(this.chatId, (status, msgUuids) =>
+        this.sendStatus(status, msgUuids)
+      );
+    }
+    this.reporter.received(uuids, this.isShowing());
+  }
+
+  private async sendStatus(
+    status: AckStatus,
+    msgUuids: string[]
+  ): Promise<number> {
+    const result = await this.postJSON('status', {
+      chat_id: this.chatId,
+      status,
+      msg_uuids: msgUuids
+    });
+    return result.status;
   }
 
   private socketName(): string {
@@ -1134,6 +1193,7 @@ export class WebChat extends LitElement {
       this.unread++;
     }
     this.quickReplies = quickRepliesOf(event);
+    this.reportReceived([event]);
   }
 
   private handleSubscribed(): void {
@@ -1166,6 +1226,7 @@ export class WebChat extends LitElement {
           );
           this.hasMessages = this.hasMessages || events.length > 0;
           this.quickReplies = quickRepliesOf(page.events[0]);
+          this.reportReceived(events);
         }
       })
       .catch(() => {
@@ -1206,6 +1267,7 @@ export class WebChat extends LitElement {
     this.hasMessages = events.length > 0;
     this.setCursor(page, events);
     this.quickReplies = quickRepliesOf(page.events[0]);
+    this.reportReceived(events);
     return true;
   }
 
@@ -1244,6 +1306,7 @@ export class WebChat extends LitElement {
           events.map((e) => toMsgEvent(e, this.activeUserAvatar)),
           this.fetchRequested
         );
+        this.reportReceived(events);
       })
       .catch(() => {
         this.chat.fetching = false;
