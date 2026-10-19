@@ -1,3 +1,7 @@
+## v26.3.147 (2026-10-19)
+ * Use the product fonts throughout the flow editor
+ * Rename existing flows which have reserved names
+
 ## v26.3.146 (2026-10-15)
  * Use the website language setting for component locale and language names
  * Simplify the auto translation dialog copy
