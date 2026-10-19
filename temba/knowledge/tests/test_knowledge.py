@@ -19,6 +19,7 @@ from temba.knowledge.models import (
     derive_color_styles,
     get_article_image_path,
     parse_column_style,
+    strip_comments,
 )
 from temba.mailroom.client.exceptions import RequestException
 from temba.tests import MockJsonResponse, TembaTest, cleanup, mock_mailroom
@@ -574,6 +575,47 @@ class ArticleTest(TembaTest):
                 article.as_html(),
                 f"for fragment {fragment}",
             )
+
+    def test_strip_comments(self):
+        cases = (
+            # a line comment takes its line, indented or not
+            ("One\n// a note\nTwo", "One\nTwo"),
+            ("One\n   //a note\nTwo", "One\nTwo"),
+            # a block comment can be on one line or span several, and takes the lines it fills
+            ("One\n\n/* a note */\n\nTwo", "One\n\n\nTwo"),
+            ("One\n\n/* a note\nover lines\n*/\n\nTwo", "One\n\n\nTwo"),
+            ("  /* a note */\nTwo", "Two"),
+            # what follows the */ that closes one stays
+            ("/* a note */ Two", " Two"),
+            ("/* a\nnote */ Two\nThree", " Two\nThree"),
+            # only at the start of a line - a URL's // or a /* in a sentence is text
+            ("See https://example.com/x // or not", "See https://example.com/x // or not"),
+            ("Use a/* glob */ here", "Use a/* glob */ here"),
+            ("Tap **/start** to begin", "Tap **/start** to begin"),
+            # a /* that's never closed isn't a comment
+            ("/* never closed\nTwo", "/* never closed\nTwo"),
+            # code is code, fenced or indented
+            ("```\n// code\n/* code */\n```\n// note", "```\n// code\n/* code */\n```"),
+            ("~~~~js\n// code\n~~~\n// still code\n~~~~", "~~~~js\n// code\n~~~\n// still code\n~~~~"),
+            ("Text\n\n    // code\n\n    /* code */\n// note", "Text\n\n    // code\n\n    /* code */"),
+            # though a paragraph's indented continuation isn't
+            ("Text\n    // note", "Text"),
+            ("", ""),
+        )
+        for body, expected in cases:
+            self.assertEqual(expected, strip_comments(body), f"for {body!r}")
+
+    def test_as_html_comments(self):
+        article = self.create_article(self.helpdesk, "Notes")
+        article.body = (
+            "# Shown\n\nText.\n\n/* check the screenshot\n# Hidden\n*/\n\n// and this\n\nMore `// code` text."
+        )
+
+        # comments are never shown - nor are any headings in them listed - and their plain text leaves them out too
+        html, headings = article.render()
+        self.assertEqual('<h1 id="shown">Shown</h1>\n<p>Text.</p>\n<p>More <code>// code</code> text.</p>', html)
+        self.assertEqual(["Shown"], [h.text for h in headings])
+        self.assertEqual("Shown Text. More // code text.", article.as_plain_text())
 
     def test_render_headings(self):
         article = self.create_article(self.helpdesk, "Getting Started")

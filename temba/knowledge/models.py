@@ -465,6 +465,68 @@ def _sanitize_attribute(element: str, attribute: str, value: str) -> str | None:
     return value
 
 
+# An article can carry notes for its authors - what to check, what's still to do - as comments in its markdown, which
+# are never shown or indexed: a line whose first non-blank characters are //, or from a /* that starts a line to the
+# next */, which can be lines later. Only at the start of a line, so the // of a URL or a /* in a sentence is just text,
+# and never in code, where they're as likely to mean what they do in code. A /* that's never closed isn't a comment,
+# so a stray one can't swallow the rest of an article.
+FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+LINE_COMMENT = re.compile(r"^\s*//")
+BLOCK_COMMENT = re.compile(r"^\s*/\*")
+
+
+def strip_comments(body: str) -> str:
+    """
+    The markdown less its comments. A comment takes the lines it fills with it, and what follows the */ that closes
+    one stays on its line.
+    """
+    lines = body.split("\n")
+    kept = []
+    fence = None  # the marker of the fenced code block we're in
+    code = False  # whether the last line was indented code, which a blank line can't start mid-paragraph
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        i += 1
+
+        if fence:
+            if re.match(rf"^ {{0,3}}{re.escape(fence[0])}{{{len(fence)},}}\s*$", line):
+                fence = None
+            kept.append(line)
+            continue
+        if match := FENCE.match(line):
+            fence = match.group(1)
+            kept.append(line)
+            continue
+
+        indented = re.match(r"^( {4}|\t)", line) is not None
+        if line.strip() and indented and (code or not kept or not kept[-1].strip()):
+            code = True
+            kept.append(line)
+            continue
+        code = code and not line.strip()
+
+        if LINE_COMMENT.match(line):
+            continue
+
+        if BLOCK_COMMENT.match(line):
+            start = line.index("/*") + 2
+            rest = "\n".join([line[start:], *lines[i:]])
+            end = rest.find("*/")
+            if end >= 0:
+                closing = rest[:end].count("\n")
+                after = rest[end + 2 :].split("\n", 1)[0]
+                i += closing
+                if after.strip():
+                    kept.append(after)
+                continue
+
+        kept.append(line)
+
+    return "\n".join(kept)
+
+
 def render_markdown(body: str, links: dict = None) -> tuple[str, list[Heading]]:
     """
     Renders authored markdown. Given a map of article uuid to address it's rendered for a page, with links to other
@@ -474,6 +536,8 @@ def render_markdown(body: str, links: dict = None) -> tuple[str, list[Heading]]:
     author saw - the editor renders client side and escapes it too, and text that merely looks like a tag (the `<url>`
     of our own quick reply syntax, say) survives instead of being quietly swallowed. Sanitizing stays as defense in
     depth, and still deals with the javascript: URLs markdown will happily make a link out of.
+
+    Comments are left out, as notes for the article's authors rather than part of it (see strip_comments).
 
     Every heading gets an id made from its text, so a page can link to it, and the top level ones come back
     alongside the HTML in the order they appear, for the page to list them.
@@ -490,7 +554,7 @@ def render_markdown(body: str, links: dict = None) -> tuple[str, list[Heading]]:
         ]
     )
     html = nh3.clean(
-        md.convert(body),
+        md.convert(strip_comments(body)),
         attributes=SANITIZE_ATTRIBUTES,
         attribute_filter=_sanitize_attribute,
         url_schemes=SANITIZE_URL_SCHEMES,
@@ -524,7 +588,7 @@ def to_plain_text(body: str) -> str:
     """
     Reads authored markdown as plain text - what an excerpt or a search snippet shows of an article.
     """
-    text = body
+    text = strip_comments(body)
     for pattern, replacement in PLAIN_TEXT_RULES:
         text = pattern.sub(replacement, text)
     return text.strip()
