@@ -855,9 +855,11 @@ export class WebChat extends LitElement {
   private chat: Chat;
   private sockets: SocketProvider;
 
-  // the last send that failed, so that trying it again carries the same
-  // external id and isn't recorded twice if the first did get through
+  // the last send that failed, so that trying it again on the same chat
+  // carries the same external id and isn't recorded twice if the first did
+  // get through
   private failedSend: {
+    chatId: string;
     externalId: string;
     text: string;
     attachments: string[];
@@ -1340,6 +1342,7 @@ export class WebChat extends LitElement {
     const failed = this.failedSend;
     const externalId =
       failed &&
+      failed.chatId === this.chatId &&
       failed.text === text &&
       failed.attachments.join() === attachments.join()
         ? failed.externalId
@@ -1384,7 +1387,7 @@ export class WebChat extends LitElement {
       this.hasMessages = true;
       return true;
     } catch (err) {
-      this.failedSend = { externalId, text, attachments };
+      this.failedSend = { chatId: this.chatId, externalId, text, attachments };
       this.error = msg('Your message could not be sent');
       return false;
     } finally {

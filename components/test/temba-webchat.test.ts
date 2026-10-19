@@ -474,6 +474,25 @@ describe('temba-webchat', () => {
     const again = sentBodyOf(requestsTo(RECEIVE_URL)[2]);
     expect(again.body.text).to.equal('Hello again');
     expect(again.externalId).to.not.equal(sentBodyOf(sent[0]).externalId);
+
+    // as is the same message retried on a different chat
+    clearMockPosts();
+    mockPOST(RECEIVE_URL, { error: 'nope' }, {}, '500');
+    await typeMessage(webChat, 'Hello there');
+    await pressEnter(webChat);
+    await settle(() => webChat.error !== null);
+
+    clearMockPosts();
+    mockPOST(RECEIVE_URL, { msg_uuid: 'sent-msg-uuid-3' });
+    webChat.chatId = 'XwVuTsRqPoNmLkJiHgFeDcBa';
+    await pressEnter(webChat);
+    await settle(() => hasMessage(webChat, 'sent-msg-uuid-3'));
+
+    const requests = requestsTo(RECEIVE_URL);
+    expect(requests.length).to.equal(5);
+    expect(sentBodyOf(requests[4]).externalId).to.not.equal(
+      sentBodyOf(requests[3]).externalId
+    );
   });
 
   it('pages back through history', async () => {
