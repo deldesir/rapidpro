@@ -3,7 +3,7 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-    # an index build on the tickets table can't hold ACCESS EXCLUSIVE for its duration, so it's created concurrently
+    # a plain index build would block writes to the tickets table for its duration, so it's created concurrently
     atomic = False
 
     dependencies = [
@@ -15,7 +15,7 @@ class Migration(migrations.Migration):
             model_name="ticket",
             index=models.Index(
                 condition=models.Q(("status", "O")),
-                fields=["last_activity_on", "id"],
+                fields=["last_activity_on"],
                 name="tickets_open_last_activity",
             ),
         ),
