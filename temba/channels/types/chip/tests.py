@@ -6,9 +6,9 @@ from temba.tests import CRUDLTestMixin, TembaTest
 from .views import CONFIG_ALLOWED_DOMAINS
 
 
-class WebChatTypeTest(CRUDLTestMixin, TembaTest):
+class ChipTypeTest(CRUDLTestMixin, TembaTest):
     def test_claim(self):
-        claim_url = reverse("channels.types.webchat.claim")
+        claim_url = reverse("channels.types.chip.claim")
 
         # not available to regular users
         self.login(self.admin)

@@ -6,7 +6,7 @@ from ...models import ChannelType, ConfigUI
 from .views import ClaimView, UpdateForm
 
 
-class WebChatType(ChannelType):
+class ChipType(ChannelType):
     """
     A WebChat channel which lets visitors on a website chat via an embedded widget.
     """

@@ -1460,9 +1460,9 @@ class HelpSite(CreatedByMixin, ModifiedByMixin):
         """
         The org's WebChat channels - the ones a site can embed the chat widget of.
         """
-        from temba.channels.types.webchat import WebChatType
+        from temba.channels.types.chip import ChipType
 
-        return org.channels.filter(channel_type=WebChatType.code, is_active=True).order_by("name")
+        return org.channels.filter(channel_type=ChipType.code, is_active=True).order_by("name")
 
     @property
     def chat_channel(self):
