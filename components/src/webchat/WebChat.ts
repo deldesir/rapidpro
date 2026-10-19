@@ -9,7 +9,7 @@ import {
 import { property } from 'lit/decorators.js';
 import { msg } from '@lit/localize';
 import { Centrifuge } from 'centrifuge';
-import { getCookie, setCookie } from '../utils';
+import { generateUUID, getCookie, setCookie } from '../utils';
 import { Chat, MsgEvent } from '../display/Chat';
 import { QuickReply } from '../interfaces';
 import { EMOJI, getFrequentEmoji, recordEmojiUse, searchEmoji } from './emoji';
@@ -30,21 +30,24 @@ import {
  * The webchat widget - a website visitor's side of a conversation on a
  * WebChat channel.
  *
- * The conversation is owned by courier, which serves the channel's public
- * endpoints under /c/wch/<channel-uuid>/ on the platform host:
+ * The conversation is served by the platform's webchat service, under
+ * /wc/<channel-uuid>/ on the platform host:
  *
  *   POST start    - mints a chat id and creates the contact behind it
- *   POST receive  - a message from the visitor: {chat_id, text, attachments}
+ *   POST receive  - a message from the visitor: {chat_id, text, attachments,
+ *                   external_id} answered with the message's uuid
  *   GET  history  - a page of the conversation, newest first: ?chat_id&before
  *   POST upload   - a file to attach to a later message: multipart chat_id, file
  *
+ * A refused request is answered with an error status and {"error": "..."}.
+ *
  * Outgoing messages - from flows and agents - reach the visitor live over the
- * realtime socket chat:<channel-uuid>:<chat-id>, which the platform's subscribe
- * proxy authorizes by possession of the chat id alone. The id is the visitor's
- * only credential, so it's kept in a cookie on the embedding site and never
- * displayed. Publishes are dropped while the visitor doesn't have the socket
- * open, so on every resubscribe the widget fetches the latest history page to
- * recover anything it missed.
+ * realtime socket chat:<channel-uuid>:<chat-id>, which the service authorizes
+ * by possession of the chat id alone. The id is the visitor's only credential,
+ * so it's kept in a cookie on the embedding site and never displayed.
+ * Publishes are dropped while the visitor doesn't have the socket open, so on
+ * every resubscribe the widget fetches the latest history page to recover
+ * anything it missed.
  *
  * The `host` attribute is the platform host (e.g. https://app.textit.com); it
  * defaults to the embedding page's own origin, which is what the demo page and
@@ -54,10 +57,10 @@ import {
 // the visitor's chat id for a channel is remembered on the embedding site
 const CHAT_COOKIE_PREFIX = 'temba-chat-';
 
-// what courier's receive endpoint accepts on a single message
+// what the receive endpoint accepts on a single message
 const MAX_ATTACHMENTS = 10;
 
-// the kinds of file courier's upload endpoint accepts - checked here too so a
+// the kinds of file the upload endpoint accepts - checked here too so a
 // visitor hears about a wrong file before it's sent
 const ACCEPTED_TYPES = ['image/', 'audio/', 'video/', 'application/pdf'];
 const ACCEPT = ACCEPTED_TYPES.map((t) => (t.endsWith('/') ? `${t}*` : t)).join(
@@ -65,7 +68,7 @@ const ACCEPT = ACCEPTED_TYPES.map((t) => (t.endsWith('/') ? `${t}*` : t)).join(
 );
 
 // whether a file's declared type is one we can upload - an undeclared type is
-// left for courier to sniff
+// left for the service to sniff
 const acceptable = (file: File): boolean => {
   return !file.type || ACCEPTED_TYPES.some((t) => file.type.startsWith(t));
 };
@@ -126,7 +129,7 @@ const toMsgEvent = (event: ChatMsgEvent, avatar?: string): MsgEvent => {
   };
 };
 
-// the widget only offers text quick replies, which is all courier sends it
+// the widget only offers text quick replies, which is all it's sent
 const quickRepliesOf = (event: ChatMsgEvent): string[] => {
   if (!event || event.type !== 'msg_out') {
     return [];
@@ -852,6 +855,14 @@ export class WebChat extends LitElement {
   private chat: Chat;
   private sockets: SocketProvider;
 
+  // the last send that failed, so that trying it again carries the same
+  // external id and isn't recorded twice if the first did get through
+  private failedSend: {
+    externalId: string;
+    text: string;
+    attachments: string[];
+  };
+
   // the connection of our own we open when the platform is another origin,
   // which we close again when we're done with it
   private ownSockets: SocketManager;
@@ -943,7 +954,7 @@ export class WebChat extends LitElement {
   }
 
   private endpoint(action: string, params: { [key: string]: string } = {}) {
-    const url = new URL(`${this.baseUrl()}/c/wch/${this.channel}/${action}`);
+    const url = new URL(`${this.baseUrl()}/wc/${this.channel}/${action}`);
     Object.keys(params).forEach((key) =>
       url.searchParams.set(key, params[key])
     );
@@ -951,8 +962,8 @@ export class WebChat extends LitElement {
   }
 
   // the widget runs on third-party sites, so these are plain cross-origin
-  // requests: no cookies, and no headers beyond what courier's CORS preflight
-  // allows
+  // requests: no cookies, and no headers beyond what the service's CORS
+  // preflight allows
   private async request(url: string, init: RequestInit): Promise<WebResult> {
     const response = await fetch(url, init);
     let json: any = null;
@@ -1312,7 +1323,8 @@ export class WebChat extends LitElement {
   /**
    * Sends a message from the visitor. Their own messages aren't echoed over
    * the socket, so it's added to the chat from the response, which carries
-   * the uuid the platform gave it.
+   * the uuid the platform gave it. Each message gets an id of our own, which
+   * a retry of the same message reuses so the service can spot the repeat.
    */
   public async sendMessage(
     text: string,
@@ -1325,19 +1337,26 @@ export class WebChat extends LitElement {
     this.sending = true;
     this.error = null;
 
+    const failed = this.failedSend;
+    const externalId =
+      failed &&
+      failed.text === text &&
+      failed.attachments.join() === attachments.join()
+        ? failed.externalId
+        : generateUUID();
+
     try {
       const { status, json } = await this.postJSON('receive', {
         chat_id: this.chatId,
         text,
-        attachments
+        attachments,
+        external_id: externalId
       });
-      // courier answers an accepted message with its uuid - one it refused
-      // (e.g. a workspace at its contact limit) comes back accepted-looking
-      // but with nothing in data
-      const uuid = json?.data?.[0]?.msg_uuid;
+      const uuid = json?.msg_uuid;
       if (status !== 200 || !uuid) {
         throw new Error(`error sending message: ${status}`);
       }
+      this.failedSend = null;
 
       this.chat.addMessages(
         [
@@ -1365,6 +1384,7 @@ export class WebChat extends LitElement {
       this.hasMessages = true;
       return true;
     } catch (err) {
+      this.failedSend = { externalId, text, attachments };
       this.error = msg('Your message could not be sent');
       return false;
     } finally {
