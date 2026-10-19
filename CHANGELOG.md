@@ -1,3 +1,8 @@
+## v26.3.148 (2026-10-19)
+ * Add a partial index for finding inactive open tickets by last activity
+ * Render an overridable workspace alerts include on every page
+ * Add an unpublicized API endpoint for helpdesk articles
+
 ## v26.3.147 (2026-10-19)
  * Use the product fonts throughout the flow editor
  * Rename existing flows which have reserved names
