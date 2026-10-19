@@ -11,7 +11,7 @@ class WebChatType(ChannelType):
     A WebChat channel which lets visitors on a website chat via an embedded widget.
     """
 
-    code = "WCH"
+    code = "CHP"
     name = "WebChat"
     category = ChannelType.Category.SOCIAL_MEDIA
 
