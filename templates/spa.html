@@ -47,8 +47,8 @@
 {% block extra-script %}
 {% endblock extra-script %}
 {% block alert-messages %}
-  {% if user_org.is_suspended %}
-    {% include "org_suspended_include.html" %}
+  {% if user_org %}
+    {% include "org_alerts_include.html" %}
   {% endif %}
 {% endblock alert-messages %}
 {% block page-container %}

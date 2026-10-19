@@ -1,0 +1,6 @@
+{% comment %}
+  Alerts for the current workspace, rendered at the top of every page. Override this template to add your own.
+{% endcomment %}
+{% if user_org.is_suspended %}
+  {% include "org_suspended_include.html" %}
+{% endif %}
