@@ -36,9 +36,11 @@ class WebChatTypeTest(CRUDLTestMixin, TembaTest):
         self.assertEqual({}, channel.config)
         self.assertEqual(reverse("channels.channel_configuration", args=[channel.uuid]), response.url)
 
-        # config page shows the channel UUID that the embedded widget connects with
+        # config page shows the channel UUID that the embedded widget connects with, and an embed snippet pointing
+        # the widget at the host the page was served from
         response = self.client.get(reverse("channels.channel_configuration", args=[channel.uuid]))
         self.assertContains(response, str(channel.uuid))
+        self.assertContains(response, f'&lt;temba-webchat channel="{channel.uuid}" host="https://testserver"&gt;')
 
         # and explains that without allowed domains, any website can embed the widget
         self.assertContains(response, "any website can embed")

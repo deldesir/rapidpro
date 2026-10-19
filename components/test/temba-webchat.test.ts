@@ -35,11 +35,11 @@ const CHAT_ID = 'AbCdEfGhIjKlMnOpQrStUvWx';
 const SOCKET = `chat:${CHANNEL}:${CHAT_ID}`;
 const COOKIE = `temba-chat-${CHANNEL}`;
 
-const START_URL = new RegExp(`/c/wch/${CHANNEL}/start$`);
-const RECEIVE_URL = new RegExp(`/c/wch/${CHANNEL}/receive$`);
-const UPLOAD_URL = new RegExp(`/c/wch/${CHANNEL}/upload$`);
-const HISTORY_URL = new RegExp(`/c/wch/${CHANNEL}/history\\?`);
-const HISTORY_PAGE_URL = new RegExp(`/c/wch/${CHANNEL}/history\\?.*before=`);
+const START_URL = new RegExp(`/wc/${CHANNEL}/start$`);
+const RECEIVE_URL = new RegExp(`/wc/${CHANNEL}/receive$`);
+const UPLOAD_URL = new RegExp(`/wc/${CHANNEL}/upload$`);
+const HISTORY_URL = new RegExp(`/wc/${CHANNEL}/history\\?`);
+const HISTORY_PAGE_URL = new RegExp(`/wc/${CHANNEL}/history\\?.*before=`);
 
 let clock: any;
 let mockedNow: SinonStub;
@@ -79,7 +79,7 @@ const settle = async (predicate: () => boolean, attempts = 300) => {
   throw new Error('condition never met');
 };
 
-// the requests the widget has made to a courier endpoint
+// the requests the widget has made to a webchat endpoint
 const requestsTo = (url: RegExp) => {
   return (window.fetch as SinonStub)
     .getCalls()
@@ -92,6 +92,17 @@ const requestsTo = (url: RegExp) => {
 
 const bodyOf = (request: { init: RequestInit }) => {
   return JSON.parse(request.init.body as string);
+};
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+// the body of a receive request, less the external id the widget minted for
+// the message - which is returned separately once checked to be a uuid
+const sentBodyOf = (request: { init: RequestInit }) => {
+  const { external_id, ...body } = bodyOf(request);
+  expect(external_id).to.match(UUID_PATTERN);
+  return { body, externalId: external_id };
 };
 
 const msgOut = (uuid: string, text: string, extra: any = {}) => {
@@ -212,10 +223,7 @@ describe('temba-webchat', () => {
     previousProvider = setSocketProvider(mockSocket);
 
     mockPOST(START_URL, { chat_id: CHAT_ID });
-    mockPOST(RECEIVE_URL, {
-      message: 'Message Accepted',
-      data: [{ type: 'msg', msg_uuid: 'sent-msg-uuid', text: 'x' }]
-    });
+    mockPOST(RECEIVE_URL, { msg_uuid: 'sent-msg-uuid' });
   });
 
   afterEach(() => {
@@ -375,7 +383,7 @@ describe('temba-webchat', () => {
     await settle(() => hasMessage(webChat, 'sent-msg-uuid'));
     const sent = requestsTo(RECEIVE_URL);
     expect(sent.length).to.equal(1);
-    expect(bodyOf(sent[0])).to.deep.equal({
+    expect(sentBodyOf(sent[0]).body).to.deep.equal({
       chat_id: CHAT_ID,
       text: 'Yes',
       attachments: []
@@ -397,7 +405,7 @@ describe('temba-webchat', () => {
     const sent = requestsTo(RECEIVE_URL);
     expect(sent.length).to.equal(1);
     expect(sent[0].init.method).to.equal('POST');
-    expect(bodyOf(sent[0])).to.deep.equal({
+    expect(sentBodyOf(sent[0]).body).to.deep.equal({
       chat_id: CHAT_ID,
       text: 'Hello there',
       attachments: []
@@ -417,9 +425,9 @@ describe('temba-webchat', () => {
   it('treats a message the platform refused as unsent', async () => {
     const webChat = await openWebChat();
 
-    // accepted-looking, but nothing was taken
+    // e.g. a workspace at its contact limit
     clearMockPosts();
-    mockPOST(RECEIVE_URL, { message: 'Message Accepted', data: [] });
+    mockPOST(RECEIVE_URL, { error: 'unable to create contact' }, {}, '400');
 
     await typeMessage(webChat, 'Hello there');
     await pressEnter(webChat);
@@ -434,7 +442,7 @@ describe('temba-webchat', () => {
     const webChat = await openWebChat();
 
     clearMockPosts();
-    mockPOST(RECEIVE_URL, { message: 'nope' }, {}, '500');
+    mockPOST(RECEIVE_URL, { error: 'nope' }, {}, '500');
 
     await typeMessage(webChat, 'Hello there');
     await pressEnter(webChat);
@@ -444,6 +452,47 @@ describe('temba-webchat', () => {
     expect(getInput(webChat).value).to.equal('Hello there');
     expect(webChat.hasPendingText).to.equal(true);
     expect(webChat.shadowRoot.activeElement).to.equal(getInput(webChat));
+
+    // trying again sends the same message, so it can't be recorded twice if
+    // the first attempt did get through
+    clearMockPosts();
+    mockPOST(RECEIVE_URL, { msg_uuid: 'sent-msg-uuid' });
+    await pressEnter(webChat);
+    await settle(() => hasMessage(webChat, 'sent-msg-uuid'));
+
+    const sent = requestsTo(RECEIVE_URL);
+    expect(sent.length).to.equal(2);
+    expect(sentBodyOf(sent[1])).to.deep.equal(sentBodyOf(sent[0]));
+
+    // but a different message is a new one
+    clearMockPosts();
+    mockPOST(RECEIVE_URL, { msg_uuid: 'sent-msg-uuid-2' });
+    await typeMessage(webChat, 'Hello again');
+    await pressEnter(webChat);
+    await settle(() => hasMessage(webChat, 'sent-msg-uuid-2'));
+
+    const again = sentBodyOf(requestsTo(RECEIVE_URL)[2]);
+    expect(again.body.text).to.equal('Hello again');
+    expect(again.externalId).to.not.equal(sentBodyOf(sent[0]).externalId);
+
+    // as is the same message retried on a different chat
+    clearMockPosts();
+    mockPOST(RECEIVE_URL, { error: 'nope' }, {}, '500');
+    await typeMessage(webChat, 'Hello there');
+    await pressEnter(webChat);
+    await settle(() => webChat.error !== null);
+
+    clearMockPosts();
+    mockPOST(RECEIVE_URL, { msg_uuid: 'sent-msg-uuid-3' });
+    webChat.chatId = 'XwVuTsRqPoNmLkJiHgFeDcBa';
+    await pressEnter(webChat);
+    await settle(() => hasMessage(webChat, 'sent-msg-uuid-3'));
+
+    const requests = requestsTo(RECEIVE_URL);
+    expect(requests.length).to.equal(5);
+    expect(sentBodyOf(requests[4]).externalId).to.not.equal(
+      sentBodyOf(requests[3]).externalId
+    );
   });
 
   it('pages back through history', async () => {
@@ -540,7 +589,7 @@ describe('temba-webchat', () => {
 
       // and its requests go there too
       expect(requestsTo(START_URL)[0].url).to.equal(
-        `https://platform.example.com/c/wch/${CHANNEL}/start`
+        `https://platform.example.com/wc/${CHANNEL}/start`
       );
 
       // leaving the page closes it
@@ -577,7 +626,7 @@ describe('temba-webchat', () => {
     await pressEnter(webChat);
     await settle(() => hasMessage(webChat, 'sent-msg-uuid'));
 
-    expect(bodyOf(requestsTo(RECEIVE_URL)[0])).to.deep.equal({
+    expect(sentBodyOf(requestsTo(RECEIVE_URL)[0]).body).to.deep.equal({
       chat_id: CHAT_ID,
       text: 'Like this one',
       attachments: [attachment]
@@ -589,7 +638,7 @@ describe('temba-webchat', () => {
     const webChat = await openWebChat();
     mockPOST(UPLOAD_URL, { message: 'unsupported file type' }, {}, '400');
 
-    // a file the browser can't put a type to is left for courier to sniff
+    // a file the browser can't put a type to is left for the service to sniff
     await webChat.uploadFiles([new File(['zip'], 'archive.zip', { type: '' })]);
     expect(requestsTo(UPLOAD_URL).length).to.equal(1);
     expect(webChat.error).to.equal('File type not supported');
