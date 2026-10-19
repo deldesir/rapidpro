@@ -9,6 +9,12 @@ def rename_webchat_type_code(apps, schema_editor):
         print(f"Renamed type code of {num_updated} webchat channels")
 
 
+def apply_manual():  # pragma: no cover
+    from django.apps import apps
+
+    rename_webchat_type_code(apps, None)
+
+
 class Migration(migrations.Migration):
     dependencies = [("channels", "0217_audit_fields_cleanup")]
 
