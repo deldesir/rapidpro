@@ -1,3 +1,11 @@
+## v26.3.150 (2026-10-20)
+ * Show an article's notes in a margin beside it in the editor
+ * Leave /* */ comments out of rendered articles and their plain text
+ * Restrict closed ticket triggers to background flows
+ * Prefix contact field keys in exports so they can't collide with attribute keys
+ * Report delivered and read statuses from the webchat widget, keeping each chat's acks separate and limited to what the page has shown
+ * Bump aiohttp to 3.14.4
+
 ## v26.3.149 (2026-10-19)
  * Rename the WebChat channel type's code to CHP and its module to chip
  * Only reuse a failed send's external id on the chat it failed on
