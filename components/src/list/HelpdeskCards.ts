@@ -124,6 +124,11 @@ export function matchesQuery(article: Article, query: string): boolean {
   return !needle || (article.title || '').toLocaleLowerCase().includes(needle);
 }
 
+/** How many comments - notes for its authors - an article's body has. */
+export function countComments(article: Article): number {
+  return article.info?.comments || 0;
+}
+
 /**
  * Reads a slot amongst the articles a filter leaves showing as the index
  * that slot has amongst all of a card's articles - both with the dragged
@@ -168,10 +173,10 @@ export function toFullIndex(
  * would land in - or rings a shut card, which files the article at its
  * end.
  *
- * A search filters the articles live. Every card stays on the page so
- * any of them can still take a drop: those with a match open to show
- * just the matching articles (or all of them, when it's the section's
- * own title that matches), and the rest shut down to a dimmed header.
+ * A search filters the articles live, as does asking for only those
+ * with comments. Every card stays on the page so any of them can still
+ * take a drop: those with a match open to show just the matching
+ * articles, and the rest shut down to a dimmed header.
  */
 export class HelpdeskCards extends RapidElement {
   static get styles() {
@@ -709,6 +714,62 @@ export class HelpdeskCards extends RapidElement {
         background: var(--border);
       }
 
+      /* how many comments an article has, in the editor's note colors */
+      .comments {
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        border-radius: 999px;
+        padding: 1px 8px 1px 6px;
+        font-size: 11px;
+        font-weight: var(--w-medium);
+        font-variant-numeric: tabular-nums;
+        background: #fff7c2;
+        border: 1px solid #f0d878;
+        color: #7a6a00;
+        --icon-color: #7a6a00;
+      }
+
+      .meta .commented {
+        color: #7a6a00;
+      }
+
+      /* only the articles with comments, beside the search it narrows
+         along with */
+      .comments-filter {
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 10px 0 8px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--surface);
+        color: var(--text-2);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+        --icon-color: var(--text-3);
+      }
+
+      .comments-filter:hover {
+        background: var(--surface-2, #f6f7f9);
+      }
+
+      .comments-filter.on {
+        background: #fff7c2;
+        border-color: #f0d878;
+        color: #7a6a00;
+        --icon-color: #7a6a00;
+      }
+
+      .comments-filter-count {
+        font-variant-numeric: tabular-nums;
+        font-weight: var(--w-semibold);
+      }
+
       .pill {
         flex: 0 0 auto;
         border-radius: 999px;
@@ -970,6 +1031,10 @@ export class HelpdeskCards extends RapidElement {
   @state()
   private query = '';
 
+  /** Whether only articles with comments are showing. */
+  @state()
+  private commentsOnly = false;
+
   /** How the cards were opened and shut before a search took them over,
    * so clearing it puts them back. */
   private collapsedBeforeSearch: Map<string, boolean> = null;
@@ -988,9 +1053,9 @@ export class HelpdeskCards extends RapidElement {
     if (changes.has('endpoint') && changes.get('endpoint') !== undefined) {
       this.fetchArticles();
     }
-    if (changes.has('query')) {
+    if (changes.has('query') || changes.has('commentsOnly')) {
       this.applySearchToCards(true);
-    } else if (changes.has('sections') && this.isSearching()) {
+    } else if (changes.has('sections') && this.isFiltering()) {
       // an article moved or arrived during a search - open whichever card
       // it matches in, but leave shut cards the user opened alone
       this.applySearchToCards(false);
@@ -1025,23 +1090,29 @@ export class HelpdeskCards extends RapidElement {
   // Search
   // ==========================================================
 
-  private isSearching(): boolean {
-    return this.query.trim().length > 0;
+  /** Whether a search or the comments filter is narrowing the cards. */
+  private isFiltering(): boolean {
+    return this.query.trim().length > 0 || this.commentsOnly;
   }
 
-  /** The section's articles the search leaves showing. The search is
-   * for articles, so a section's own title doesn't count as a match. */
-  private getShownArticles(group: Section): Article[] {
-    if (!this.isSearching()) {
-      return group.articles;
-    }
-    return group.articles.filter((article) =>
-      matchesQuery(article, this.query)
+  private matchesFilters(article: Article): boolean {
+    return (
+      matchesQuery(article, this.query) &&
+      (!this.commentsOnly || countComments(article) > 0)
     );
   }
 
+  /** The section's articles the filters leave showing. They're for
+   * articles, so a section's own title doesn't count as a match. */
+  private getShownArticles(group: Section): Article[] {
+    if (!this.isFiltering()) {
+      return group.articles;
+    }
+    return group.articles.filter((article) => this.matchesFilters(article));
+  }
+
   private hasMatch(group: Section): boolean {
-    return group.articles.some((article) => matchesQuery(article, this.query));
+    return group.articles.some((article) => this.matchesFilters(article));
   }
 
   /** Opens the cards holding a match and - when `shutOthers` - shuts the
@@ -1063,7 +1134,7 @@ export class HelpdeskCards extends RapidElement {
       }
     };
 
-    if (!this.isSearching()) {
+    if (!this.isFiltering()) {
       const before = this.collapsedBeforeSearch;
       this.collapsedBeforeSearch = null;
       cards.forEach((card) => {
@@ -1102,6 +1173,10 @@ export class HelpdeskCards extends RapidElement {
 
   private clearSearch(): void {
     this.query = '';
+  }
+
+  private toggleCommentsOnly(): void {
+    this.commentsOnly = !this.commentsOnly;
   }
 
   // ==========================================================
@@ -1335,6 +1410,18 @@ export class HelpdeskCards extends RapidElement {
       : null;
   }
 
+  /** How many comments the article has, when it has any. */
+  private renderComments(article: Article): TemplateResult {
+    const count = countComments(article);
+    if (!count) {
+      return null;
+    }
+    const label = `${count} ${count === 1 ? 'comment' : 'comments'}`;
+    return html`<div class="comments" title=${label} aria-label=${label}>
+      <temba-icon name=${Icon.message} size="0.9"></temba-icon>${count}
+    </div>`;
+  }
+
   /** The title, with the part the search matched picked out. */
   private renderTitle(title: string): TemplateResult | string {
     const needle = this.query.trim().toLocaleLowerCase();
@@ -1365,7 +1452,7 @@ export class HelpdeskCards extends RapidElement {
       <div
         class=${classes.join(' ')}
         id=${article.uuid}
-        style=${this.isSearching() ? `counter-set: article ${position}` : ''}
+        style=${this.isFiltering() ? `counter-set: article ${position}` : ''}
         @click=${() => this.handleArticleClick(article)}
       >
         ${this.sortEndpoint
@@ -1378,7 +1465,7 @@ export class HelpdeskCards extends RapidElement {
         <div class="title" title=${article.title || ''}>
           ${this.renderTitle(article.title || '')}
         </div>
-        ${this.renderStatus(article)}
+        ${this.renderComments(article)} ${this.renderStatus(article)}
       </div>
     `;
   }
@@ -1460,16 +1547,21 @@ export class HelpdeskCards extends RapidElement {
     return articles.filter((article) => article.status === 'draft').length;
   }
 
+  private countCommented(articles: Article[]): number {
+    return articles.filter((article) => countComments(article) > 0).length;
+  }
+
   /** How much the section holds, beneath what it says about itself -
    * or, during a search, how much of it matches. */
   private renderSummary(group: Section): TemplateResult {
     const count = group.articles.length;
     const drafts = this.countDrafts(group.articles);
+    const commented = this.countCommented(group.articles);
 
     let counted = count
       ? `${count} ${count === 1 ? 'article' : 'articles'}`
       : 'No articles';
-    if (this.isSearching()) {
+    if (this.isFiltering()) {
       const matches = this.getShownArticles(group).length;
       counted = matches
         ? `${matches} of ${counted} ${matches === 1 ? 'matches' : 'match'}`
@@ -1487,6 +1579,10 @@ export class HelpdeskCards extends RapidElement {
               ><span class="drafts"
                 >${drafts} ${drafts === 1 ? 'draft' : 'drafts'}</span
               >`
+          : null}
+        ${commented
+          ? html`<span class="sep">·</span
+              ><span class="commented">${commented} with comments</span>`
           : null}
         ${this.isUnpublished(group)
           ? html`<span class="sep">·</span><span>Hidden from the site</span>`
@@ -1509,7 +1605,7 @@ export class HelpdeskCards extends RapidElement {
         label=${group.section.title}
         ?drop-into=${target && target.section === index && target.into}
         ?unpublished=${this.isUnpublished(group)}
-        ?no-match=${this.isSearching() && !this.hasMatch(group)}
+        ?no-match=${this.isFiltering() && !this.hasMatch(group)}
       >
         <div slot="header-actions" class="section-actions">
           <span
@@ -1652,13 +1748,20 @@ export class HelpdeskCards extends RapidElement {
       return null;
     }
 
-    const searching = this.isSearching();
+    const searching = this.isFiltering();
     const matches = searching
       ? this.sections.reduce(
           (total, group) => total + this.getShownArticles(group).length,
           0
         )
       : 0;
+
+    // the filter is only offered while there's something for it to find,
+    // or while it's on, so it can always be turned off again
+    const commented = this.countCommented(
+      this.sections.flatMap((group) => group.articles)
+    );
+    const query = this.query.trim();
 
     return html`
       <div class="searchbar">
@@ -1677,22 +1780,38 @@ export class HelpdeskCards extends RapidElement {
         />
         ${searching
           ? html`<span class="search-count"
-                >${matches} ${matches === 1 ? 'match' : 'matches'}</span
-              >
-              <temba-icon
-                class="search-cancel"
-                name=${Icon.close}
-                size="1.1"
-                clickable
-                title="Clear search"
-                aria-label="Clear search"
-                @click=${this.clearSearch}
-              ></temba-icon>`
+              >${matches} ${matches === 1 ? 'match' : 'matches'}</span
+            >`
+          : null}
+        ${query
+          ? html`<temba-icon
+              class="search-cancel"
+              name=${Icon.close}
+              size="1.1"
+              clickable
+              title="Clear search"
+              aria-label="Clear search"
+              @click=${this.clearSearch}
+            ></temba-icon>`
+          : null}
+        ${commented || this.commentsOnly
+          ? html`<button
+              class="comments-filter ${this.commentsOnly ? 'on' : ''}"
+              aria-pressed=${this.commentsOnly ? 'true' : 'false'}
+              title="Show only articles with comments"
+              @click=${this.toggleCommentsOnly}
+            >
+              <temba-icon name=${Icon.message} size="0.9"></temba-icon>
+              With comments
+              <span class="comments-filter-count">${commented}</span>
+            </button>`
           : null}
       </div>
       ${searching && matches === 0
         ? html`<div class="no-matches">
-            No articles match "${this.query.trim()}"
+            ${query
+              ? `No articles${this.commentsOnly ? ' with comments' : ''} match "${query}"`
+              : 'No articles have comments'}
           </div>`
         : null}
     `;
