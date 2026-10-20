@@ -766,11 +766,6 @@ export const renderCampaignSkipped = (
   </div>`;
 };
 
-const campaignSkippedReasons: Record<string, string> = {
-  existing_session: 'Skipped because contact was already in a flow',
-  contact_status: 'Skipped because of contact status'
-};
-
 export const renderResthookCalled = (event: any): TemplateResult | null => {
   return html`<div style=${eventLineStyle}>
     ${renderEntityPill('neutral', event.resthook, {
@@ -858,8 +853,9 @@ const getEventTooltipLines = (
       return fullValue(value?.text);
     }
     case Events.CAMPAIGN_SKIPPED: {
-      const reason = campaignSkippedReasons[event.reason];
-      return reason ? [reason] : [];
+      return event.reason === 'existing_session'
+        ? ['Skipped because contact was already in a flow']
+        : [];
     }
     case Events.CONTACT_NAME_CHANGED:
       return fullValue(event.name);

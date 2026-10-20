@@ -32,11 +32,6 @@ describe('campaign_skipped', () => {
       'Skipped because contact was already in a flow'
     );
 
-    const status = await fixture(
-      html`<div>${renderEventTooltip(makeEvent('contact_status'))}</div>`
-    );
-    expect(status.textContent).to.contain('Skipped because of contact status');
-
     // an unknown reason still gets the timestamp-only tooltip
     const unknown = await fixture(
       html`<div>${renderEventTooltip(makeEvent('other'))}</div>`
