@@ -69,6 +69,12 @@ export interface URNsChangedEvent extends ContactEvent {
   urns: string[];
 }
 
+export interface CampaignSkippedEvent extends ContactEvent {
+  campaign: ObjectReference;
+  point_uuid: string;
+  reason: 'existing_session' | 'contact_status';
+}
+
 export interface TicketEvent extends ContactEvent {
   ticket: {
     // ticket_opened

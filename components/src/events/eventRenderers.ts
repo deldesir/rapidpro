@@ -4,6 +4,7 @@ import {
   AirtimeCreatedEvent,
   AirtimeTransferredEvent,
   CallEvent,
+  CampaignSkippedEvent,
   ChatStartedEvent,
   ContactEmailChangedEvent,
   ContactGroupsEvent,
@@ -26,6 +27,7 @@ export enum Events {
   CALL_CREATED = 'call_created',
   CALL_MISSED = 'call_missed',
   CALL_RECEIVED = 'call_received',
+  CAMPAIGN_SKIPPED = 'campaign_skipped',
   CHAT_STARTED = 'chat_started',
   CONTACT_EMAIL_CHANGED = 'contact_email_changed',
   CONTACT_FIELD_CHANGED = 'contact_field_changed',
@@ -523,6 +525,9 @@ export const renderEventSummary = (
       case Events.SESSION_TRIGGERED:
         addIcon('flow');
         break;
+      case Events.CAMPAIGN_SKIPPED:
+        addIcon('campaign');
+        break;
       case Events.CONTACT_GROUPS_CHANGED:
         addIcon('group');
         break;
@@ -745,6 +750,27 @@ export const renderSessionTriggered = (event: any): TemplateResult | null => {
   return null;
 };
 
+export const renderCampaignSkipped = (
+  event: CampaignSkippedEvent
+): TemplateResult | null => {
+  const campaign = event.campaign;
+  if (!campaign) {
+    return null;
+  }
+  return html`<div style=${eventLineStyle}>
+    ${attributePill(campaign.name, 'Skipped', {
+      type: 'campaign',
+      icon: 'campaign',
+      href: `/campaign/read/${campaign.uuid}/`
+    })}
+  </div>`;
+};
+
+const campaignSkippedReasons: Record<string, string> = {
+  existing_session: 'Skipped because contact was already in a flow',
+  contact_status: 'Skipped because of contact status'
+};
+
 export const renderResthookCalled = (event: any): TemplateResult | null => {
   return html`<div style=${eventLineStyle}>
     ${renderEntityPill('neutral', event.resthook, {
@@ -830,6 +856,10 @@ const getEventTooltipLines = (
         ];
       }
       return fullValue(value?.text);
+    }
+    case Events.CAMPAIGN_SKIPPED: {
+      const reason = campaignSkippedReasons[event.reason];
+      return reason ? [reason] : [];
     }
     case Events.CONTACT_NAME_CHANGED:
       return fullValue(event.name);
@@ -995,6 +1025,9 @@ export const renderEvent = (
     case Events.CALL_MISSED:
     case Events.CALL_RECEIVED:
       content = renderCallEvent(event as CallEvent);
+      break;
+    case Events.CAMPAIGN_SKIPPED:
+      content = renderCampaignSkipped(event as CampaignSkippedEvent);
       break;
     case Events.CHAT_STARTED:
       content = renderChatStartedEvent(event as ChatStartedEvent);
