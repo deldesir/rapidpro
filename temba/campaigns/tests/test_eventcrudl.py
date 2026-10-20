@@ -20,9 +20,9 @@ def _compose(translations):
     return json.dumps(compose_serialize(translations))
 
 
-def add_recent_contact(event, contact, ts: float):
+def add_recent_contact(event, contact, ts: float, skipped: bool = False):
     r = get_valkey_connection()
-    member = f"{uuid4()}|{contact.id}"
+    member = f"{uuid4()}|{contact.id}" + ("|skipped" if skipped else "")
     r.zadd(f"recent_campaign_fires:{event.id}", mapping={member: ts})
 
 
@@ -81,7 +81,9 @@ class CampaignEventCRUDLTest(TembaTest, CRUDLTestMixin):
     def test_fires(self):
         event = self.campaign1.events.order_by("id").first()
         contact = self.create_contact("Ann", phone="+1234567890")
+        contact2 = self.create_contact("Bob", phone="+1234567891")
         add_recent_contact(event, contact, 1639338554.969123)
+        add_recent_contact(event, contact2, 1639338555.234567, skipped=True)
 
         fires_url = reverse("campaigns.campaignevent_fires", args=[event.uuid])
 
@@ -96,12 +98,22 @@ class CampaignEventCRUDLTest(TembaTest, CRUDLTestMixin):
                 "fires": [
                     {
                         "contact": {
+                            "uuid": str(contact2.uuid),
+                            "name": "Bob",
+                            "url": f"/contact/read/{contact2.uuid}/",
+                        },
+                        "time": "2021-12-12T19:49:15.234567+00:00",
+                        "skipped": True,
+                    },
+                    {
+                        "contact": {
                             "uuid": str(contact.uuid),
                             "name": "Ann",
                             "url": f"/contact/read/{contact.uuid}/",
                         },
                         "time": "2021-12-12T19:49:14.969123+00:00",
-                    }
+                        "skipped": False,
+                    },
                 ]
             },
             response.json(),

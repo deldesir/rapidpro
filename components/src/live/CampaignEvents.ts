@@ -28,6 +28,8 @@ interface CampaignEventsResponse {
 interface RecentFire {
   contact: ObjectReference;
   time: string;
+  // the point was skipped for this contact rather than fired
+  skipped?: boolean;
 }
 
 // distinct hues assigned per relative-to field so each field's "line" reads
@@ -95,6 +97,7 @@ export class CampaignEvents extends EndpointMonitorElement {
 
   @property({ type: String })
   lang_recent_contacts = 'Recent Contacts';
+  lang_skipped = 'Skipped';
 
   @property({ type: String })
   lang_scheduled = 'scheduled';
@@ -566,10 +569,24 @@ export class CampaignEvents extends EndpointMonitorElement {
         white-space: nowrap;
       }
 
-      .fire-row temba-date {
+      .fire-when {
+        display: flex;
+        align-items: center;
+        gap: 0.5em;
         flex-shrink: 0;
         font-size: 0.85em;
         color: var(--text-3, #7b8593);
+      }
+
+      .fire-row.skipped .fire-name {
+        color: var(--text-3, #7b8593);
+      }
+
+      .fire-skipped {
+        font-size: 0.85em;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
       }
     `;
   }
@@ -977,7 +994,7 @@ export class CampaignEvents extends EndpointMonitorElement {
         ${this.fires.map(
           (fire) => html`
             <div
-              class="fire-row"
+              class="fire-row ${fire.skipped ? 'skipped' : ''}"
               role="button"
               tabindex="0"
               @click=${() => this.handleFireClicked(fire)}
@@ -985,7 +1002,12 @@ export class CampaignEvents extends EndpointMonitorElement {
                 this.handleActivationKey(e, () => this.handleFireClicked(fire))}
             >
               <div class="fire-name">${fire.contact.name}</div>
-              <temba-date value=${fire.time} display="timedate"></temba-date>
+              <div class="fire-when">
+                ${fire.skipped
+                  ? html`<span class="fire-skipped">${this.lang_skipped}</span>`
+                  : null}
+                <temba-date value=${fire.time} display="timedate"></temba-date>
+              </div>
             </div>
           `
         )}

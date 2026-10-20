@@ -226,7 +226,17 @@ describe(TAG, () => {
             name: 'Ann',
             url: '/contact/read/contact-1/'
           },
-          time: '2024-06-01T12:00:00+00:00'
+          time: '2024-06-01T12:00:00+00:00',
+          skipped: false
+        },
+        {
+          contact: {
+            uuid: 'contact-2',
+            name: 'Bob',
+            url: '/contact/read/contact-2/'
+          },
+          time: '2024-06-01T11:00:00+00:00',
+          skipped: true
         }
       ]
     });
@@ -269,9 +279,17 @@ describe(TAG, () => {
     expect(action.textContent).to.contain('Your delivery is coming up');
 
     // the recent contacts render inline in the detail
-    const row = detail.querySelector('.fire-row') as HTMLElement;
-    expect(row).to.not.equal(null);
+    const rows = detail.querySelectorAll('.fire-row');
+    expect(rows.length).to.equal(2);
+    const row = rows[0] as HTMLElement;
     expect(row.textContent).to.contain('Ann');
+    expect(row.querySelector('.fire-skipped')).to.equal(null);
+
+    // contacts the event was skipped for are labeled as such
+    expect(rows[1].classList.contains('skipped')).to.equal(true);
+    expect(rows[1].querySelector('.fire-skipped').textContent).to.contain(
+      'Skipped'
+    );
 
     // clicking a contact closes the modal and navigates to them
     let selected: any = null;
