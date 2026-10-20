@@ -479,7 +479,15 @@ def strip_comments(lines: list[str]) -> list[str]:
     The lines of markdown less its comments. A comment takes the lines it fills with it, and what follows the */ that
     closes one stays on its line.
     """
+    return split_comments(lines)[0]
+
+
+def split_comments(lines: list[str]) -> tuple[list[str], int]:
+    """
+    The lines of markdown less its comments (see strip_comments), and how many comments it had.
+    """
     kept = []
+    count = 0
     unclosed = False  # once a /* has no */ after it, no later one can either
 
     i = 0
@@ -498,13 +506,14 @@ def strip_comments(lines: list[str]) -> list[str]:
                 after = rest[rest.index("*/") + 2 :]
                 if after.strip():
                     kept.append(after)
+                count += 1
                 i = j
                 continue
             unclosed = True
 
         kept.append(line)
 
-    return kept
+    return kept, count
 
 
 class StripComments(Extension):
@@ -518,8 +527,11 @@ class StripComments(Extension):
 
 
 class StripCommentsProcessor(Preprocessor):
+    count = 0  # how many comments the last run left out
+
     def run(self, lines):
-        return strip_comments(lines)
+        lines, self.count = split_comments(lines)
+        return lines
 
 
 def render_markdown(body: str, links: dict = None) -> tuple[str, list[Heading]]:
@@ -580,19 +592,37 @@ PLAIN_TEXT_RULES = (
 )
 
 
-def to_plain_text(body: str) -> str:
+def preprocess(body: str) -> tuple[list[str], markdown.Markdown]:
     """
-    Reads authored markdown as plain text - what an excerpt or a search snippet shows of an article.
+    Runs authored markdown through the preprocessors, which stash fenced code away and leave comments out, returning
+    its lines and the instance that ran them, whose processors hold what they found.
     """
     md = markdown.Markdown(extensions=["fenced_code", EscapeRawHTML(), StripComments()])
     lines = body.split("\n")
     for preprocessor in md.preprocessors:
         lines = preprocessor.run(lines)
+    return lines, md
+
+
+def to_plain_text(body: str) -> str:
+    """
+    Reads authored markdown as plain text - what an excerpt or a search snippet shows of an article.
+    """
+    lines, _ = preprocess(body)
 
     text = "\n".join(lines)
     for pattern, replacement in PLAIN_TEXT_RULES:
         text = pattern.sub(replacement, text)
     return text.strip()
+
+
+def inspect_body(body: str) -> dict:
+    """
+    What there is to know about authored markdown without reading it, for an article's info: how many comments it
+    has, outside its code.
+    """
+    _, md = preprocess(body)
+    return {"comments": md.preprocessors["strip_comments"].count}
 
 
 def make_snippet(text: str, terms: list, *, length: int = 200) -> str:
@@ -918,6 +948,9 @@ class Article(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     body_html = models.TextField(default="")
     headings = models.JSONField(default=list)  # the top level headings, as [{"id": ..., "text": ...}]
 
+    # information from article inspection, kept with the body whenever it's saved (see inspect_body)
+    info = models.JSONField(default=dict)
+
     # ISO-639-3, so a helpdesk can hold articles in several languages. Translations aren't linked to each other yet -
     # retrieval doesn't need them, as multilingual-e5 embeds cross-lingually, and linking is a question for the
     # eventual public site rather than for search.
@@ -1075,10 +1108,18 @@ class Article(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
         self.headings = [h._asdict() for h in headings]
 
     def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+
+        # the info is of the body, so it follows the body whenever that's saved
+        if update_fields is None or "body" in update_fields:
+            self.info = inspect_body(self.body)
+            if update_fields:
+                update_fields = kwargs["update_fields"] = (*update_fields, "info")
+
         # a published article is served from its rendered HTML, so that follows the body whenever one is saved
         if self.status == self.STATUS_PUBLISHED:
             self.prerender()
-            if update_fields := kwargs.get("update_fields"):
+            if update_fields:
                 kwargs["update_fields"] = (*update_fields, "body_html", "headings")
 
         super().save(*args, **kwargs)
