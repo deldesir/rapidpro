@@ -2116,6 +2116,51 @@ describe(`${TAG} notes`, () => {
     assert.isAbove(first.left, card.right);
   });
 
+  it('opens the margin only while there are notes, and says so', async () => {
+    const announced: boolean[] = [];
+    const listen = (evt: CustomEvent) => announced.push(evt.detail.margin);
+    document.addEventListener('temba-notes-changed', listen);
+
+    try {
+      const editor = await getNotesEditor('One.\n\nTwo.');
+      const frame = editor.shadowRoot.querySelector(
+        '.doc-frame'
+      ) as HTMLElement;
+      const width = () => parseFloat(getComputedStyle(frame).paddingRight);
+
+      // an article without notes keeps its width
+      assert.isFalse(editor.hasAttribute('has-notes'));
+      assert.equal(width(), 24);
+      assert.deepEqual(announced, [false]);
+
+      // the first note - even one still being written - opens the margin
+      blocks(editor)[0].dispatchEvent(
+        new MouseEvent('mousemove', { bubbles: true })
+      );
+      await editor.updateComplete;
+      (editor.shadowRoot.querySelector('.add-note') as HTMLElement).click();
+      await editor.updateComplete;
+      assert.isTrue(editor.hasAttribute('has-notes'));
+      assert.isAbove(width(), 200);
+      assert.deepEqual(announced, [false, true]);
+
+      const textarea = margin(editor)[0].querySelector('textarea');
+      textarea.value = 'a note';
+      textarea.dispatchEvent(new Event('blur'));
+      await editor.updateComplete;
+      assert.deepEqual(announced, [false, true]);
+
+      // and resolving the last closes it
+      (margin(editor)[0].querySelector('.resolve') as HTMLElement).click();
+      await editor.updateComplete;
+      assert.isFalse(editor.hasAttribute('has-notes'));
+      assert.equal(width(), 24);
+      assert.deepEqual(announced, [false, true, false]);
+    } finally {
+      document.removeEventListener('temba-notes-changed', listen);
+    }
+  });
+
   it('treats comments as content without the margin', async () => {
     const editor = await getNotesEditor(ARTICLE, '');
     assert.equal(blocks(editor).length, 5);

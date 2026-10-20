@@ -3,6 +3,7 @@ import { msg } from '@lit/localize';
 import { property, state } from 'lit/decorators.js';
 import { FieldElement } from './FieldElement';
 import { Icon } from '../Icons';
+import { CustomEventType } from '../interfaces';
 import { Options } from '../display/Options';
 import { getSelectionFromRoot } from '../excellent/caret-utils';
 import { sessionParser } from '../excellent/helpers';
@@ -648,9 +649,9 @@ export class MarkdownEditor extends FieldElement {
         pointer-events: auto;
       }
 
-      /* The notes margin, to the right of the card: the card keeps the site's measure and moves over to make room,
-         so a note sits beside the line it's about rather than over it. */
-      :host([notes]) .doc-frame {
+      /* The notes margin, to the right of the card, for as long as there's a note to put in it: the card keeps the
+         site's measure and moves over to make room, so a note sits beside the line it's about rather than over it. */
+      :host([has-notes]) .doc-frame {
         padding-right: 268px;
       }
 
@@ -1562,6 +1563,9 @@ export class MarkdownEditor extends FieldElement {
 
   private docSizer: ResizeObserver = null;
 
+  /** whether the margin's open, as last announced - null until the first time */
+  private margined: boolean = null;
+
   /** the document's blocks, which together are always exactly the value */
   private blocks: Block[] = [];
 
@@ -1788,6 +1792,15 @@ export class MarkdownEditor extends FieldElement {
     // after this update, and a popover only overflows once they've taken their width
     this.clampPopovers();
     requestAnimationFrame(() => this.clampPopovers());
+
+    // The margin opens with the first note and closes with the last, so an article without notes keeps the width
+    // it's always had. Whatever holds the editor hears of it, to make room for the margin or give it back.
+    const margined = this.allowNotes && this.notes.length > 0;
+    if (margined !== this.margined) {
+      this.margined = margined;
+      this.toggleAttribute('has-notes', margined);
+      this.fireCustomEvent(CustomEventType.NotesChanged, { margin: margined });
+    }
     this.layoutNotes();
   }
 
@@ -4369,7 +4382,8 @@ export class MarkdownEditor extends FieldElement {
       '.overlays .add-note'
     ) as HTMLElement;
     if (add && this.hovered) {
-      add.style.left = `${left + 6}px`;
+      // in the card's own padding, so a first note can be added with no margin open
+      add.style.left = `${left - 34}px`;
       add.style.top = `${topOf(this.hovered)}px`;
     }
 
@@ -4385,7 +4399,7 @@ export class MarkdownEditor extends FieldElement {
     let bottom = -Infinity;
     for (const { element, top } of placed) {
       const at = Math.max(top, bottom + 8);
-      element.style.left = `${left + 32}px`;
+      element.style.left = `${left + 24}px`;
       element.style.top = `${at}px`;
       bottom = at + element.offsetHeight;
     }
