@@ -731,10 +731,6 @@ export class HelpdeskCards extends RapidElement {
         --icon-color: #7a6a00;
       }
 
-      .meta .commented {
-        color: #7a6a00;
-      }
-
       /* only the articles with comments, beside the search it narrows
          along with */
       .comments-filter {
