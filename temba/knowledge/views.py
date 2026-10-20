@@ -517,6 +517,9 @@ class ArticleCRUDL(SmartCRUDL):
                     # the editor takes the height the dialog gives it and scrolls the article inside itself, so a long
                     # one is written in the same window as a short one
                     "fill": True,
+                    # and keeps its notes - comments, which the site leaves out - in a margin beside it, where they're
+                    # resolved and added rather than read as part of the article
+                    "notes": True,
                     # the editor uploads screenshots against this article
                     "endpoint": reverse("knowledge.article_upload", args=[self.get_object().uuid]),
                     "accept": ",".join(ArticleImage.ALLOWED_CONTENT_TYPES),
