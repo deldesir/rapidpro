@@ -1,3 +1,8 @@
+## v26.3.151 (2026-10-20)
+ * Track comment counts on articles and show them on the helpdesk list, filterable to articles with comments
+ * Show how many comments each section's articles have in its summary
+ * Wait for broadcasts to be heard in realtime workspace access tests
+
 ## v26.3.150 (2026-10-20)
  * Show an article's notes in a margin beside it in the editor
  * Leave /* */ comments out of rendered articles and their plain text
