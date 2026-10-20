@@ -45,6 +45,10 @@ export class StatusReporter {
   // what it's yet to be told
   private pending = new Map<string, AckStatus>();
 
+  // what's reached the widget since the page loaded - the only messages the
+  // visitor can be looking at, unlike older ones remembered as acked
+  private present = new Set<string>();
+
   private timer: number = null;
   private inFlight = false;
   private lastSentAt = 0;
@@ -70,6 +74,7 @@ export class StatusReporter {
   public received(uuids: string[], shown: boolean): void {
     const status: AckStatus = shown ? 'read' : 'delivered';
     uuids.forEach((uuid) => {
+      this.present.add(uuid);
       if (this.level(uuid) < LEVELS[status]) {
         this.pending.set(uuid, status);
       }
@@ -78,11 +83,11 @@ export class StatusReporter {
   }
 
   /**
-   * The visitor is now looking at the chat, so everything delivered has
+   * The visitor is now looking at the chat, so everything delivered to it has
    * been read.
    */
   public shown(): void {
-    [...this.acked.keys(), ...this.pending.keys()].forEach((uuid) => {
+    this.present.forEach((uuid) => {
       if (this.level(uuid) < LEVELS.read) {
         this.pending.set(uuid, 'read');
       }

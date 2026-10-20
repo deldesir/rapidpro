@@ -1251,6 +1251,66 @@ describe('temba-webchat', () => {
     });
   });
 
+  it('only reads what this page has shown', async () => {
+    // acked as delivered on an earlier visit, but not in the history now
+    window.localStorage.setItem(
+      `temba-chat-status-${CHAT_ID}`,
+      JSON.stringify([[uuidN(9), 'delivered']])
+    );
+    installCookieJar([`${COOKIE}=${CHAT_ID}`]);
+    mockGET(HISTORY_URL, { events: [msgOut(uuidN(1), 'Welcome!')] });
+
+    setPageVisible(false);
+    await openWebChat();
+    await settle(() => statusReports().length === 1);
+    expect(statusReports()[0]).to.deep.equal({
+      status: 'delivered',
+      msg_uuids: [uuidN(1)]
+    });
+
+    // the visitor looking only reads what they can see
+    setPageVisible(true);
+    await settle(() => statusReports().length === 2);
+    expect(statusReports()[1]).to.deep.equal({
+      status: 'read',
+      msg_uuids: [uuidN(1)]
+    });
+    clock.tick(5000);
+    await settle(() => true);
+    expect(statusReports().length).to.equal(2);
+  });
+
+  it('keeps acks with their chat when it starts another', async () => {
+    const NEW_CHAT_ID = 'ZyXwVuTsRqPoNmLkJiHgFeDc';
+    installCookieJar([`${COOKIE}=${CHAT_ID}`]);
+    mockGET(HISTORY_URL, { events: [msgOut(uuidN(1), 'Welcome!')] });
+
+    // the first report is throttled, so it's waiting to be retried...
+    clearMockPosts();
+    mockPOST(STATUS_URL, { error: 'rate limit exceeded' }, {}, '429');
+    const webChat = await openWebChat();
+    await settle(() => statusReports().length === 1);
+
+    // ...when the widget comes back to find its chat gone and starts another
+    webChat.remove();
+    clearMockGets();
+    clearMockPosts();
+    mockGET(HISTORY_URL, { error: 'unknown chat id' }, {}, '400');
+    mockPOST(START_URL, { chat_id: NEW_CHAT_ID });
+    mockPOST(STATUS_URL, {});
+    document.body.appendChild(webChat);
+    await settle(() =>
+      mockSocket.activeChannels().includes(`chat:${CHANNEL}:${NEW_CHAT_ID}`)
+    );
+
+    // the old chat's acks never go out as the new chat's
+    clock.tick(60000);
+    await settle(() => true);
+    requestsTo(STATUS_URL).forEach((request) =>
+      expect(bodyOf(request).chat_id).to.equal(CHAT_ID)
+    );
+  });
+
   it('retries a report the service throttled', async () => {
     const webChat = await openWebChat();
 

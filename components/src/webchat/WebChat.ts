@@ -1037,19 +1037,32 @@ export class WebChat extends LitElement {
       return;
     }
     if (!this.reporter || this.reporter.chatId !== this.chatId) {
-      this.reporter = new StatusReporter(this.chatId, (status, msgUuids) =>
-        this.sendStatus(status, msgUuids)
+      this.retireReporter();
+      // bound to its own chat, since a retry can outlive the widget's switch
+      // to another
+      const chatId = this.chatId;
+      this.reporter = new StatusReporter(chatId, (status, msgUuids) =>
+        this.sendStatus(chatId, status, msgUuids)
       );
     }
     this.reporter.received(uuids, this.isShowing());
   }
 
+  // stops reporting for a chat we've moved on from
+  private retireReporter(): void {
+    if (this.reporter) {
+      this.reporter.pause();
+      this.reporter = null;
+    }
+  }
+
   private async sendStatus(
+    chatId: string,
     status: AckStatus,
     msgUuids: string[]
   ): Promise<number> {
     const result = await this.postJSON('status', {
-      chat_id: this.chatId,
+      chat_id: chatId,
       status,
       msg_uuids: msgUuids
     });
@@ -1128,6 +1141,7 @@ export class WebChat extends LitElement {
           throw new Error(`unable to start chat: ${status}`);
         }
         this.chatId = json.chat_id;
+        this.retireReporter();
         this.chat.reset();
         this.hasMessages = false;
         this.nextCursor = null;
