@@ -2029,16 +2029,19 @@ describe('noteOf', () => {
   it('reads a block of nothing but comments as a note', () => {
     assert.equal(noteOf('/* check this */'), 'check this');
     assert.equal(noteOf('/* check\nthis */'), 'check\nthis');
-    assert.equal(noteOf('// one\n// two'), 'one\ntwo');
-    assert.equal(noteOf('  /* indented */\n// and more'), 'indented\nand more');
+    assert.equal(noteOf('/* one */\n/* two */'), 'one\ntwo');
+    assert.equal(
+      noteOf('  /* indented */\n/* and more */'),
+      'indented\nand more'
+    );
   });
 
   it('reads anything else as content', () => {
     assert.isNull(noteOf('Some text'));
-    assert.isNull(noteOf('Text\n// a note in a paragraph'));
+    assert.isNull(noteOf('Text\n/* a note in a paragraph */'));
     assert.isNull(noteOf('/* closed */ then text'));
     assert.isNull(noteOf('/* never closed'));
-    assert.isNull(noteOf('See https://example.com // not a note'));
+    assert.isNull(noteOf('// not a note'));
     assert.isNull(noteOf(''));
   });
 
@@ -2058,7 +2061,7 @@ describe(`${TAG} notes`, () => {
     'First paragraph.',
     '/* check the first paragraph */',
     'Second paragraph.',
-    '// check the second\n// over two lines',
+    '/* check the second\nover two lines */',
     'Third paragraph.'
   ].join('\n\n');
 
@@ -2194,10 +2197,33 @@ describe(`${TAG} notes`, () => {
       [
         'First paragraph.',
         '/* check the first paragraph */',
-        '// check the second\n// over two lines',
+        '/* check the second\nover two lines */',
         'Third paragraph.'
       ].join('\n\n')
     );
+  });
+
+  it('keeps a note in place when its block is replaced or merged away', async () => {
+    const editor = await getNotesEditor(
+      'One.\n\nTwo.\n\n/* about two */\n\nThree.'
+    );
+
+    // made a heading, the block is a new element, which the note follows
+    const heading = document.createElement('h2');
+    heading.textContent = 'Two.';
+    blocks(editor)[1].replaceWith(heading);
+    doc(editor).dispatchEvent(
+      new InputEvent('input', { inputType: 'formatBlock' })
+    );
+    assert.equal(editor.value, 'One.\n\n## Two.\n\n/* about two */\n\nThree.');
+
+    // merged into the one above, it follows that one
+    blocks(editor)[0].textContent = 'One. Two.';
+    blocks(editor)[1].remove();
+    doc(editor).dispatchEvent(
+      new InputEvent('input', { inputType: 'deleteContentBackward' })
+    );
+    assert.equal(editor.value, 'One. Two.\n\n/* about two */\n\nThree.');
   });
 
   it('removes a note when its Remove is clicked', async () => {
@@ -2213,7 +2239,7 @@ describe(`${TAG} notes`, () => {
       [
         'First paragraph.',
         'Second paragraph.',
-        '// check the second\n// over two lines',
+        '/* check the second\nover two lines */',
         'Third paragraph.'
       ].join('\n\n')
     );
@@ -2271,7 +2297,17 @@ describe(`${TAG} notes`, () => {
     textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     textarea.dispatchEvent(new Event('blur'));
     await editor.updateComplete;
-    assert.include(editor.value, '// check the second\n// over two lines');
+    assert.include(editor.value, '/* check the second\nover two lines */');
+
+    // a new note abandoned empty changes nothing
+    const seen = changes(editor);
+    editor['addNote'](blocks(editor)[0]);
+    await editor.updateComplete;
+    textarea = margin(editor)[2].querySelector('textarea');
+    textarea.dispatchEvent(new Event('blur'));
+    await editor.updateComplete;
+    assert.equal(seen.count, 0);
+    assert.lengthOf(margin(editor), 2);
 
     // and emptying it is the same as removing it
     (margin(editor)[0].querySelector('.note-text') as HTMLElement).click();
