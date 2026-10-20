@@ -356,6 +356,8 @@ export interface Article {
   status: string;
   parent: string | null;
   depth: number;
+  /** what the server found inspecting it - how many comments its body has */
+  info?: { comments?: number };
   modified_on: string;
 }
 

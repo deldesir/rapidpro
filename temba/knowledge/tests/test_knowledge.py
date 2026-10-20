@@ -18,6 +18,7 @@ from temba.knowledge.models import (
     _sanitize_attribute,
     derive_color_styles,
     get_article_image_path,
+    inspect_body,
     parse_column_style,
     strip_comments,
 )
@@ -632,6 +633,45 @@ class ArticleTest(TembaTest):
             article.body = body
             self.assertEqual(expected_html, article.render()[0], f"for {body!r}")
             self.assertEqual(expected_text, article.as_plain_text(), f"for {body!r}")
+
+    def test_info(self):
+        # an article's info counts its comments, as whatever the renderer would leave out, so none in code
+        cases = (
+            ("", 0),
+            ("Text", 0),
+            ("One\n\n/* a note */\n\nTwo\n\n/* and\nanother */", 2),
+            ("/* a */ /* b */", 1),  # what follows a */ is text, even what looks like another comment
+            ("Use a/* glob */ here", 0),
+            ("/* never closed\nText", 0),
+            ("```\n/* code */\n```\n/* note */", 1),
+        )
+        for body, expected in cases:
+            self.assertEqual({"comments": expected}, inspect_body(body), f"for {body!r}")
+
+        # it follows the body whenever that's saved
+        article = self.create_article(self.helpdesk, "Notes")
+        self.assertEqual({"comments": 0}, article.info)
+
+        article.body = "Text\n\n/* check this */"
+        article.save(update_fields=("body",))
+        article.refresh_from_db()
+        self.assertEqual({"comments": 1}, article.info)
+
+        # published too, alongside the HTML
+        article.publish(self.admin)
+        article.body = "Text\n\n/* check this */\n\n/* and this */"
+        article.save(update_fields=("body", "modified_on"))
+        article.refresh_from_db()
+        self.assertEqual({"comments": 2}, article.info)
+        self.assertEqual("<p>Text</p>", article.body_html)
+
+        # and a save without the body leaves it be
+        Article.objects.filter(id=article.id).update(info={})
+        article.refresh_from_db()
+        article.title = "Notes 2"
+        article.save(update_fields=("title",))
+        article.refresh_from_db()
+        self.assertEqual({}, article.info)
 
     def test_render_headings(self):
         article = self.create_article(self.helpdesk, "Getting Started")
