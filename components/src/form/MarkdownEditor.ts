@@ -23,6 +23,8 @@ import {
   importBlocks,
   isSerializable,
   joinBlocks,
+  noteOf,
+  noteSource,
   renderBlock,
   splitBlocks
 } from './MarkdownDocument';
@@ -67,6 +69,18 @@ interface Run {
   rest: Element[];
   /** what the run looked like when it was rendered, so an edit to it can be spotted */
   signature: string;
+}
+
+/**
+ * One of the document's notes - a block of comments, which the article never shows - kept out of the document and
+ * shown in the margin beside the block it follows instead.
+ */
+interface Note {
+  /** the note's own block, written back out after the one it follows exactly as it was until it's edited */
+  block: Block;
+  text: string;
+  /** the last element of the block it follows - null for notes ahead of everything */
+  after: Element;
 }
 
 interface Caret {
@@ -628,8 +642,83 @@ export class MarkdownEditor extends FieldElement {
 
       .overlays .popover,
       .overlays .image-actions,
-      .overlays .link-options {
+      .overlays .link-options,
+      .overlays .note,
+      .overlays .add-note {
         pointer-events: auto;
+      }
+
+      /* The notes margin, to the right of the card: the card keeps the site's measure and moves over to make room,
+         so a note sits beside the line it's about rather than over it. */
+      :host([notes]) .doc-frame {
+        padding-right: 268px;
+      }
+
+      .note {
+        position: absolute;
+        box-sizing: border-box;
+        width: 220px;
+        padding: 8px 10px;
+        background: #fff8c5;
+        border: 1px solid #f0e08a;
+        border-radius: 4px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        font-size: 13px;
+        line-height: 1.4;
+        color: #3d3a1f;
+      }
+
+      .note .note-text {
+        overflow-wrap: anywhere;
+        cursor: text;
+      }
+
+      .note textarea.note-text {
+        display: block;
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 60px;
+        padding: 0;
+        border: none;
+        outline: none;
+        resize: vertical;
+        background: transparent;
+        font: inherit;
+        color: inherit;
+      }
+
+      .note .note-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 6px;
+      }
+
+      .note .resolve {
+        font-size: 12px;
+        font-weight: 600;
+        color: #7a6a00;
+        cursor: pointer;
+      }
+
+      .note .resolve:hover {
+        text-decoration: underline;
+      }
+
+      .add-note {
+        position: absolute;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        color: #9aa0aa;
+        cursor: pointer;
+      }
+
+      .add-note:hover {
+        color: var(--primary, #2f6fed);
+        background: #fff;
       }
 
       /* The controls stay put while the article scrolls under them - an article is usually taller than whatever is
@@ -1379,6 +1468,11 @@ export class MarkdownEditor extends FieldElement {
   @property({ type: Boolean, reflect: true })
   fill = false;
 
+  /** Keeps the document's notes in a margin beside it, where they can be resolved and new ones added, instead of
+   * treating them as content - for an article, whose renderer leaves its comments out. */
+  @property({ type: Boolean, attribute: 'notes', reflect: true })
+  allowNotes = false;
+
   /** shows the whole document as raw markdown instead of rendering it */
   @property({ type: Boolean, attribute: 'source_mode' })
   sourceMode = false;
@@ -1453,6 +1547,20 @@ export class MarkdownEditor extends FieldElement {
     startWidth: number;
     tableWidth: number;
   } = null;
+
+  /** the document's notes, in the order they're written, when the editor keeps them in its margin */
+  @state()
+  private notes: Note[] = [];
+
+  /** the note being written or edited in the margin - null when none is */
+  @state()
+  private noting: Note = null;
+
+  /** the block the pointer is over, which a note can be added beside */
+  @state()
+  private hovered: Element = null;
+
+  private docSizer: ResizeObserver = null;
 
   /** the document's blocks, which together are always exactly the value */
   private blocks: Block[] = [];
@@ -1601,6 +1709,8 @@ export class MarkdownEditor extends FieldElement {
   public disconnectedCallback(): void {
     this.headSizer?.disconnect();
     this.headSizer = null;
+    this.docSizer?.disconnect();
+    this.docSizer = null;
     this.setHeroPreview('');
     document.removeEventListener('selectionchange', this.handleSelectionChange);
     window.removeEventListener('resize', this.handleViewportChange);
@@ -1611,7 +1721,12 @@ export class MarkdownEditor extends FieldElement {
   }
 
   private handleViewportChange = (): void => {
-    if (this.image || this.column || this.linkHref !== null) {
+    if (
+      this.image ||
+      this.column ||
+      this.linkHref !== null ||
+      this.notes.length
+    ) {
       this.requestUpdate();
     }
   };
@@ -1673,6 +1788,7 @@ export class MarkdownEditor extends FieldElement {
     // after this update, and a popover only overflows once they've taken their width
     this.clampPopovers();
     requestAnimationFrame(() => this.clampPopovers());
+    this.layoutNotes();
   }
 
   /**
@@ -1721,6 +1837,12 @@ export class MarkdownEditor extends FieldElement {
     const counts: number[] = [];
 
     for (const block of this.blocks) {
+      // a note is shown in the margin rather than the document
+      if (this.allowNotes && noteOf(block.source) !== null) {
+        counts.push(0);
+        continue;
+      }
+
       const rendered = renderBlock(block.source);
       scratch.innerHTML = rendered;
 
@@ -1749,7 +1871,8 @@ export class MarkdownEditor extends FieldElement {
       }
     }
 
-    doc.innerHTML = parts.join('');
+    // an article of nothing but notes still needs somewhere to type
+    doc.innerHTML = parts.length > 0 ? parts.join('') : EMPTY_BLOCK;
 
     // the renderer separates blocks with newlines, and at the top level those are formatting rather than content -
     // left there they'd each become a paragraph of their own the first time the document was tidied up
@@ -1784,9 +1907,18 @@ export class MarkdownEditor extends FieldElement {
     this.runs = new WeakMap();
     this.trailers = new WeakMap();
 
+    const notes: Note[] = [];
+    let last: Element = null;
+
     this.blocks.forEach((block, index) => {
+      if (counts[index] === 0) {
+        notes.push({ block, text: noteOf(block.source), after: last });
+        return;
+      }
+
       const elements = children.slice(at, at + counts[index]);
       at += counts[index];
+      last = elements[elements.length - 1] || last;
 
       if (elements.length > 0) {
         this.runs.set(elements[0], {
@@ -1797,6 +1929,19 @@ export class MarkdownEditor extends FieldElement {
         this.trailers.set(elements[elements.length - 1], block.trailer);
       }
     });
+
+    this.notes = notes;
+    this.noting = null;
+    this.hovered = null;
+
+    // the notes are level with their blocks, so they move whenever the document reflows - an image arriving, or the
+    // title above it wrapping - and not only when it's edited
+    if (this.allowNotes) {
+      this.docSizer?.disconnect();
+      this.docSizer = new ResizeObserver(() => this.layoutNotes());
+      this.docSizer.observe(doc);
+      this.docSizer.observe(this.shadowRoot.querySelector('.article'));
+    }
   }
 
   private isLocked(element: Element): boolean {
@@ -1813,6 +1958,28 @@ export class MarkdownEditor extends FieldElement {
     const blocks: Block[] = [];
     let at = 0;
 
+    // A note whose block has been deleted follows whatever the note before it does, which keeps it as near as it can
+    // be to what it was about. Then each note is written out after the elements it follows, in the order it was
+    // written - all but one still being written, which isn't anything yet.
+    const live = new Set(children);
+    let previous: Element = null;
+    for (const note of this.notes) {
+      if (note.after && !live.has(note.after)) {
+        note.after = previous;
+      }
+      previous = note.after;
+    }
+    const written: Note[] = [];
+    const follow = (elements: Element[]) => {
+      for (const note of this.notes) {
+        if (elements.includes(note.after) && note.block.source) {
+          blocks.push(note.block);
+          written.push(note);
+        }
+      }
+    };
+    follow([null]);
+
     while (at < children.length) {
       const first = children[at];
       const run = this.runs.get(first);
@@ -1822,6 +1989,7 @@ export class MarkdownEditor extends FieldElement {
           source: run ? run.source : '',
           trailer: this.trailers.get(first) || ''
         });
+        follow([first]);
         at += 1;
         continue;
       }
@@ -1838,6 +2006,7 @@ export class MarkdownEditor extends FieldElement {
           source: run.source,
           trailer: this.trailers.get(elements[elements.length - 1]) || ''
         });
+        follow(elements);
         at += elements.length;
         continue;
       }
@@ -1852,8 +2021,15 @@ export class MarkdownEditor extends FieldElement {
       });
 
       blocks.push({ source, trailer: this.trailers.get(first) || '' });
+      follow([first]);
       at += 1;
     }
+
+    // the order they're written in is the order they're in, the one being written keeping its place
+    this.notes = [
+      ...written,
+      ...this.notes.filter((note) => !written.includes(note))
+    ];
 
     // Only the last block can end without a blank line after it - anywhere else that would run the two blocks either
     // side of the gap together into one.
@@ -2886,6 +3062,13 @@ export class MarkdownEditor extends FieldElement {
   private handleDocMouseMove(evt: MouseEvent): void {
     if (this.resizing || this.sourceMode || !this.doc) {
       return;
+    }
+
+    if (this.allowNotes) {
+      const block = this.blockAt(evt.target as Node);
+      if (block && block !== this.hovered) {
+        this.hovered = block;
+      }
     }
 
     this.resizeHover = null;
@@ -4104,7 +4287,177 @@ export class MarkdownEditor extends FieldElement {
     if (this.sourceMode) {
       return null;
     }
-    return html`${this.renderImageOverlay()}${this.renderLinkPopover()}${this.renderColumnPopover()}`;
+    return html`${this.renderImageOverlay()}${this.renderLinkPopover()}${this.renderColumnPopover()}${this.renderNotes()}`;
+  }
+
+  // ==========================================================
+  // Notes
+  // ==========================================================
+
+  /**
+   * Each note in the margin, and the control to add one beside the block the pointer is over. Where they go depends on
+   * where the blocks are, which moves without the editor rendering - an image loading, the title above wrapping - so
+   * they're placed by layoutNotes rather than here.
+   */
+  private renderNotes(): TemplateResult {
+    if (!this.allowNotes) {
+      return null;
+    }
+
+    const adding =
+      this.hovered?.isConnected && !this.noting && !this.disabled
+        ? html`<div
+            class="add-note"
+            title="${msg('Add a note')}"
+            @mousedown=${(evt: MouseEvent) => evt.preventDefault()}
+            @click=${() => this.addNote(this.hovered)}
+          >
+            <temba-icon name=${Icon.add} size="0.9"></temba-icon>
+          </div>`
+        : null;
+
+    return html`${adding}${this.notes.map((note, index) =>
+      note === this.noting
+        ? html`<div class="note editing" data-index=${index}>
+            <textarea
+              class="note-text"
+              rows="3"
+              placeholder="${msg('Add a note')}"
+              .value=${note.text}
+              @blur=${(evt: Event) =>
+                this.commitNote(
+                  note,
+                  (evt.target as HTMLTextAreaElement).value
+                )}
+              @keydown=${(evt: KeyboardEvent) =>
+                this.handleNoteKeyDown(evt, note)}
+            ></textarea>
+          </div>`
+        : html`<div class="note" data-index=${index}>
+            <div
+              class="note-text"
+              title="${this.disabled ? '' : msg('Edit')}"
+              @click=${() => this.editNote(note)}
+            >
+              ${this.noteLines(note)}
+            </div>
+            ${this.disabled
+              ? null
+              : html`<div class="note-actions">
+                  <span class="resolve" @click=${() => this.resolveNote(note)}
+                    >${msg('Resolve')}</span
+                  >
+                </div>`}
+          </div>`
+    )}`;
+  }
+
+  /**
+   * Puts each note in the margin beside the card, level with the block it follows - or, when that would overlap the
+   * note above it, just under that one - and the add control level with the block the pointer is over.
+   */
+  private layoutNotes(): void {
+    const card = this.shadowRoot?.querySelector('.article');
+    const margin = card ? this.overlayRect(card) : null;
+    if (!margin) {
+      return;
+    }
+    const left = margin.left + margin.width;
+    const topOf = (element: Element) => this.overlayRect(element)?.top ?? 0;
+
+    const add = this.shadowRoot.querySelector(
+      '.overlays .add-note'
+    ) as HTMLElement;
+    if (add && this.hovered) {
+      add.style.left = `${left + 6}px`;
+      add.style.top = `${topOf(this.hovered)}px`;
+    }
+
+    const placed = (
+      [...this.shadowRoot.querySelectorAll('.overlays .note')] as HTMLElement[]
+    )
+      .map((element) => {
+        const note = this.notes[Number(element.dataset.index)];
+        return { element, top: note ? topOf(note.after || this.doc) : 0 };
+      })
+      .sort((a, b) => a.top - b.top);
+
+    let bottom = -Infinity;
+    for (const { element, top } of placed) {
+      const at = Math.max(top, bottom + 8);
+      element.style.left = `${left + 32}px`;
+      element.style.top = `${at}px`;
+      bottom = at + element.offsetHeight;
+    }
+
+    // a note just opened for writing takes the caret
+    const editing = this.shadowRoot.querySelector(
+      '.overlays .note.editing textarea'
+    ) as HTMLTextAreaElement;
+    if (editing && this.shadowRoot.activeElement !== editing) {
+      editing.focus();
+    }
+  }
+
+  /** a note's text with its line breaks, which the template's own whitespace can't add to */
+  private noteLines(note: Note): TemplateResult[] {
+    return note.text
+      .split('\n')
+      .map((line, index) => (index ? html`<br />${line}` : html`${line}`));
+  }
+
+  private addNote(after: Element): void {
+    const note: Note = { block: { source: '', trailer: '' }, text: '', after };
+    this.notes = [...this.notes, note];
+    this.noting = note;
+  }
+
+  private editNote(note: Note): void {
+    if (!this.disabled) {
+      this.noting = note;
+    }
+  }
+
+  /** keeps what was written - or, when nothing was, drops the note - and writes the document back out with it */
+  private commitNote(note: Note, text: string): void {
+    if (this.noting !== note) {
+      return;
+    }
+    this.noting = null;
+
+    if (!text.trim()) {
+      this.notes = this.notes.filter((n) => n !== note);
+    } else if (text.trim() !== note.text) {
+      // as it's kept, which is what reading it back will show
+      note.block.source = noteSource(text);
+      note.text = noteOf(note.block.source);
+    } else {
+      return;
+    }
+
+    this.serialize();
+    this.fireEvent('change');
+  }
+
+  private handleNoteKeyDown(evt: KeyboardEvent, note: Note): void {
+    const textarea = evt.target as HTMLTextAreaElement;
+    if (evt.key === 'Escape') {
+      // leaves the note as it was, which for a new one is nothing
+      evt.preventDefault();
+      evt.stopPropagation();
+      textarea.value = note.text;
+      textarea.blur();
+    } else if (evt.key === 'Enter' && (evt.metaKey || evt.ctrlKey)) {
+      evt.preventDefault();
+      textarea.blur();
+    }
+  }
+
+  /** a resolved note is done with, so it's removed from the article rather than kept anywhere */
+  private resolveNote(note: Note): void {
+    this.notes = this.notes.filter((n) => n !== note);
+    this.serialize();
+    this.fireEvent('change');
   }
 
   private renderSource(): TemplateResult {

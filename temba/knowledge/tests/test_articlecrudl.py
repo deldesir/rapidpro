@@ -248,6 +248,9 @@ class ArticleCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertContains(response, reverse("knowledge.article_upload", args=[article.uuid]))
         self.assertContains(response, "fill")
 
+        # and keeps the article's notes in its margin
+        self.assertRegex(response.content.decode(), r"<temba-markdown-edit[^>]*\snotes[\s>]")
+
         # the editor is pointed at the other articles so links to them can be picked by title
         self.assertContains(response, f'articles-endpoint="{reverse("api.internal.articles")}.json"')
 

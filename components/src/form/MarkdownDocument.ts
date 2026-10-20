@@ -118,6 +118,55 @@ export const splitBlocks = (source: string): Block[] => {
   return blocks;
 };
 
+// The text of a block that's nothing but notes - an author's comments, which an article never shows: lines that start
+// with //, or a run from a /* at the start of a line to the next */ - or null for a block with anything else in it.
+// Only a block of notes is one; a comment inside a paragraph stays part of the paragraph here, though rendering the
+// article leaves it out all the same.
+export const noteOf = (source: string): string | null => {
+  const lines = source.split('\n');
+  const text: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (isBlank(line)) {
+      continue;
+    }
+
+    const comment = /^\s*\/\/\s?(.*)$/.exec(line);
+    if (comment) {
+      text.push(comment[1]);
+      continue;
+    }
+
+    if (!/^\s*\/\*/.test(line)) {
+      return null;
+    }
+
+    const rest = [
+      line.slice(line.indexOf('/*') + 2),
+      ...lines.slice(i + 1)
+    ].join('\n');
+    const end = rest.indexOf('*/');
+    if (
+      end < 0 ||
+      rest
+        .slice(end + 2)
+        .split('\n')[0]
+        .trim()
+    ) {
+      return null;
+    }
+    text.push(rest.slice(0, end).trim());
+    i += rest.slice(0, end).split('\n').length - 1;
+  }
+
+  return text.length > 0 ? text.join('\n').trim() : null;
+};
+
+/** a note as the markdown that keeps it: a comment that can't be closed early by anything in its text */
+export const noteSource = (text: string): string =>
+  `/* ${text.trim().replace(/\*\//g, '* /')} */`;
+
 export const joinBlocks = (blocks: Block[]): string =>
   blocks.map((block) => block.source + block.trailer).join('\n');
 

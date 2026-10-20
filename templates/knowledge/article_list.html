@@ -16,7 +16,7 @@
     cost the editor height. Nothing is focused on opening: the article is there to be read as
     much as written, and the caret goes where the author clicks.
   {% endcomment %}
-  <temba-modax id="update-article" width="min(782px, 92vw)" no-autofocus -temba-submitted="refreshArticles()">
+  <temba-modax id="update-article" width="min(1050px, 92vw)" no-autofocus -temba-submitted="refreshArticles()">
     {% if org_perms.knowledge.article_delete %}
       {# rides the dialog's gutter so the editor itself is nothing but the article #}
       <temba-button slot="gutter" name='{% trans "Delete" %}' destructive small onclick="deleteArticle()"> </temba-button>

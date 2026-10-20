@@ -5,6 +5,8 @@ import { MarkdownEditor } from '../src/form/MarkdownEditor';
 import {
   blockOf,
   joinBlocks,
+  noteOf,
+  noteSource,
   renderBlock,
   splitBlocks
 } from '../src/form/MarkdownDocument';
@@ -2020,5 +2022,235 @@ describe(TAG, () => {
       await editor.updateComplete;
       await assertScreenshot('markdown-editor/source', getClip(editor));
     });
+  });
+});
+
+describe('noteOf', () => {
+  it('reads a block of nothing but comments as a note', () => {
+    assert.equal(noteOf('/* check this */'), 'check this');
+    assert.equal(noteOf('/* check\nthis */'), 'check\nthis');
+    assert.equal(noteOf('// one\n// two'), 'one\ntwo');
+    assert.equal(noteOf('  /* indented */\n// and more'), 'indented\nand more');
+  });
+
+  it('reads anything else as content', () => {
+    assert.isNull(noteOf('Some text'));
+    assert.isNull(noteOf('Text\n// a note in a paragraph'));
+    assert.isNull(noteOf('/* closed */ then text'));
+    assert.isNull(noteOf('/* never closed'));
+    assert.isNull(noteOf('See https://example.com // not a note'));
+    assert.isNull(noteOf(''));
+  });
+
+  it('reads an empty comment as an empty note, which the article leaves out all the same', () => {
+    assert.equal(noteOf('/* */'), '');
+  });
+
+  it('writes a note as a comment its text can never close early', () => {
+    assert.equal(noteSource('  check this '), '/* check this */');
+    assert.equal(noteSource('a */ b'), '/* a * / b */');
+    assert.equal(noteOf(noteSource('a */ b\nc')), 'a * / b\nc');
+  });
+});
+
+describe(`${TAG} notes`, () => {
+  const ARTICLE = [
+    'First paragraph.',
+    '/* check the first paragraph */',
+    'Second paragraph.',
+    '// check the second\n// over two lines',
+    'Third paragraph.'
+  ].join('\n\n');
+
+  const getNotesEditor = async (
+    value = ARTICLE,
+    attrs = 'notes'
+  ): Promise<MarkdownEditor> => {
+    const editor = (await fixture(
+      `<${TAG} widget_only ${attrs} endpoint="${UPLOAD}" style="width:1050px"></${TAG}>`
+    )) as MarkdownEditor;
+    editor.value = value;
+    await editor.updateComplete;
+    await editor.updateComplete;
+    // the title and the blocks settle into place, which is what the margin lays itself out against
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    return editor;
+  };
+
+  const margin = (editor: MarkdownEditor): HTMLElement[] =>
+    [...editor.shadowRoot.querySelectorAll('.overlays .note')] as HTMLElement[];
+
+  const changes = (editor: MarkdownEditor): { count: number } => {
+    const seen = { count: 0 };
+    editor.addEventListener('change', () => seen.count++);
+    return seen;
+  };
+
+  it('keeps notes out of the document and in the margin beside their blocks', async () => {
+    const editor = await getNotesEditor();
+
+    assert.deepEqual(
+      blocks(editor).map((block) => block.textContent),
+      ['First paragraph.', 'Second paragraph.', 'Third paragraph.']
+    );
+    assert.deepEqual(
+      margin(editor).map(
+        (note) => (note.querySelector('.note-text') as HTMLElement).innerText
+      ),
+      ['check the first paragraph', 'check the second\nover two lines']
+    );
+
+    // each level with the block it follows, beside the card - or, where the one above is in the way, just under it
+    const [first, second] = margin(editor).map((note) =>
+      note.getBoundingClientRect()
+    );
+    const card = editor.shadowRoot
+      .querySelector('.article')
+      .getBoundingClientRect();
+    assert.closeTo(first.top, blocks(editor)[0].getBoundingClientRect().top, 1);
+    assert.closeTo(
+      second.top,
+      Math.max(blocks(editor)[1].getBoundingClientRect().top, first.bottom + 8),
+      1
+    );
+    assert.isAbove(first.left, card.right);
+  });
+
+  it('treats comments as content without the margin', async () => {
+    const editor = await getNotesEditor(ARTICLE, '');
+    assert.equal(blocks(editor).length, 5);
+    assert.lengthOf(margin(editor), 0);
+  });
+
+  it('writes notes back exactly where they were when the document is edited', async () => {
+    const editor = await getNotesEditor();
+
+    blocks(editor)[2].firstChild.textContent += ' More.';
+    doc(editor).dispatchEvent(
+      new InputEvent('input', { inputType: 'insertText' })
+    );
+
+    assert.equal(
+      editor.value,
+      ARTICLE.replace('Third paragraph.', 'Third paragraph. More.')
+    );
+  });
+
+  it('moves a note to the note before it when its block is deleted', async () => {
+    const editor = await getNotesEditor();
+
+    blocks(editor)[1].remove();
+    doc(editor).dispatchEvent(
+      new InputEvent('input', { inputType: 'deleteContentBackward' })
+    );
+
+    assert.equal(
+      editor.value,
+      [
+        'First paragraph.',
+        '/* check the first paragraph */',
+        '// check the second\n// over two lines',
+        'Third paragraph.'
+      ].join('\n\n')
+    );
+  });
+
+  it('removes a note when it is resolved', async () => {
+    const editor = await getNotesEditor();
+    const seen = changes(editor);
+
+    (margin(editor)[0].querySelector('.resolve') as HTMLElement).click();
+    await editor.updateComplete;
+
+    assert.equal(seen.count, 1);
+    assert.equal(
+      editor.value,
+      [
+        'First paragraph.',
+        'Second paragraph.',
+        '// check the second\n// over two lines',
+        'Third paragraph.'
+      ].join('\n\n')
+    );
+    assert.lengthOf(margin(editor), 1);
+  });
+
+  it('adds a note beside the block the pointer is over', async () => {
+    const editor = await getNotesEditor('One.\n\nTwo.');
+    const seen = changes(editor);
+
+    blocks(editor)[0].dispatchEvent(
+      new MouseEvent('mousemove', { bubbles: true })
+    );
+    await editor.updateComplete;
+    (editor.shadowRoot.querySelector('.add-note') as HTMLElement).click();
+    await editor.updateComplete;
+
+    // it's written in the margin, and only becomes part of the article once there's something in it
+    const textarea = margin(editor)[0].querySelector('textarea');
+    assert.equal(editor.value, 'One.\n\nTwo.');
+    textarea.value = 'is this right? */ maybe';
+    textarea.dispatchEvent(new Event('blur'));
+    await editor.updateComplete;
+
+    assert.equal(seen.count, 1);
+    assert.equal(
+      editor.value,
+      'One.\n\n/* is this right? * / maybe */\n\nTwo.'
+    );
+    assert.equal(
+      margin(editor)[0].querySelector('.note-text').textContent.trim(),
+      'is this right? * / maybe'
+    );
+  });
+
+  it('edits a note, and drops one left empty', async () => {
+    const editor = await getNotesEditor();
+
+    (margin(editor)[0].querySelector('.note-text') as HTMLElement).click();
+    await editor.updateComplete;
+    let textarea = margin(editor)[0].querySelector('textarea');
+    textarea.value = 'checked the first';
+    textarea.dispatchEvent(new Event('blur'));
+    await editor.updateComplete;
+    assert.include(
+      editor.value,
+      'First paragraph.\n\n/* checked the first */\n\nSecond paragraph.'
+    );
+
+    // escape leaves it as it was
+    (margin(editor)[1].querySelector('.note-text') as HTMLElement).click();
+    await editor.updateComplete;
+    textarea = margin(editor)[1].querySelector('textarea');
+    textarea.value = 'never mind';
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    textarea.dispatchEvent(new Event('blur'));
+    await editor.updateComplete;
+    assert.include(editor.value, '// check the second\n// over two lines');
+
+    // and emptying it is the same as resolving it
+    (margin(editor)[0].querySelector('.note-text') as HTMLElement).click();
+    await editor.updateComplete;
+    textarea = margin(editor)[0].querySelector('textarea');
+    textarea.value = '  ';
+    textarea.dispatchEvent(new Event('blur'));
+    await editor.updateComplete;
+    assert.notInclude(editor.value, 'checked the first');
+  });
+
+  it('stacks notes that would overlap', async () => {
+    const editor = await getNotesEditor(
+      'One.\n\n/* a long note that wraps over several lines of the margin, and then some more besides */\n\n' +
+        '/* and another right after it */\n\nTwo.'
+    );
+    const [first, second] = margin(editor).map((note) =>
+      note.getBoundingClientRect()
+    );
+    assert.isAtLeast(second.top, first.bottom + 8 - 1);
+  });
+
+  it('shows the margin', async () => {
+    const editor = await getNotesEditor();
+    await assertScreenshot('markdown-editor/notes', getClip(editor));
   });
 });
