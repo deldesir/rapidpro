@@ -2150,8 +2150,8 @@ describe(`${TAG} notes`, () => {
       await editor.updateComplete;
       assert.deepEqual(announced, [false, true]);
 
-      // and resolving the last closes it
-      (margin(editor)[0].querySelector('.resolve') as HTMLElement).click();
+      // and removing the last closes it
+      (margin(editor)[0].querySelector('.remove') as HTMLElement).click();
       await editor.updateComplete;
       assert.isFalse(editor.hasAttribute('has-notes'));
       assert.equal(width(), 24);
@@ -2200,11 +2200,11 @@ describe(`${TAG} notes`, () => {
     );
   });
 
-  it('removes a note when it is resolved', async () => {
+  it('removes a note when its Remove is clicked', async () => {
     const editor = await getNotesEditor();
     const seen = changes(editor);
 
-    (margin(editor)[0].querySelector('.resolve') as HTMLElement).click();
+    (margin(editor)[0].querySelector('.remove') as HTMLElement).click();
     await editor.updateComplete;
 
     assert.equal(seen.count, 1);
@@ -2273,7 +2273,7 @@ describe(`${TAG} notes`, () => {
     await editor.updateComplete;
     assert.include(editor.value, '// check the second\n// over two lines');
 
-    // and emptying it is the same as resolving it
+    // and emptying it is the same as removing it
     (margin(editor)[0].querySelector('.note-text') as HTMLElement).click();
     await editor.updateComplete;
     textarea = margin(editor)[0].querySelector('textarea');

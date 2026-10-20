@@ -694,14 +694,14 @@ export class MarkdownEditor extends FieldElement {
         margin-top: 6px;
       }
 
-      .note .resolve {
+      .note .remove {
         font-size: 12px;
         font-weight: 600;
         color: #7a6a00;
         cursor: pointer;
       }
 
-      .note .resolve:hover {
+      .note .remove:hover {
         text-decoration: underline;
       }
 
@@ -1469,7 +1469,7 @@ export class MarkdownEditor extends FieldElement {
   @property({ type: Boolean, reflect: true })
   fill = false;
 
-  /** Keeps the document's notes in a margin beside it, where they can be resolved and new ones added, instead of
+  /** Keeps the document's notes in a margin beside it, where they can be removed and new ones added, instead of
    * treating them as content - for an article, whose renderer leaves its comments out. */
   @property({ type: Boolean, attribute: 'notes', reflect: true })
   allowNotes = false;
@@ -4357,8 +4357,8 @@ export class MarkdownEditor extends FieldElement {
             ${this.disabled
               ? null
               : html`<div class="note-actions">
-                  <span class="resolve" @click=${() => this.resolveNote(note)}
-                    >${msg('Resolve')}</span
+                  <span class="remove" @click=${() => this.removeNote(note)}
+                    >${msg('Remove')}</span
                   >
                 </div>`}
           </div>`
@@ -4467,8 +4467,8 @@ export class MarkdownEditor extends FieldElement {
     }
   }
 
-  /** a resolved note is done with, so it's removed from the article rather than kept anywhere */
-  private resolveNote(note: Note): void {
+  /** a removed note is done with, so it goes from the article rather than being kept anywhere */
+  private removeNote(note: Note): void {
     this.notes = this.notes.filter((n) => n !== note);
     this.serialize();
     this.fireEvent('change');
