@@ -307,7 +307,7 @@ class ClosedTicketTriggerType(TriggerType):
     code = Trigger.TYPE_CLOSED_TICKET
     slug = "closed_ticket"
     name = _("Closed Ticket")
-    allowed_flow_types = (Flow.TYPE_MESSAGE, Flow.TYPE_VOICE, Flow.TYPE_BACKGROUND)
+    allowed_flow_types = (Flow.TYPE_BACKGROUND,)
     form = Form
 
 
