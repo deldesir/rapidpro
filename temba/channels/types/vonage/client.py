@@ -13,6 +13,8 @@ from vonage_numbers.requests import (
 
 from django.urls import reverse
 
+from temba.utils import fakes
+
 
 class VonageClient:
     """
@@ -23,6 +25,10 @@ class VonageClient:
 
     def __init__(self, api_key: str, api_secret: str):
         self.base = Vonage(Auth(api_key=api_key, api_secret=api_secret))
+
+        # the SDK lets its hosts be changed but always reaches them over https, so a fake is given its session instead
+        if fake_url := fakes.fake_url("vonage"):
+            self.base.http_client._session.mount("https://", fakes.FakeAdapter(fake_url))
 
     def check_credentials(self) -> bool:
         try:

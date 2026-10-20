@@ -4,7 +4,6 @@ import phonenumbers
 from phonenumbers.phonenumberutil import region_code_for_number
 from smartmin.views import SmartFormView
 from twilio.base.exceptions import TwilioException, TwilioRestException
-from twilio.rest import Client as TwilioClient
 
 from django import forms
 from django.core.exceptions import ValidationError
@@ -19,6 +18,7 @@ from temba.utils.timezones import timezone_to_country_code
 
 from ...models import Channel
 from ...views import ALL_COUNTRIES, BaseClaimNumberMixin, ChannelTypeMixin, ClaimViewMixin, UpdateChannelForm
+from .client import TwilioClient
 
 SUPPORTED_COUNTRIES = {
     "AU",  # Australia
