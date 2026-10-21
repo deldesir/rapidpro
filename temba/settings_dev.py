@@ -55,6 +55,9 @@ INTERNAL_AUTH_TOKEN = "topsecret"
 # -----------------------------------------------------------------------------------
 MIDDLEWARE = ("temba.middleware.ExceptionMiddleware",) + MIDDLEWARE
 
+# let a request have its calls to outside providers answered by a fake, e.g. to capture screenshots without accounts
+PROVIDER_FAKES = True
+
 # -----------------------------------------------------------------------------------
 # In development, perform background tasks in the web thread (synchronously)
 # -----------------------------------------------------------------------------------
