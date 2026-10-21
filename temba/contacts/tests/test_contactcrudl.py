@@ -1117,7 +1117,7 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
         campaign = Campaign.create(self.org, self.admin, "Reminders", farmers)
         joined = self.create_field("joined", "Joined On", value_type=ContactField.TYPE_DATETIME)
         flow = self.create_flow("Reminder Flow")
-        msg_event = CampaignEvent.create_message_event(
+        CampaignEvent.create_message_event(
             self.org,
             self.admin,
             campaign,
@@ -1127,7 +1127,7 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
             translations={"eng": {"text": "Hi"}},
             base_language="eng",
         )
-        flow_event = CampaignEvent.create_flow_event(self.org, self.admin, campaign, joined, 20, unit="D", flow=flow)
+        CampaignEvent.create_flow_event(self.org, self.admin, campaign, joined, 20, unit="D", flow=flow)
 
         # contact joined 10 days ago, so the +3 day event is past and the +20 day event is upcoming
         self.set_contact_field(contact1, "joined", (timezone.now() - timedelta(days=10)).isoformat())
@@ -1210,7 +1210,7 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
                         "name": "Reminders",
                         "url": reverse("campaigns.campaign_read", args=[campaign.uuid]),
                     },
-                    "url": reverse("campaigns.campaignevent_read", args=[campaign.uuid, flow_event.uuid]),
+                    "url": reverse("campaigns.campaign_read", args=[campaign.uuid]),
                     "flow": {
                         "uuid": str(flow.uuid),
                         "name": "Reminder Flow",
@@ -1231,7 +1231,7 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
                         "name": "Reminders",
                         "url": reverse("campaigns.campaign_read", args=[campaign.uuid]),
                     },
-                    "url": reverse("campaigns.campaignevent_read", args=[campaign.uuid, msg_event.uuid]),
+                    "url": reverse("campaigns.campaign_read", args=[campaign.uuid]),
                     "message": "Hi",
                 },
             ],
@@ -1313,7 +1313,7 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
         campaign = Campaign.create(self.org, self.admin, "Reminders", group)
 
         # an active event anchored on a field the contact HAS -> appears
-        visible = CampaignEvent.create_message_event(
+        CampaignEvent.create_message_event(
             self.org,
             self.admin,
             campaign,
@@ -1356,7 +1356,7 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
         # only the single visible event survives
         self.assertEqual(1, len(future))
         self.assertEqual(1, response.json()["future_count"])
-        self.assertEqual(reverse("campaigns.campaignevent_read", args=[campaign.uuid, visible.uuid]), future[0]["url"])
+        self.assertEqual(reverse("campaigns.campaign_read", args=[campaign.uuid]), future[0]["url"])
         self.assertEqual("Visible", future[0]["message"])
 
     def test_timeline_pagination(self):

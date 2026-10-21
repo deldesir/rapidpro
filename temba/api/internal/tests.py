@@ -965,7 +965,7 @@ class EndpointsTest(APITestMixin, TembaTest):
 
         helpdesk = self.org.sources.get(source_type=KnowledgeSource.TYPE_HELPDESK)
         flows = Article.create(helpdesk, self.admin, "Flows", description="All about flows.")
-        nodes = Article.create(helpdesk, self.admin, "Nodes", parent=flows)
+        nodes = Article.create(helpdesk, self.admin, "Nodes", parent=flows, body="Text\n\n/* check this */")
         contacts = Article.create(helpdesk, self.admin, "Contacts")
         released = Article.create(helpdesk, self.admin, "Old", parent=flows)
         released.release(self.admin)
@@ -991,6 +991,7 @@ class EndpointsTest(APITestMixin, TembaTest):
                     "status": "published",
                     "parent": None,
                     "depth": 0,
+                    "info": {"comments": 0},
                     "modified_on": matchers.ISODatetime(),
                 },
                 {
@@ -1000,6 +1001,7 @@ class EndpointsTest(APITestMixin, TembaTest):
                     "status": "draft",
                     "parent": str(flows.uuid),
                     "depth": 1,
+                    "info": {"comments": 1},
                     "modified_on": matchers.ISODatetime(),
                 },
                 {
@@ -1009,6 +1011,7 @@ class EndpointsTest(APITestMixin, TembaTest):
                     "status": "draft",
                     "parent": None,
                     "depth": 0,
+                    "info": {"comments": 0},
                     "modified_on": matchers.ISODatetime(),
                 },
             ],

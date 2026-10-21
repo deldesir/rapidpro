@@ -2,6 +2,7 @@ import { assert, expect, oneEvent } from '@open-wc/testing';
 import { SinonStub } from 'sinon';
 import { Article } from '../src/interfaces';
 import {
+  countComments,
   groupSections,
   HelpdeskCards,
   matchesQuery,
@@ -721,6 +722,113 @@ describe(TAG, () => {
       { uuid: 'installing', parent: 'getting-started', sort_order: 0 },
       { uuid: 'configuring', parent: 'getting-started', sort_order: 1 }
     ]);
+  });
+
+  describe('comments', () => {
+    // Configuring has two comments and Nodes one
+    const COMMENTED = ARTICLES.map((item) => ({
+      ...item,
+      info: {
+        comments: { configuring: 2, nodes: 1 }[item.uuid] || 0
+      }
+    }));
+
+    const getCommentedCards = async () => {
+      clearMockGets();
+      mockGET(/\/api\/internal\/articles\.json/, { results: COMMENTED });
+      const cards = await getCards();
+      await expandAll(cards);
+      return cards;
+    };
+
+    const filter = (cards: HelpdeskCards) =>
+      cards.shadowRoot.querySelector('.comments-filter') as HTMLElement;
+
+    const rowIds = (cards: HelpdeskCards, cardIndex: number) =>
+      getRows(cards, cardIndex).map((row) => row.id);
+
+    it('counts an article without info as having none', () => {
+      expect(countComments(article('plain'))).to.equal(0);
+      expect(
+        countComments({ ...article('noted'), info: { comments: 3 } })
+      ).to.equal(3);
+    });
+
+    it('shows how many comments each article has', async () => {
+      const cards = await getCommentedCards();
+
+      const badge = (cardIndex: number, rowIndex: number) =>
+        getRows(cards, cardIndex)[rowIndex].querySelector('.comments');
+      expect(badge(0, 0)).to.equal(null);
+      expect(badge(0, 1).textContent.trim()).to.equal('2');
+      expect(badge(0, 1).getAttribute('title')).to.equal('2 comments');
+      expect(badge(1, 0).getAttribute('title')).to.equal('1 comment');
+
+      // and each card how many of its articles have them
+      const [gettingStarted] = getCardElements(cards);
+      expect(
+        gettingStarted.querySelector('.meta .commented').textContent.trim()
+      ).to.equal('1 with comments');
+
+      expect(
+        filter(cards).querySelector('.comments-filter-count').textContent
+      ).to.equal('2');
+
+      await moveMouse(0, 0);
+      await assertScreenshot('helpdesk-cards/comments', getClip(cards));
+    });
+
+    it('filters to the articles with comments', async () => {
+      const cards = await getCommentedCards();
+
+      filter(cards).click();
+      await cards.updateComplete;
+      await waitFor(250);
+
+      expect(filter(cards).getAttribute('aria-pressed')).to.equal('true');
+      expect(rowIds(cards, 0)).to.deep.equal(['configuring']);
+      expect(rowIds(cards, 1)).to.deep.equal(['nodes']);
+      expect(
+        cards.shadowRoot.querySelector('.search-count').textContent.trim()
+      ).to.equal('2 matches');
+      // there's no search to clear
+      expect(cards.shadowRoot.querySelector('.search-cancel')).to.equal(null);
+
+      // alongside a search, an article has to match both
+      const input = cards.shadowRoot.querySelector(
+        '.searchbar input'
+      ) as HTMLInputElement;
+      input.value = 'node';
+      input.dispatchEvent(new InputEvent('input'));
+      await cards.updateComplete;
+      await waitFor(250);
+      expect(rowIds(cards, 0)).to.deep.equal([]);
+      expect(rowIds(cards, 1)).to.deep.equal(['nodes']);
+
+      input.value = 'install';
+      input.dispatchEvent(new InputEvent('input'));
+      await cards.updateComplete;
+      expect(
+        cards.shadowRoot.querySelector('.no-matches').textContent.trim()
+      ).to.equal('No articles with comments match "install"');
+
+      // and turned off, every article is back
+      input.value = '';
+      input.dispatchEvent(new InputEvent('input'));
+      filter(cards).click();
+      await cards.updateComplete;
+      await waitFor(250);
+      expect(filter(cards).getAttribute('aria-pressed')).to.equal('false');
+      expect(rowIds(cards, 0)).to.deep.equal(['installing', 'configuring']);
+    });
+
+    it('offers the filter only when an article has comments', async () => {
+      const cards = await getCards();
+      expect(filter(cards)).to.equal(null);
+      expect(
+        getCardElements(cards)[0].querySelector('.meta .commented')
+      ).to.equal(null);
+    });
   });
 
   describe('search', () => {

@@ -634,13 +634,14 @@ class TriggerCRUDLTest(TembaTest, CRUDLTestMixin):
         )
 
     def test_create_closed_ticket(self):
-        flow1 = self.create_flow("Flow 1", flow_type=Flow.TYPE_MESSAGE)
-        flow2 = self.create_flow("Flow 2", flow_type=Flow.TYPE_VOICE)
-        flow3 = self.create_flow("Flow 3", flow_type=Flow.TYPE_BACKGROUND)
+        flow1 = self.create_flow("Flow 1", flow_type=Flow.TYPE_BACKGROUND)
+        flow2 = self.create_flow("Flow 2", flow_type=Flow.TYPE_BACKGROUND)
 
         # flows that shouldn't appear as options
-        self.create_flow("Flow 4", is_system=True)
-        self.create_flow("Flow 5", org=self.org2)
+        self.create_flow("Flow 3", flow_type=Flow.TYPE_MESSAGE)
+        self.create_flow("Flow 4", flow_type=Flow.TYPE_VOICE)
+        self.create_flow("Flow 5", flow_type=Flow.TYPE_BACKGROUND, is_system=True)
+        self.create_flow("Flow 6", flow_type=Flow.TYPE_BACKGROUND, org=self.org2)
 
         create_url = reverse("triggers.trigger_create_closed_ticket")
 
@@ -649,8 +650,8 @@ class TriggerCRUDLTest(TembaTest, CRUDLTestMixin):
             create_url, [self.editor, self.admin], form_fields=["flow", "groups", "exclude_groups"]
         )
 
-        # flow options should be messaging, voice and background flows
-        self.assertEqual([flow1, flow2, flow3], list(response.context["form"].fields["flow"].queryset))
+        # flow options should only be background flows
+        self.assertEqual([flow1, flow2], list(response.context["form"].fields["flow"].queryset))
 
         self.assertCreateSubmit(
             create_url,
@@ -667,6 +668,37 @@ class TriggerCRUDLTest(TembaTest, CRUDLTestMixin):
             {"flow": flow2.id},
             form_errors={"__all__": "There already exists a trigger of this type with these options."},
         )
+
+    def test_update_closed_ticket(self):
+        flow1 = self.create_flow("Flow 1", flow_type=Flow.TYPE_MESSAGE)
+        flow2 = self.create_flow("Flow 2", flow_type=Flow.TYPE_BACKGROUND)
+
+        # an existing trigger using a messaging flow
+        trigger = Trigger.create(self.org, self.admin, Trigger.TYPE_CLOSED_TICKET, flow1)
+
+        update_url = reverse("triggers.trigger_update", args=[trigger.uuid])
+
+        self.assertRequestDisallowed(update_url, [None, self.agent, self.admin2])
+        response = self.assertUpdateFetch(
+            update_url, [self.editor, self.admin], form_fields={"flow": flow1.id, "groups": [], "exclude_groups": []}
+        )
+
+        # only background flows are options
+        self.assertEqual([flow2], list(response.context["form"].fields["flow"].queryset))
+
+        # so it can't be saved without switching to one
+        self.assertUpdateSubmit(
+            update_url,
+            self.admin,
+            {"flow": flow1.id},
+            form_errors={"flow": "Select a valid choice. That choice is not one of the available choices."},
+            object_unchanged=trigger,
+        )
+
+        self.assertUpdateSubmit(update_url, self.admin, {"flow": flow2.id})
+
+        trigger.refresh_from_db()
+        self.assertEqual(flow2, trigger.flow)
 
     def test_update_keyword(self):
         flow = self.create_flow("Test")

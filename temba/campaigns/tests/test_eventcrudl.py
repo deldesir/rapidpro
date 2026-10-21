@@ -13,16 +13,15 @@ from temba.templates.models import TemplateTranslation
 from temba.tests import CRUDLTestMixin, TembaTest
 from temba.utils import json
 from temba.utils.compose import compose_serialize
-from temba.utils.views.mixins import TEMBA_MENU_SELECTION
 
 
 def _compose(translations):
     return json.dumps(compose_serialize(translations))
 
 
-def add_recent_contact(event, contact, ts: float):
+def add_recent_contact(event, contact, ts: float, skipped: bool = False):
     r = get_valkey_connection()
-    member = f"{uuid4()}|{contact.id}"
+    member = f"{uuid4()}|{contact.id}" + ("|skipped" if skipped else "")
     r.zadd(f"recent_campaign_fires:{event.id}", mapping={member: ts})
 
 
@@ -81,7 +80,9 @@ class CampaignEventCRUDLTest(TembaTest, CRUDLTestMixin):
     def test_fires(self):
         event = self.campaign1.events.order_by("id").first()
         contact = self.create_contact("Ann", phone="+1234567890")
+        contact2 = self.create_contact("Bob", phone="+1234567891")
         add_recent_contact(event, contact, 1639338554.969123)
+        add_recent_contact(event, contact2, 1639338555.234567, skipped=True)
 
         fires_url = reverse("campaigns.campaignevent_fires", args=[event.uuid])
 
@@ -96,55 +97,26 @@ class CampaignEventCRUDLTest(TembaTest, CRUDLTestMixin):
                 "fires": [
                     {
                         "contact": {
+                            "uuid": str(contact2.uuid),
+                            "name": "Bob",
+                            "url": f"/contact/read/{contact2.uuid}/",
+                        },
+                        "time": "2021-12-12T19:49:15.234567+00:00",
+                        "skipped": True,
+                    },
+                    {
+                        "contact": {
                             "uuid": str(contact.uuid),
                             "name": "Ann",
                             "url": f"/contact/read/{contact.uuid}/",
                         },
                         "time": "2021-12-12T19:49:14.969123+00:00",
-                    }
+                        "skipped": False,
+                    },
                 ]
             },
             response.json(),
         )
-
-    def test_read(self):
-        event = self.campaign1.events.order_by("id").first()
-        read_url = reverse("campaigns.campaignevent_read", args=[event.campaign.uuid, event.uuid])
-
-        self.assertRequestDisallowed(read_url, [None, self.agent, self.admin2])
-        response = self.assertReadFetch(read_url, [self.editor, self.admin], context_object=event)
-
-        self.assertContains(response, "Welcomes")
-        self.assertContains(response, "1 week after")
-        self.assertContains(response, "Registered")
-        self.assertEqual("/campaign/active/", response.headers.get(TEMBA_MENU_SELECTION))
-        self.assertContentMenu(read_url, self.admin, ["Edit", "Delete"])
-
-        # can't edit an event whilst it's being scheduled
-        event.status = CampaignEvent.STATUS_SCHEDULING
-        event.save(update_fields=("status",))
-
-        self.assertContentMenu(read_url, self.admin, ["Delete"])
-
-        event.status = CampaignEvent.STATUS_READY
-        event.save(update_fields=("status",))
-
-        event.campaign.is_archived = True
-        event.campaign.save()
-
-        # archived campaigns should focus the archived menu
-        response = self.assertReadFetch(read_url, [self.editor], context_object=event)
-        self.assertEqual("/campaign/archived/", response.headers.get(TEMBA_MENU_SELECTION))
-
-        # can't edit the events of an archived campaign
-        self.assertContentMenu(read_url, self.admin, ["Delete"])
-
-        # can't view a deleted event
-        event.is_active = False
-        event.save(update_fields=("is_active",))
-
-        response = self.requestView(read_url, self.editor)
-        self.assertEqual(404, response.status_code)
 
     def test_create(self):
         farmer1 = self.create_contact("Rob Jasper", phone="+250788111111")
@@ -546,53 +518,6 @@ class CampaignEventCRUDLTest(TembaTest, CRUDLTestMixin):
             CampaignEventCRUDL.BACKGROUND_WARNING,
             response.context["form"].fields["flow_to_start"].widget.attrs["info_text"],
         )
-
-    def test_read_with_translations(self):
-        """The read view renders message content and a translation summary."""
-        self.org.set_flow_languages(self.admin, ["eng", "kin", "spa", "fra"])
-
-        event = CampaignEvent.create_message_event(
-            self.org,
-            self.admin,
-            self.campaign1,
-            self.org.fields.get(key="registered"),
-            offset=3,
-            unit="D",
-            translations={
-                "eng": {"text": "Hi there", "attachments": [], "quick_replies": [{"text": "Yes"}, {"text": "No"}]},
-                "kin": {"text": "Muraho", "attachments": []},
-            },
-            base_language="eng",
-            delivery_hour=9,
-        )
-
-        read_url = reverse("campaigns.campaignevent_read", args=[event.campaign.uuid, event.uuid])
-        response = self.requestView(read_url, self.admin)
-
-        # quick replies should be shown
-        self.assertContains(response, "Yes")
-        self.assertContains(response, "No")
-
-        # single non-base translation, no comma
-        self.assertContains(response, "Translation provided in <b>Kinyarwanda</b>")
-
-        # now add a second translation - should use "and" (alphabetical by language name)
-        event.translations["spa"] = {"text": "Hola", "attachments": []}
-        event.save(update_fields=("translations",))
-        response = self.requestView(read_url, self.admin)
-        self.assertContains(response, "Translations provided in <b>Kinyarwanda</b> and <b>Spanish</b>")
-
-        # three translations - oxford comma, alphabetical
-        event.translations["fra"] = {"text": "Bonjour", "attachments": []}
-        event.save(update_fields=("translations",))
-        response = self.requestView(read_url, self.admin)
-        self.assertContains(response, "Translations provided in <b>French</b>, <b>Kinyarwanda</b>, and <b>Spanish</b>")
-
-        # translations for languages no longer configured on the org should be omitted
-        self.org.set_flow_languages(self.admin, ["eng", "kin", "spa"])
-        response = self.requestView(read_url, self.admin)
-        self.assertContains(response, "Translations provided in <b>Kinyarwanda</b> and <b>Spanish</b>")
-        self.assertNotContains(response, "<b>French</b>")
 
     def test_create_with_template(self):
         """Creating a message event with a WhatsApp template persists template + variables."""

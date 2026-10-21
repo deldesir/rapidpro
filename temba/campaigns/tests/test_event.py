@@ -145,25 +145,27 @@ class CampaignEventTest(TembaTest):
             delivery_hour=9,
         )
 
-        def add_recent_contact(event, contact, ts: float):
+        def add_recent_contact(event, contact, ts: float, skipped: bool = False):
             r = get_valkey_connection()
-            member = f"{uuid4()}|{contact.id}"
+            member = f"{uuid4()}|{contact.id}" + ("|skipped" if skipped else "")
             r.zadd(f"recent_campaign_fires:{event.id}", mapping={member: ts})
 
         add_recent_contact(event1, contact1, 1639338554.969123)
         add_recent_contact(event1, contact2, 1639338555.234567)
         add_recent_contact(event2, contact1, 1639338561.345678)
+        add_recent_contact(event2, contact2, 1639338562.456789, skipped=True)
 
         self.assertEqual(
             [
-                {"contact": contact2, "time": datetime(2021, 12, 12, 19, 49, 15, 234567, tzone.utc)},
-                {"contact": contact1, "time": datetime(2021, 12, 12, 19, 49, 14, 969123, tzone.utc)},
+                {"contact": contact2, "time": datetime(2021, 12, 12, 19, 49, 15, 234567, tzone.utc), "skipped": False},
+                {"contact": contact1, "time": datetime(2021, 12, 12, 19, 49, 14, 969123, tzone.utc), "skipped": False},
             ],
             event1.get_recent_fires(),
         )
         self.assertEqual(
             [
-                {"contact": contact1, "time": datetime(2021, 12, 12, 19, 49, 21, 345678, tzone.utc)},
+                {"contact": contact2, "time": datetime(2021, 12, 12, 19, 49, 22, 456789, tzone.utc), "skipped": True},
+                {"contact": contact1, "time": datetime(2021, 12, 12, 19, 49, 21, 345678, tzone.utc), "skipped": False},
             ],
             event2.get_recent_fires(),
         )

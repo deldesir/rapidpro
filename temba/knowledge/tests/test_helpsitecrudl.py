@@ -117,8 +117,8 @@ class HelpSiteCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual({"3": "#123456"}, self.helpdesk.colors)
 
         # the site can embed the chat widget of one of the org's WebChat channels
-        webchat = self.create_channel("WCH", "Site Chat", None)
-        other_webchat = self.create_channel("WCH", "Other Chat", None, org=self.org2)
+        webchat = self.create_channel("CHP", "Site Chat", None)
+        other_webchat = self.create_channel("CHP", "Other Chat", None, org=self.org2)
         self.create_channel("TG", "Telegram", "1234")
 
         response = self.requestView(update_url, self.admin)

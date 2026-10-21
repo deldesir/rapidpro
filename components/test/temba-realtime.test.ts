@@ -9,7 +9,7 @@ import {
   subscribeToOrganization
 } from '../src/live/Realtime';
 import { setSocketProvider, SocketProvider } from '../src/live/SocketService';
-import { MockSocketProvider } from './utils.test';
+import { MockSocketProvider, waitForCondition } from './utils.test';
 
 describe('temba-realtime', () => {
   let mockSocket: MockSocketProvider;
@@ -135,9 +135,6 @@ describe('temba-realtime', () => {
       setRealtimeTabsChannel(previousTabsChannel);
     });
 
-    // a broadcast lands on a later task, so give it a moment
-    const delivered = () => new Promise((resolve) => setTimeout(resolve, 50));
-
     it('is lost when the server refuses one of the page channels', () => {
       setRealtimeContext({ org: 'org-uuid', user: 'user-uuid' });
 
@@ -190,7 +187,7 @@ describe('temba-realtime', () => {
       otherTab.onmessage = (event) => heard.push(event.data);
 
       setRealtimeContext({ org: 'org-uuid', user: 'user-uuid' });
-      await delivered();
+      await waitForCondition(() => heard.length > 0);
 
       assert.deepEqual(heard, [{ org: 'org-uuid', user: 'user-uuid' }]);
     });
@@ -202,7 +199,7 @@ describe('temba-realtime', () => {
       onWorkspaceAccessLost(() => lost++);
 
       otherTab.postMessage({ org: 'other-org-uuid', user: 'user-uuid' });
-      await delivered();
+      await waitForCondition(() => mockSocket.rechecked.length > 0);
 
       assert.deepEqual(mockSocket.rechecked, [
         'org:org-uuid',
@@ -218,9 +215,16 @@ describe('temba-realtime', () => {
 
       otherTab.postMessage({ org: 'org-uuid', user: 'user-uuid' });
       otherTab.postMessage(null);
-      await delivered();
 
-      assert.deepEqual(mockSocket.rechecked, []);
+      // a tab's broadcasts arrive in order, so once one that does prompt a
+      // recheck has, the ones before it have been heard and ignored
+      otherTab.postMessage({ org: 'other-org-uuid', user: 'user-uuid' });
+      await waitForCondition(() => mockSocket.rechecked.length > 0);
+
+      assert.deepEqual(mockSocket.rechecked, [
+        'org:org-uuid',
+        'notifications:org-uuid:user-uuid'
+      ]);
     });
   });
 });

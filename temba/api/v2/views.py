@@ -23,9 +23,10 @@ from temba.channels.models import Channel, ChannelCount, ChannelEvent
 from temba.contacts.models import Contact, ContactField, ContactGroup, ContactNote, ContactURN
 from temba.flows.models import Flow, FlowRun, FlowStart, FlowStartCount
 from temba.globals.models import Global
+from temba.knowledge.models import Article, KnowledgeSource
 from temba.locations.models import AdminBoundary, BoundaryAlias
 from temba.msgs.models import Broadcast, BroadcastMsgCount, Label, LabelCount, Media, Msg, MsgFolder
-from temba.orgs.models import OrgMembership
+from temba.orgs.models import Org, OrgMembership
 from temba.orgs.views.mixins import OrgPermsMixin
 from temba.tickets.models import Ticket, Topic
 from temba.users.models import User
@@ -52,6 +53,8 @@ from ..views import BaseAPIView, BulkWriteAPIMixin, DeleteAPIMixin, ListAPIMixin
 from .serializers import (
     AdminBoundaryReadSerializer,
     ArchiveReadSerializer,
+    ArticleReadSerializer,
+    ArticleWriteSerializer,
     BroadcastReadSerializer,
     BroadcastWriteSerializer,
     CampaignEventReadSerializer,
@@ -406,6 +409,54 @@ class ArchivesEndpoint(ListAPIMixin, BaseEndpoint):
                 {"name": "period", "required": False, "help": "The period to filter by: daily or monthly"},
             ],
         }
+
+
+class ArticlesEndpoint(ListAPIMixin, WriteAPIMixin, DeleteAPIMixin, BaseEndpoint):
+    """
+    Unpublicized endpoint to list, create, update and delete the sections and articles of the workspace's helpdesk.
+    """
+
+    model = Article
+    serializer_class = ArticleReadSerializer
+    write_serializer_class = ArticleWriteSerializer
+    pagination_class = ModifiedOnCursorPagination
+
+    @cached_property
+    def helpdesk(self):
+        return KnowledgeSource.get_system(self.request.org, KnowledgeSource.TYPE_HELPDESK)
+
+    def check_permissions(self, request):
+        super().check_permissions(request)
+
+        # the helpdesk is part of the agents feature, same as every other view of it
+        if not self.is_docs() and (Org.FEATURE_AGENTS not in request.org.features or not self.helpdesk):
+            self.permission_denied(request, message="Helpdesk is not enabled for this workspace.")
+
+    def derive_queryset(self):
+        return self.model.objects.filter(source=self.helpdesk, is_active=True).select_related("parent")
+
+    def filter_queryset(self, queryset):
+        # filter by UUID (optional)
+        if uuid := self.get_uuid_param("uuid"):
+            queryset = queryset.filter(uuid=uuid)
+
+        # filter by section UUID (optional)
+        if section_uuid := self.get_uuid_param("section"):
+            queryset = queryset.filter(parent__uuid=section_uuid)
+
+        return self.filter_before_after(queryset, "modified_on")
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["helpdesk"] = self.helpdesk
+        return context
+
+    def perform_destroy(self, instance):
+        # its articles would otherwise be left as sections themselves
+        if instance.is_section and instance.children.filter(is_active=True).exists():
+            raise InvalidQueryError("A section with articles in it can't be deleted.")
+
+        instance.release(self.request.user)
 
 
 class BoundariesEndpoint(ListAPIMixin, BaseEndpoint):

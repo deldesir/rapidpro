@@ -2,13 +2,13 @@ import phonenumbers
 from phonenumbers.phonenumberutil import region_code_for_number
 from smartmin.views import SmartFormView
 from twilio.base.exceptions import TwilioRestException
-from twilio.rest import Client as TwilioClient
 
 from django import forms
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
+from temba.channels.types.twilio.client import TwilioClient
 from temba.channels.types.twilio.views import SUPPORTED_COUNTRIES, UpdateForm as TwilioUpdateForm
 from temba.contacts.models import URN
 from temba.utils.fields import InputWidget, SelectWidget

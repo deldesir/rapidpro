@@ -321,23 +321,6 @@ msgstr ""
 msgid "This is a background flow. When it triggers, it will run it for all contacts without interruption."
 msgstr ""
 
-msgid "Event History"
-msgstr ""
-
-#, python-brace-format
-msgid "{first} and {second}"
-msgstr ""
-
-#, python-brace-format
-msgid "{list}, and {last}"
-msgstr ""
-
-msgid "Edit Event"
-msgstr ""
-
-msgid "Delete Event"
-msgstr ""
-
 msgid "POST Required"
 msgstr ""
 
@@ -618,6 +601,19 @@ msgid "Reply URL"
 msgstr ""
 
 msgid "This URL should be called by BurstSMS when messages are replied to.You can set it on your settings page."
+msgstr ""
+
+msgid "Chat with visitors on your website via an embedded chat widget."
+msgstr ""
+
+msgid "Allowed Domains"
+msgstr ""
+
+msgid "The domains of the websites that can embed this channel's chat widget, one per line or comma separated, e.g. example.com or example.com:8080. If empty, any website can embed it."
+msgstr ""
+
+#, python-format
+msgid "%(domain)s is not a valid domain. Enter domains without schemes or paths, e.g. example.com."
 msgstr ""
 
 #, python-format
@@ -1838,19 +1834,6 @@ msgid "The username for your Movile/Wavy account"
 msgstr ""
 
 msgid "The Authentication Token for your Movile/Wavy account"
-msgstr ""
-
-msgid "Chat with visitors on your website via an embedded chat widget."
-msgstr ""
-
-msgid "Allowed Domains"
-msgstr ""
-
-msgid "The domains of the websites that can embed this channel's chat widget, one per line or comma separated, e.g. example.com or example.com:8080. If empty, any website can embed it."
-msgstr ""
-
-#, python-format
-msgid "%(domain)s is not a valid domain. Enter domains without schemes or paths, e.g. example.com."
 msgstr ""
 
 #, python-format
@@ -4403,29 +4386,13 @@ msgstr ""
 msgid "Group required"
 msgstr ""
 
+msgid "Edit Event"
+msgstr ""
+
+msgid "Delete Event"
+msgstr ""
+
 msgid "You are about to delete this event. There is no way to undo this. Are you sure?"
-msgstr ""
-
-msgid "This event is currently being scheduled and can't be edited again until that completes."
-msgstr ""
-
-#, python-format
-msgid "<b>%(count)s</b> scheduled contacts"
-msgstr ""
-
-msgid "Send Message"
-msgstr ""
-
-#, python-format
-msgid "Translation provided in %(langs)s"
-msgid_plural "Translations provided in %(langs)s"
-msgstr[0] ""
-msgstr[1] ""
-
-msgid "Recent Contacts"
-msgstr ""
-
-msgid "No recent contacts"
 msgstr ""
 
 msgid "If the contact is already active in a flow"
@@ -4611,6 +4578,27 @@ msgstr ""
 
 #, python-format
 msgid "When you first open %(brand)s, the app will register your device with Google and our servers. Once that is complete, it will display a claim code. Enter that claim code in the form to the left and click \"Add Phone\" to connect your device."
+msgstr ""
+
+msgid "Visitors chat with this channel through a widget embedded on your website."
+msgstr ""
+
+msgid "Channel UUID"
+msgstr ""
+
+msgid "The embedded widget uses this UUID to identify this channel when connecting."
+msgstr ""
+
+msgid "Embed"
+msgstr ""
+
+msgid "Add the following to your website to embed the chat widget. The script only needs to be included once per page."
+msgstr ""
+
+msgid "Only websites on the following domains can embed this channel's chat widget. This can be changed in the channel settings."
+msgstr ""
+
+msgid "Currently any website can embed this channel's chat widget. Setting allowed domains in the channel settings stops other websites from embedding it."
 msgstr ""
 
 msgid "To connect a <a href=\"https://clickatell.com\">Clickatell</a> number, first create an HTTP integration for a two way number, then enter the number and API key below."
@@ -5131,27 +5119,6 @@ msgstr ""
 
 #, python-format
 msgid "To connect your Vonage Account you will need to provide us your API key and secret. Both values can be found on your <a target=\"vonage\" href=\"%(settings_url)s\">Vonage settings</a> page in the API Settings section."
-msgstr ""
-
-msgid "Visitors chat with this channel through a widget embedded on your website."
-msgstr ""
-
-msgid "Channel UUID"
-msgstr ""
-
-msgid "The embedded widget uses this UUID to identify this channel when connecting."
-msgstr ""
-
-msgid "Embed"
-msgstr ""
-
-msgid "Add the following to your website to embed the chat widget. The script only needs to be included once per page."
-msgstr ""
-
-msgid "Only websites on the following domains can embed this channel's chat widget. This can be changed in the channel settings."
-msgstr ""
-
-msgid "Currently any website can embed this channel's chat widget. Setting allowed domains in the channel settings stops other websites from embedding it."
 msgstr ""
 
 msgid "You can connect your WhatsApp number by clicking on it below."
@@ -6346,6 +6313,9 @@ msgstr ""
 
 #, python-format
 msgid "For example you might have %(name)s send a message every Friday reminding people in the <i>Field Staff</i> group to complete their weekly report. If anybody joins the <i>Field Staff</i> group later, they will automatically start receiving the weekly reminder."
+msgstr ""
+
+msgid "Send Message"
 msgstr ""
 
 #, python-format

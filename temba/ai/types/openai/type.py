@@ -3,6 +3,7 @@ import openai
 from django.utils.translation import gettext_lazy as _
 
 from temba.ai.models import LLMCredentialsError, LLMType
+from temba.utils import fakes
 
 
 class OpenAIType(LLMType):
@@ -17,7 +18,9 @@ class OpenAIType(LLMType):
 
     def get_model_choices(self, api_key):
         try:
-            available_models = openai.OpenAI(api_key=api_key).models.list()
+            fake_url = fakes.fake_url("openai")
+            client = openai.OpenAI(api_key=api_key, base_url=f"{fake_url}/v1" if fake_url else None)
+            available_models = client.models.list()
         except openai.AuthenticationError as e:
             raise LLMCredentialsError(_("Invalid API Key.")) from e
 

@@ -577,22 +577,23 @@ class CampaignEvent(UUIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin)
         r = get_valkey_connection()
         key = f"recent_campaign_fires:{self.id}"
 
-        # fetch members of the sorted set from valkey and save as tuples of (contact_id, operand, time)
+        # fetch members of the sorted set from valkey and save as tuples of (contact_id, time, skipped) - members are
+        # <rand>|<contact_id> for fires, with a trailing |skipped for contacts the point was skipped for
         contact_ids = set()
         raw = []
         for member, score in r.zrange(key, start=0, end=-1, desc=True, withscores=True):
-            rand, contact_id = member.decode().split("|", maxsplit=2)
+            rand, contact_id, *flags = member.decode().split("|")
             contact_ids.add(int(contact_id))
-            raw.append((int(contact_id), datetime.fromtimestamp(score, tzone.utc)))
+            raw.append((int(contact_id), datetime.fromtimestamp(score, tzone.utc), "skipped" in flags))
 
         # lookup all the referenced contacts
         contacts_by_id = {c.id: c for c in self.campaign.org.contacts.filter(id__in=contact_ids, is_active=True)}
 
         # if contact still exists, include in results
         recent = []
-        for r in raw:
-            if contact := contacts_by_id.get(r[0]):
-                recent.append({"contact": contact, "time": r[1]})
+        for contact_id, time, skipped in raw:
+            if contact := contacts_by_id.get(contact_id):
+                recent.append({"contact": contact, "time": time, "skipped": skipped})
 
         return recent
 

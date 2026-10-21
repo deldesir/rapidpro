@@ -1,5 +1,4 @@
 from twilio.base.exceptions import TwilioRestException
-from twilio.rest import Client as TwilioClient
 
 from django.conf import settings
 from django.urls import re_path, reverse
@@ -9,6 +8,7 @@ from temba.contacts.models import URN
 from temba.utils.timezones import timezone_to_country_code
 
 from ...models import Channel, ChannelType
+from .client import TwilioClient
 from .views import SUPPORTED_COUNTRIES, ClaimView, Connect, SearchView, UpdateForm
 
 
