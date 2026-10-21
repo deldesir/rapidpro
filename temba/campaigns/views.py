@@ -7,8 +7,6 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils.functional import cached_property
-from django.utils.html import format_html, format_html_join
-from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 
 from temba.contacts.models import ContactField, ContactGroup
@@ -561,79 +559,11 @@ class CampaignEventForm(forms.ModelForm):
 
 class CampaignEventCRUDL(SmartCRUDL):
     model = CampaignEvent
-    actions = ("create", "delete", "read", "update", "fires")
+    actions = ("create", "delete", "update", "fires")
 
     BACKGROUND_WARNING = _(
         "This is a background flow. When it triggers, it will run it for all contacts without interruption."
     )
-
-    class Read(SpaMixin, ContextMenuMixin, BaseReadView):
-        title = _("Event History")
-        model_org_lookup = "campaign__org"
-
-        @classmethod
-        def derive_url_pattern(cls, path, action):
-            return r"^%s/%s/(?P<campaign_uuid>[0-9a-f-]{36})/(?P<uuid>[0-9a-f-]{36})/$" % (path, action)
-
-        def derive_menu_path(self):
-            return f"/campaign/{'archived' if self.get_object().campaign.is_archived else 'active'}/"
-
-        def get_queryset(self):
-            return super().get_queryset().filter(is_active=True)
-
-        def get_object_org(self):
-            return self.get_object().campaign.org
-
-        def get_context_data(self, **kwargs):
-            context = super().get_context_data(**kwargs)
-            context["recent_fires"] = self.object.get_recent_fires()
-
-            if self.object.event_type == CampaignEvent.TYPE_MESSAGE and self.object.translations:
-                org_langs = self.object.campaign.org.flow_languages
-                names = sorted(
-                    languages.get_name(iso)
-                    for iso in self.object.translations.keys()
-                    if iso != self.object.base_language and iso in org_langs
-                )
-                bolded = [format_html("<b>{}</b>", n) for n in names]
-                if len(bolded) == 1:
-                    context["translations_summary"] = bolded[0]
-                elif len(bolded) == 2:
-                    context["translations_summary"] = format_html(
-                        _("{first} and {second}"), first=bolded[0], second=bolded[1]
-                    )
-                elif len(bolded) > 2:
-                    context["translations_summary"] = format_html(
-                        _("{list}, and {last}"),
-                        list=mark_safe(format_html_join(", ", "{}", ((b,) for b in bolded[:-1]))),
-                        last=bolded[-1],
-                    )
-                context["translation_count"] = len(bolded)
-            return context
-
-        def build_context_menu(self, menu):
-            obj = self.get_object()
-
-            if (
-                self.has_org_perm("campaigns.campaignevent_update")
-                and obj.status != obj.STATUS_SCHEDULING
-                and not obj.campaign.is_archived
-            ):
-                menu.add_modax(
-                    _("Edit"),
-                    "event-update",
-                    reverse("campaigns.campaignevent_update", args=[obj.uuid]),
-                    title=_("Edit Event"),
-                    as_button=True,
-                )
-
-            if self.has_org_perm("campaigns.campaignevent_delete"):
-                menu.add_modax(
-                    _("Delete"),
-                    "event-delete",
-                    reverse("campaigns.campaignevent_delete", args=[obj.uuid]),
-                    title=_("Delete Event"),
-                )
 
     class Fires(BaseReadView):
         """
