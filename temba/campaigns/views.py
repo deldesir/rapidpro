@@ -657,6 +657,7 @@ class CampaignEventCRUDL(SmartCRUDL):
                         "url": reverse("contacts.contact_read", args=[f["contact"].uuid]),
                     },
                     "time": f["time"].isoformat(),
+                    "skipped": f["skipped"],
                 }
                 for f in self.object.get_recent_fires()
             ]
