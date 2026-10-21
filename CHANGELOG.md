@@ -1,3 +1,12 @@
+## v26.3.152 (2026-10-21)
+ * Treat WhatsApp templates without components as unsupported rather than failing the sync
+ * Remove the old campaign event read page, now replaced by the campaign page's event modal
+ * Show contacts a campaign point was skipped for in its recent fires
+ * Render campaign_skipped events in contact history
+ * Keep an article's notes in a margin beside it in the editor, shown only while it has notes, with a wider dialog, where notes can be added and removed
+ * Let a request in development have its OpenAI, Twilio and Vonage calls answered by a fake
+ * Leave // and /* */ comments out of rendered articles and their plain text
+
 ## v26.3.151 (2026-10-20)
  * Track comment counts on articles and show them on the helpdesk list, filterable to articles with comments
  * Show how many comments each section's articles have in its summary
