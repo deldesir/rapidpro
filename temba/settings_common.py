@@ -240,7 +240,12 @@ MIDDLEWARE = (
     "temba.middleware.TimezoneMiddleware",
     "temba.middleware.ToastMiddleware",
     "allauth.account.middleware.AccountMiddleware",
+    "temba.utils.fakes.ProviderFakeMiddleware",
 )
+
+# whether a request can have its calls to outside providers answered by a fake (see temba.utils.fakes) - only ever
+# for development
+PROVIDER_FAKES = False
 
 # paths which are reached by network address rather than by one of the app's domains, and so would otherwise be
 # rejected by the ALLOWED_HOSTS check - a load balancer health checking an instance is the case that matters. For
@@ -840,6 +845,7 @@ CHANNEL_TYPES = [
     "temba.channels.types.arabiacell.ArabiaCellType",
     "temba.channels.types.bandwidth.BandwidthType",
     "temba.channels.types.burstsms.BurstSMSType",
+    "temba.channels.types.chip.ChipType",
     "temba.channels.types.clickatell.ClickatellType",
     "temba.channels.types.clickmobile.ClickMobileType",
     "temba.channels.types.clicksend.ClickSendType",
@@ -891,7 +897,6 @@ CHANNEL_TYPES = [
     "temba.channels.types.vk.VKType",
     "temba.channels.types.vonage.VonageType",
     "temba.channels.types.wavy.WavyType",
-    "temba.channels.types.webchat.WebChatType",
     "temba.channels.types.wechat.WeChatType",
     "temba.channels.types.wuzapi.type.WuzapiType",
     "temba.channels.types.whatsapp.WhatsAppType",

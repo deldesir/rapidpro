@@ -1,7 +1,6 @@
 {
   "name": "rapidpro",
   "repository": "git@github.com:nyaruka/temba.git",
-  "license": "AGPL-3.0",
   "scripts": {
     "tw-build": "postcss static/scss/tailwind.scss -o static/css/tailwind.css",
     "tw-watch": "watch 'bun run tw-build' ./static/scss"

@@ -139,3 +139,39 @@ class KeepArticleHtmlAddresslessTest(MigrationTest):
         # a draft isn't rendered
         draft = Article.objects.get(id=self.draft.id)
         self.assertEqual("", draft.body_html)
+
+
+class BackfillArticleInfoTest(MigrationTest):
+    app = "knowledge"
+    migrate_from = "0012_article_info"
+    migrate_to = "0013_backfill_article_info"
+
+    def setUpBeforeMigration(self, apps):
+        KnowledgeSource = apps.get_model("knowledge", "KnowledgeSource")
+        Article = apps.get_model("knowledge", "Article")
+
+        helpdesk = KnowledgeSource.objects.get(org_id=self.org.id, source_type="helpdesk")
+
+        def create_article(title, body):
+            return Article.objects.create(
+                source=helpdesk,
+                title=title,
+                slug=title.lower(),
+                body=body,
+                created_by_id=self.admin.id,
+                modified_by_id=self.admin.id,
+            )
+
+        self.noted = create_article("Noted", "Text\n\n/* check this */\n\n/* and this */")
+        self.plain = create_article("Plain", "Text")
+        self.modified_on = self.noted.modified_on
+
+    def test_migration(self):
+        Article = self.apps.get_model("knowledge", "Article")
+
+        # every article gets its info, without looking any more recently modified
+        noted = Article.objects.get(id=self.noted.id)
+        self.assertEqual({"comments": 2}, noted.info)
+        self.assertEqual(self.modified_on, noted.modified_on)
+
+        self.assertEqual({"comments": 0}, Article.objects.get(id=self.plain.id).info)

@@ -18,7 +18,9 @@ import markdown
 import nh3
 from markdown.extensions import Extension
 from markdown.extensions.toc import TocExtension, slugify_unicode
+from markdown.preprocessors import Preprocessor
 from markdown.treeprocessors import Treeprocessor
+from markdown.util import HTML_PLACEHOLDER_RE
 from pgvector.django import HnswIndex, VectorField
 
 from django.conf import settings
@@ -465,6 +467,73 @@ def _sanitize_attribute(element: str, attribute: str, value: str) -> str | None:
     return value
 
 
+# An article can carry notes for its authors - what to check, what's still to do - as comments in its markdown, which
+# are never shown or indexed: from a /* that starts a line to the next */, which can be lines later. Only at the start
+# of a line, so a /* in a sentence is just text. A /* that's never closed isn't a comment, so a stray one can't swallow
+# the rest of an article.
+BLOCK_COMMENT = re.compile(r"^\s*/\*")
+
+
+def strip_comments(lines: list[str]) -> list[str]:
+    """
+    The lines of markdown less its comments. A comment takes the lines it fills with it, and what follows the */ that
+    closes one stays on its line.
+    """
+    return split_comments(lines)[0]
+
+
+def split_comments(lines: list[str]) -> tuple[list[str], int]:
+    """
+    The lines of markdown less its comments (see strip_comments), and how many comments it had.
+    """
+    kept = []
+    count = 0
+    unclosed = False  # once a /* has no */ after it, no later one can either
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        i += 1
+
+        if not unclosed and BLOCK_COMMENT.match(line):
+            rest = line[line.index("/*") + 2 :]
+            j = i
+            while "*/" not in rest and j < len(lines):
+                rest = lines[j]
+                j += 1
+
+            if "*/" in rest:
+                after = rest[rest.index("*/") + 2 :]
+                if after.strip():
+                    kept.append(after)
+                count += 1
+                i = j
+                continue
+            unclosed = True
+
+        kept.append(line)
+
+    return kept, count
+
+
+class StripComments(Extension):
+    """
+    Leaves comments out of what's rendered. Runs once fenced code has been stashed away, so the renderer itself has
+    decided what's code, and a /* or */ in code is never taken for a comment.
+    """
+
+    def extendMarkdown(self, md):
+        md.preprocessors.register(StripCommentsProcessor(md), "strip_comments", 24)
+
+
+class StripCommentsProcessor(Preprocessor):
+    count = 0  # how many comments the last run left out
+
+    def run(self, lines):
+        lines, self.count = split_comments(lines)
+        return lines
+
+
 def render_markdown(body: str, links: dict = None) -> tuple[str, list[Heading]]:
     """
     Renders authored markdown. Given a map of article uuid to address it's rendered for a page, with links to other
@@ -475,6 +544,8 @@ def render_markdown(body: str, links: dict = None) -> tuple[str, list[Heading]]:
     of our own quick reply syntax, say) survives instead of being quietly swallowed. Sanitizing stays as defense in
     depth, and still deals with the javascript: URLs markdown will happily make a link out of.
 
+    Comments are left out, as notes for the article's authors rather than part of it (see StripComments).
+
     Every heading gets an id made from its text, so a page can link to it, and the top level ones come back
     alongside the HTML in the order they appear, for the page to list them.
     """
@@ -482,6 +553,7 @@ def render_markdown(body: str, links: dict = None) -> tuple[str, list[Heading]]:
         extensions=[
             *MARKDOWN_EXTENSIONS,
             EscapeRawHTML(),
+            StripComments(),
             AnnotateImages(resolve=links is not None),
             CellBreaks(),
             ColumnStyles(),
@@ -505,7 +577,7 @@ def render_markdown(body: str, links: dict = None) -> tuple[str, list[Heading]]:
 # what to strip from markdown to read an article as plain text - for excerpts and search snippets, where the markup
 # would only get in the way. Order matters: images before links, since an image is a link with a bang in front.
 PLAIN_TEXT_RULES = (
-    (re.compile(r"```.*?```", re.DOTALL), " "),  # fenced code
+    (HTML_PLACEHOLDER_RE, " "),  # fenced code, which the markdown preprocessors stashed
     (re.compile(r"!\[[^\]]*\]\([^)]*\)"), " "),  # images
     (re.compile(r"\[([^\]]*)\]\([^)]*\)"), r"\1"),  # links keep their text
     (re.compile(r"^\s{0,3}#{1,6}\s+", re.MULTILINE), ""),  # heading markers
@@ -520,14 +592,37 @@ PLAIN_TEXT_RULES = (
 )
 
 
+def preprocess(body: str) -> tuple[list[str], markdown.Markdown]:
+    """
+    Runs authored markdown through the preprocessors, which stash fenced code away and leave comments out, returning
+    its lines and the instance that ran them, whose processors hold what they found.
+    """
+    md = markdown.Markdown(extensions=["fenced_code", EscapeRawHTML(), StripComments()])
+    lines = body.split("\n")
+    for preprocessor in md.preprocessors:
+        lines = preprocessor.run(lines)
+    return lines, md
+
+
 def to_plain_text(body: str) -> str:
     """
     Reads authored markdown as plain text - what an excerpt or a search snippet shows of an article.
     """
-    text = body
+    lines, _ = preprocess(body)
+
+    text = "\n".join(lines)
     for pattern, replacement in PLAIN_TEXT_RULES:
         text = pattern.sub(replacement, text)
     return text.strip()
+
+
+def inspect_body(body: str) -> dict:
+    """
+    What there is to know about authored markdown without reading it, for an article's info: how many comments it
+    has, outside its code.
+    """
+    _, md = preprocess(body)
+    return {"comments": md.preprocessors["strip_comments"].count}
 
 
 def make_snippet(text: str, terms: list, *, length: int = 200) -> str:
@@ -853,6 +948,9 @@ class Article(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     body_html = models.TextField(default="")
     headings = models.JSONField(default=list)  # the top level headings, as [{"id": ..., "text": ...}]
 
+    # information from article inspection, kept with the body whenever it's saved (see inspect_body)
+    info = models.JSONField(default=dict)
+
     # ISO-639-3, so a helpdesk can hold articles in several languages. Translations aren't linked to each other yet -
     # retrieval doesn't need them, as multilingual-e5 embeds cross-lingually, and linking is a question for the
     # eventual public site rather than for search.
@@ -1010,10 +1108,18 @@ class Article(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
         self.headings = [h._asdict() for h in headings]
 
     def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+
+        # the info is of the body, so it follows the body whenever that's saved
+        if update_fields is None or "body" in update_fields:
+            self.info = inspect_body(self.body)
+            if update_fields:
+                update_fields = kwargs["update_fields"] = (*update_fields, "info")
+
         # a published article is served from its rendered HTML, so that follows the body whenever one is saved
         if self.status == self.STATUS_PUBLISHED:
             self.prerender()
-            if update_fields := kwargs.get("update_fields"):
+            if update_fields:
                 kwargs["update_fields"] = (*update_fields, "body_html", "headings")
 
         super().save(*args, **kwargs)
@@ -1460,9 +1566,9 @@ class HelpSite(CreatedByMixin, ModifiedByMixin):
         """
         The org's WebChat channels - the ones a site can embed the chat widget of.
         """
-        from temba.channels.types.webchat import WebChatType
+        from temba.channels.types.chip import ChipType
 
-        return org.channels.filter(channel_type=WebChatType.code, is_active=True).order_by("name")
+        return org.channels.filter(channel_type=ChipType.code, is_active=True).order_by("name")
 
     @property
     def chat_channel(self):

@@ -18,7 +18,9 @@ from temba.knowledge.models import (
     _sanitize_attribute,
     derive_color_styles,
     get_article_image_path,
+    inspect_body,
     parse_column_style,
+    strip_comments,
 )
 from temba.mailroom.client.exceptions import RequestException
 from temba.tests import MockJsonResponse, TembaTest, cleanup, mock_mailroom
@@ -574,6 +576,102 @@ class ArticleTest(TembaTest):
                 article.as_html(),
                 f"for fragment {fragment}",
             )
+
+    def test_strip_comments(self):
+        cases = (
+            # a block comment can be on one line or span several, and takes the lines it fills
+            ("One\n\n/* a note */\n\nTwo", "One\n\n\nTwo"),
+            ("One\n\n/* a note\nover lines\n*/\n\nTwo", "One\n\n\nTwo"),
+            ("  /* a note */\nTwo", "Two"),
+            # what follows the */ that closes one stays
+            ("/* a note */ Two", " Two"),
+            ("/* a\nnote */ Two\nThree", " Two\nThree"),
+            # only at the start of a line - a /* in a sentence is text
+            ("Use a/* glob */ here", "Use a/* glob */ here"),
+            ("Tap **/start** to begin", "Tap **/start** to begin"),
+            # and // isn't a comment at all
+            ("One\n// not a note\nTwo", "One\n// not a note\nTwo"),
+            # a /* that's never closed isn't a comment
+            ("/* never closed\nTwo", "/* never closed\nTwo"),
+            # whatever the indent, so a note in a list item is still one
+            ("Text\n    /* note */", "Text"),
+            ("- item\n\n    /* note */\n\n- two", "- item\n\n\n- two"),
+            ("", ""),
+        )
+        for body, expected in cases:
+            self.assertEqual(expected, "\n".join(strip_comments(body.split("\n"))), f"for {body!r}")
+
+    def test_as_html_comments(self):
+        article = self.create_article(self.helpdesk, "Notes")
+        article.body = (
+            "# Shown\n\nText.\n\n/* check the screenshot\n# Hidden\n*/\n\n/* and this */\n\nMore `// code` text."
+        )
+
+        # comments are never shown - nor are any headings in them listed - and their plain text leaves them out too
+        html, headings = article.render()
+        self.assertEqual('<h1 id="shown">Shown</h1>\n<p>Text.</p>\n<p>More <code>// code</code> text.</p>', html)
+        self.assertEqual(["Shown"], [h.text for h in headings])
+        self.assertEqual("Shown Text. More // code text.", article.as_plain_text())
+
+        # code is whatever the renderer takes for code, so a /* or */ in it is never part of a comment
+        cases = (
+            ("```\n/* code */\n```\n/* note */", "<pre><code>/* code */\n</code></pre>", ""),
+            (
+                "~~~js\n/* code */\n~~~\n\nText",
+                "<pre><code>/* code */\n</code></pre>\n<p>Text</p>",
+                "Text",
+            ),
+            (
+                "/* never closed\n\nText\n\n```\nx = 1 */\n```",
+                "<p>/* never closed</p>\n<p>Text</p>\n<pre><code>x = 1 */\n</code></pre>",
+                "/ never closed Text",
+            ),
+            # an unclosed fence isn't code, so a comment after it is still one
+            ("```\nunclosed\n\n/* note */\n\nText", "<p>```\nunclosed</p>\n<p>Text</p>", "unclosed Text"),
+        )
+        for body, expected_html, expected_text in cases:
+            article.body = body
+            self.assertEqual(expected_html, article.render()[0], f"for {body!r}")
+            self.assertEqual(expected_text, article.as_plain_text(), f"for {body!r}")
+
+    def test_info(self):
+        # an article's info counts its comments, as whatever the renderer would leave out, so none in code
+        cases = (
+            ("", 0),
+            ("Text", 0),
+            ("One\n\n/* a note */\n\nTwo\n\n/* and\nanother */", 2),
+            ("/* a */ /* b */", 1),  # what follows a */ is text, even what looks like another comment
+            ("Use a/* glob */ here", 0),
+            ("/* never closed\nText", 0),
+            ("```\n/* code */\n```\n/* note */", 1),
+        )
+        for body, expected in cases:
+            self.assertEqual({"comments": expected}, inspect_body(body), f"for {body!r}")
+
+        # it follows the body whenever that's saved
+        article = self.create_article(self.helpdesk, "Notes")
+        self.assertEqual({"comments": 0}, article.info)
+
+        article.body = "Text\n\n/* check this */"
+        article.save(update_fields=("body",))
+        article.refresh_from_db()
+        self.assertEqual({"comments": 1}, article.info)
+
+        # published too, alongside the HTML
+        article.publish(self.admin)
+        article.body = "Text\n\n/* check this */\n\n/* and this */"
+        article.save(update_fields=("body", "modified_on"))
+        article.refresh_from_db()
+        self.assertEqual({"comments": 2}, article.info)
+        self.assertEqual("<p>Text</p>", article.body_html)
+
+        # and a save without the body leaves it be
+        Article.objects.filter(id=article.id).update(info={})
+        article.refresh_from_db()
+        article.title = "Notes 2"
+        article.save(update_fields=("title",))
+        article.refresh_from_db()
+        self.assertEqual({}, article.info)
 
     def test_render_headings(self):
         article = self.create_article(self.helpdesk, "Getting Started")

@@ -356,6 +356,8 @@ export interface Article {
   status: string;
   parent: string | null;
   depth: number;
+  /** what the server found inspecting it - how many comments its body has */
+  info?: { comments?: number };
   modified_on: string;
 }
 
@@ -576,5 +578,8 @@ export enum CustomEventType {
    * Fired by lists so the host SPA can persist the state into the
    * browser's history entry (typically via `history.replaceState`).
    * Detail: `{ key: string, state: object }`. */
-  HistoryChange = 'temba-history-change'
+  HistoryChange = 'temba-history-change',
+  /** The markdown editor's notes margin opened or closed, so whatever
+   * holds it can make room. Detail: `{ margin: boolean }`. */
+  NotesChanged = 'temba-notes-changed'
 }

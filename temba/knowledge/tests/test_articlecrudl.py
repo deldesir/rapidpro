@@ -52,6 +52,10 @@ class ArticleCRUDLTest(TembaTest, CRUDLTestMixin):
         # deleting rides the editor dialog's gutter, pointed at whichever article is opened
         self.assertContains(response, 'slot="gutter"')
 
+        # the editor dialog widens for the margin of notes the editor opens when an article has any
+        self.assertContains(response, 'width="min(782px, 92vw)"')
+        self.assertContains(response, "temba-notes-changed")
+
         # the menu makes sections; articles are added from their section's card, which the page points at the create
         # view for
         self.assertContentMenu(list_url, self.admin, ["New Section", "Site Settings"])
@@ -247,6 +251,9 @@ class ArticleCRUDLTest(TembaTest, CRUDLTestMixin):
         # the editor is pointed at this article for uploads, and fills the dialog rather than growing it
         self.assertContains(response, reverse("knowledge.article_upload", args=[article.uuid]))
         self.assertContains(response, "fill")
+
+        # and keeps the article's notes in its margin
+        self.assertRegex(response.content.decode(), r"<temba-markdown-edit[^>]*\snotes[\s>]")
 
         # the editor is pointed at the other articles so links to them can be picked by title
         self.assertContains(response, f'articles-endpoint="{reverse("api.internal.articles")}.json"')

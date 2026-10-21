@@ -204,3 +204,30 @@ class ReleaseChipChannelsTest(MigrationTest):
 
         self.assertIsNotNone(self.chip_incident.ended_on)
         self.assertIsNone(self.fba_incident.ended_on)
+
+
+class RenameWebChatTypeCodeTest(MigrationTest):
+    app = "channels"
+    migrate_from = "0217_audit_fields_cleanup"
+    migrate_to = "0218_rename_webchat_type_code"
+
+    def setUpBeforeMigration(self, apps):
+        # the old code no longer exists as a type so this channel has to be created directly
+        self.webchat = Channel.objects.create(
+            org=self.org,
+            channel_type="WCH",
+            name="Web Chat",
+            config={},
+            role=Channel.DEFAULT_ROLE,
+            schemes=[URN.WEBCHAT_SCHEME],
+            created_by=self.admin,
+            modified_by=self.admin,
+        )
+        self.fba = self.create_channel("FBA", "Facebook", "1234")
+
+    def test_migration(self):
+        self.webchat.refresh_from_db()
+        self.fba.refresh_from_db()
+
+        self.assertEqual("CHP", self.webchat.channel_type)
+        self.assertEqual("FBA", self.fba.channel_type)

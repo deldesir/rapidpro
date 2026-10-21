@@ -226,7 +226,7 @@ class ChannelCRUDLTest(TembaTest, CRUDLTestMixin):
         )
 
         # but not types whose channels don't have logs
-        webchat_channel = self.create_channel("WCH", "WebChat", "123")
+        webchat_channel = self.create_channel("CHP", "WebChat", "123")
         self.assertContentMenu(
             reverse("channels.channel_read", args=[webchat_channel.uuid]),
             self.admin,
@@ -275,7 +275,7 @@ class ChannelCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual(logs[0].uuid, response.context["logs"][-1].uuid)
 
         # channels of types that don't have logs return a 404
-        webchat_channel = self.create_channel("WCH", "WebChat", "123")
+        webchat_channel = self.create_channel("CHP", "WebChat", "123")
         self.login(self.admin)
         response = self.client.get(reverse("channels.channel_logs_list", args=[webchat_channel.uuid]))
         self.assertEqual(404, response.status_code)
@@ -304,7 +304,7 @@ class ChannelCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertContains(response, "GET https://foo.bar/send1")
 
         # channels of types that don't have logs return a 404
-        webchat_channel = self.create_channel("WCH", "WebChat", "123")
+        webchat_channel = self.create_channel("CHP", "WebChat", "123")
         self.login(self.admin)
         response = self.client.get(reverse("channels.channel_logs_read", args=[webchat_channel.uuid, "log", log1.uuid]))
         self.assertEqual(404, response.status_code)

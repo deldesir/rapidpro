@@ -155,6 +155,13 @@
       document.querySelector('#delete-article').endpoint = `/article/delete/${uuid}/`;
 
       var modax = document.querySelector('#update-article');
+      if (!modax.sizesForNotes) {
+        // the editor opens a margin beside the article for its notes when it has any, which the dialog makes room for
+        modax.addEventListener('temba-notes-changed', function(event) {
+          modax.width = event.detail.margin ? 'min(1050px, 92vw)' : 'min(782px, 92vw)';
+        });
+        modax.sizesForNotes = true;
+      }
       modax.endpoint = `/article/update/${uuid}/`;
       modax.open = true;
     }

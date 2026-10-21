@@ -1,3 +1,40 @@
+## v26.3.152 (2026-10-21)
+ * Treat WhatsApp templates without components as unsupported rather than failing the sync
+ * Remove the old campaign event read page, now replaced by the campaign page's event modal
+ * Show contacts a campaign point was skipped for in its recent fires
+ * Render campaign_skipped events in contact history
+ * Keep an article's notes in a margin beside it in the editor, shown only while it has notes, with a wider dialog, where notes can be added and removed
+ * Let a request in development have its OpenAI, Twilio and Vonage calls answered by a fake
+ * Leave // and /* */ comments out of rendered articles and their plain text
+
+## v26.3.151 (2026-10-20)
+ * Track comment counts on articles and show them on the helpdesk list, filterable to articles with comments
+ * Show how many comments each section's articles have in its summary
+ * Wait for broadcasts to be heard in realtime workspace access tests
+
+## v26.3.150 (2026-10-20)
+ * Show an article's notes in a margin beside it in the editor
+ * Leave /* */ comments out of rendered articles and their plain text
+ * Restrict closed ticket triggers to background flows
+ * Prefix contact field keys in exports so they can't collide with attribute keys
+ * Report delivered and read statuses from the webchat widget, keeping each chat's acks separate and limited to what the page has shown
+ * Bump aiohttp to 3.14.4
+
+## v26.3.149 (2026-10-19)
+ * Rename the WebChat channel type's code to CHP and its module to chip
+ * Only reuse a failed send's external id on the chat it failed on
+ * Render channel configuration templates with the request
+ * Point the webchat widget at the webchat service
+
+## v26.3.148 (2026-10-19)
+ * Add a partial index for finding inactive open tickets by last activity
+ * Render an overridable workspace alerts include on every page
+ * Add an unpublicized API endpoint for helpdesk articles
+
+## v26.3.147 (2026-10-19)
+ * Use the product fonts throughout the flow editor
+ * Rename existing flows which have reserved names
+
 ## v26.3.146 (2026-10-15)
  * Use the website language setting for component locale and language names
  * Simplify the auto translation dialog copy

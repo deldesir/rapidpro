@@ -8,6 +8,8 @@ import pycountry
 import regex
 from rest_framework import serializers
 
+from django.utils import timezone
+
 from temba import mailroom
 from temba.archives.models import Archive
 from temba.campaigns.models import Campaign, CampaignEvent
@@ -15,6 +17,7 @@ from temba.channels.models import Channel, ChannelEvent
 from temba.contacts.models import URN, Contact, ContactField, ContactGroup, ContactNote, ContactURN
 from temba.flows.models import Flow, FlowRun, FlowStart
 from temba.globals.models import Global
+from temba.knowledge.models import Article
 from temba.locations.models import AdminBoundary
 from temba.mailroom import modifiers
 from temba.mailroom.client.types import Exclusions
@@ -154,6 +157,138 @@ class ArchiveReadSerializer(ReadSerializer):
     class Meta:
         model = Archive
         fields = ("type", "start_date", "period", "record_count", "size", "hash", "download_url", "archive_type")
+
+
+class ArticleReadSerializer(ReadSerializer):
+    STATUSES = {Article.STATUS_DRAFT: "draft", Article.STATUS_PUBLISHED: "published"}
+
+    section = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+    created_on = serializers.DateTimeField(default_timezone=tzone.utc)
+    modified_on = serializers.DateTimeField(default_timezone=tzone.utc)
+    published_on = serializers.DateTimeField(default_timezone=tzone.utc)
+
+    def get_section(self, obj):
+        return {"uuid": str(obj.parent.uuid), "title": obj.parent.title} if obj.parent else None
+
+    def get_status(self, obj):
+        return self.STATUSES[obj.status]
+
+    class Meta:
+        model = Article
+        fields = (
+            "uuid",
+            "title",
+            "slug",
+            "section",
+            "description",
+            "body",
+            "language",
+            "status",
+            "created_on",
+            "modified_on",
+            "published_on",
+        )
+
+
+class ArticleWriteSerializer(WriteSerializer):
+    """
+    Writes a section, or - given a section - an article filed under it. As in the editor, a section is described and
+    an article written, and which one is which is fixed when it's created.
+    """
+
+    STATUSES = {v: k for k, v in ArticleReadSerializer.STATUSES.items()}
+
+    title = serializers.CharField(required=False, max_length=Article.MAX_TITLE_LEN)
+    section = serializers.UUIDField(required=False)
+    description = serializers.CharField(required=False, allow_blank=True, max_length=Article.MAX_DESCRIPTION_LEN)
+    body = serializers.CharField(
+        required=False, allow_blank=True, trim_whitespace=False, max_length=Article.MAX_BODY_LEN
+    )
+    language = fields.LanguageField(required=False)
+    status = serializers.ChoiceField(required=False, choices=list(STATUSES.keys()))
+
+    def validate_section(self, value):
+        section = self.context["helpdesk"].articles.filter(uuid=value, parent=None, is_active=True).first()
+        if not section:
+            raise serializers.ValidationError("No such section.")
+        return section
+
+    def validate_status(self, value):
+        return self.STATUSES[value]
+
+    def validate(self, data):
+        instance = self.instance
+
+        if instance:
+            if "section" in data and instance.is_section:
+                raise serializers.ValidationError({"section": "A section can't be moved into another section."})
+            is_section = instance.is_section
+        else:
+            if "title" not in data:
+                raise serializers.ValidationError({"title": "This field is required."})
+
+            if self.context["helpdesk"].articles.filter(is_active=True).count() >= Article.MAX_ARTICLES:
+                raise serializers.ValidationError(f"Helpdesk can't have more than {Article.MAX_ARTICLES} articles.")
+            is_section = "section" not in data
+
+        if is_section and data.get("body"):
+            raise serializers.ValidationError({"body": "A section has a description rather than a body."})
+        if not is_section and data.get("description"):
+            raise serializers.ValidationError({"description": "An article has a body rather than a description."})
+
+        return data
+
+    def save(self):
+        user = self.context["user"]
+        helpdesk = self.context["helpdesk"]
+        status = self.validated_data.get("status")
+
+        if self.instance:
+            article = self.instance
+            was_published = article.status == Article.STATUS_PUBLISHED
+
+            for field in ("title", "description", "body", "language"):
+                if field in self.validated_data:
+                    setattr(article, field, self.validated_data[field])
+
+            # the slug follows the title, as it does in the editor
+            article.slug = Article.get_unique_slug(helpdesk, article.title, ignore=article)
+
+            # an article moved into another section goes to the end of it, as a new one would
+            if (section := self.validated_data.get("section")) and section.id != article.parent_id:
+                last = helpdesk.articles.filter(parent=section, is_active=True).order_by("-sort_order").first()
+                article.parent = section
+                article.sort_order = (last.sort_order + 1) if last else 0
+
+            # a change of status rides the same save, since saving a published article renders its body
+            if status == Article.STATUS_PUBLISHED and not was_published:
+                article.status, article.published_on = Article.STATUS_PUBLISHED, timezone.now()
+            elif status == Article.STATUS_DRAFT and was_published:
+                article.status, article.published_on = Article.STATUS_DRAFT, None
+
+            article.modified_by = user
+            article.save()
+        else:
+            was_published = False
+            article = Article.create(
+                helpdesk,
+                user,
+                self.validated_data["title"],
+                body=self.validated_data.get("body", ""),
+                description=self.validated_data.get("description", ""),
+                parent=self.validated_data.get("section"),
+                language=self.validated_data.get("language"),
+            )
+
+            if status == Article.STATUS_PUBLISHED:
+                article.publish(user)
+
+        # a draft isn't indexed, so only changes to what is or was published need to be
+        if was_published or article.status == Article.STATUS_PUBLISHED:
+            helpdesk.request_indexing()
+
+        return article
 
 
 class BroadcastReadSerializer(ReadSerializer):

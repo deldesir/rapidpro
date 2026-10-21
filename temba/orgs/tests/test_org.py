@@ -264,6 +264,26 @@ class OrgTest(TembaTest):
         self.assertContains(response, f'org="{self.org.uuid}"')
         self.assertContains(response, f'user="{self.admin.uuid}"')
 
+    def test_frame_alerts(self):
+        inbox_url = reverse("msgs.msg_inbox")
+
+        self.login(self.admin)
+
+        # alerts include is rendered for full page and SPA content loads even with nothing to show
+        for headers in ({}, {"HTTP_X_TEMBA_SPA": 1}):
+            response = self.client.get(inbox_url, **headers)
+            self.assertTemplateUsed(response, "org_alerts_include.html")
+            self.assertTemplateNotUsed(response, "org_suspended_include.html")
+            self.assertNotContains(response, "<temba-alert")
+
+        self.org.suspend()
+
+        for headers in ({}, {"HTTP_X_TEMBA_SPA": 1}):
+            response = self.client.get(inbox_url, **headers)
+            self.assertTemplateUsed(response, "org_alerts_include.html")
+            self.assertTemplateUsed(response, "org_suspended_include.html")
+            self.assertContains(response, "Your workspace is suspended")
+
     def test_default_country(self):
         # if root location boundary is set and name is valid country, that has priority
         self.org.root_location = AdminBoundary.create(osm_id="171496", name="Ecuador", level=0)

@@ -17,7 +17,7 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.http import Http404, HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
-from django.template import Context, Engine, TemplateDoesNotExist
+from django.template import Engine, RequestContext, TemplateDoesNotExist
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.functional import cached_property
@@ -796,7 +796,7 @@ class ChannelCRUDL(SmartCRUDL):
                 return (
                     Engine.get_default()
                     .get_template("channels/types/%s/config.html" % channel.type.slug)
-                    .render(context=Context(channel.type.get_config_ui_context(channel)))
+                    .render(context=RequestContext(self.request, channel.type.get_config_ui_context(channel)))
                 )
             except TemplateDoesNotExist:
                 return None
