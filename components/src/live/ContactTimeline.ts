@@ -641,7 +641,7 @@ export class ContactTimeline extends EndpointMonitorElement {
   }
 
   // clicking a campaign or flow pill navigates to that entity's read page
-  // instead of bubbling up to the row's event-read navigation
+  // instead of bubbling up to the row's own selection
   public handlePillClicked(e: Event, ref: ObjectReference) {
     e.stopPropagation();
     this.fireCustomEvent(CustomEventType.Selection, ref);

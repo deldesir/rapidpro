@@ -691,8 +691,7 @@ export class CampaignEvents extends EndpointMonitorElement {
     return !!this.data?.can_delete;
   }
 
-  // in place of an event read page, clicking an event opens its detail
-  // modal, which also loads who the event recently fired for
+  // the detail modal also loads who the event recently fired for
   public handleEventClicked(event: CampaignScheduleEvent) {
     this.detailEvent = event;
     this.loadFires(event);
@@ -829,7 +828,6 @@ export class CampaignEvents extends EndpointMonitorElement {
             >`
           : html``;
 
-    // in place of an event read page, opening a row shows its detail modal
     return html`
       <div
         class="event clickable"

@@ -748,7 +748,7 @@ class Contact(LegacyIDMixin, LegacyUUIDMixin, CreatedByMixin, ModifiedByMixin, S
                         **campaign.as_export_ref(),
                         "url": reverse("campaigns.campaign_read", args=[campaign.uuid]),
                     },
-                    "url": reverse("campaigns.campaignevent_read", args=[campaign.uuid, event.uuid]),
+                    "url": reverse("campaigns.campaign_read", args=[campaign.uuid]),
                 }
                 if event.event_type == CampaignEvent.TYPE_FLOW:
                     obj["flow"] = {

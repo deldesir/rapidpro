@@ -335,23 +335,6 @@ msgstr "Por defecto"
 msgid "This is a background flow. When it triggers, it will run it for all contacts without interruption."
 msgstr "Este es un flujo en segundo plano. Cuando se active, se ejecutará para todos los contactos sin interrupción."
 
-msgid "Event History"
-msgstr "Historia de Eventos"
-
-#, python-brace-format
-msgid "{first} and {second}"
-msgstr "{first} y {second}"
-
-#, python-brace-format
-msgid "{list}, and {last}"
-msgstr "{list} y {last}"
-
-msgid "Edit Event"
-msgstr "Editar Evento"
-
-msgid "Delete Event"
-msgstr "Eliminar Evento"
-
 msgid "POST Required"
 msgstr "POST requerido"
 
@@ -4418,31 +4401,14 @@ msgstr "Sin campañas"
 msgid "Group required"
 msgstr "Grupo obligatorio"
 
+msgid "Edit Event"
+msgstr "Editar Evento"
+
+msgid "Delete Event"
+msgstr "Eliminar Evento"
+
 msgid "You are about to delete this event. There is no way to undo this. Are you sure?"
 msgstr "Está a punto de eliminar este evento. No hay forma de deshacer esto. ¿Estás seguro?"
-
-msgid "This event is currently being scheduled and can't be edited again until that completes."
-msgstr "Este evento se está programando actualmente y no se puede volver a editar hasta que eso finalice."
-
-#, python-format
-msgid "<b>%(count)s</b> scheduled contacts"
-msgstr "<b>%(count)s</b> contactos programados"
-
-msgid "Send Message"
-msgstr "Enviar Mensaje"
-
-#, python-format
-msgid "Translation provided in %(langs)s"
-msgid_plural "Translations provided in %(langs)s"
-msgstr[0] "Traducción proporcionada en %(langs)s"
-msgstr[1] "Traducciones proporcionadas en %(langs)s"
-msgstr[2] "Traducciones proporcionadas en %(langs)s"
-
-msgid "Recent Contacts"
-msgstr "Contactos recientes"
-
-msgid "No recent contacts"
-msgstr "Sin contactos recientes"
 
 msgid "If the contact is already active in a flow"
 msgstr "Si el contacto ya está activo en un flujo"
@@ -6380,6 +6346,9 @@ msgstr "Si usa el correo electrónico, sabrá cómo leer y escribir mensajes en 
 #, python-format
 msgid "For example you might have %(name)s send a message every Friday reminding people in the <i>Field Staff</i> group to complete their weekly report. If anybody joins the <i>Field Staff</i> group later, they will automatically start receiving the weekly reminder."
 msgstr "Por ejemplo, puede hacer que %(name)s envíe un mensaje todos los viernes para recordar a las personas del grupo <i> Field Staff </i> que deben completar su informe semanal. Si alguien se une al grupo </i> del personal de campo <i> más tarde, automáticamente comenzará a recibir el recordatorio semanal."
+
+msgid "Send Message"
+msgstr "Enviar Mensaje"
 
 #, python-format
 msgid "%(name)s also offers a robust REST API to add SMS features to your own website. Have a look through the <a href=\"%(api_url)s\">API documentation</a> to learn more."

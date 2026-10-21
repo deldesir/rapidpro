@@ -321,23 +321,6 @@ msgstr ""
 msgid "This is a background flow. When it triggers, it will run it for all contacts without interruption."
 msgstr ""
 
-msgid "Event History"
-msgstr ""
-
-#, python-brace-format
-msgid "{first} and {second}"
-msgstr ""
-
-#, python-brace-format
-msgid "{list}, and {last}"
-msgstr ""
-
-msgid "Edit Event"
-msgstr ""
-
-msgid "Delete Event"
-msgstr ""
-
 msgid "POST Required"
 msgstr ""
 
@@ -4403,29 +4386,13 @@ msgstr ""
 msgid "Group required"
 msgstr ""
 
+msgid "Edit Event"
+msgstr ""
+
+msgid "Delete Event"
+msgstr ""
+
 msgid "You are about to delete this event. There is no way to undo this. Are you sure?"
-msgstr ""
-
-msgid "This event is currently being scheduled and can't be edited again until that completes."
-msgstr ""
-
-#, python-format
-msgid "<b>%(count)s</b> scheduled contacts"
-msgstr ""
-
-msgid "Send Message"
-msgstr ""
-
-#, python-format
-msgid "Translation provided in %(langs)s"
-msgid_plural "Translations provided in %(langs)s"
-msgstr[0] ""
-msgstr[1] ""
-
-msgid "Recent Contacts"
-msgstr ""
-
-msgid "No recent contacts"
 msgstr ""
 
 msgid "If the contact is already active in a flow"
@@ -6346,6 +6313,9 @@ msgstr ""
 
 #, python-format
 msgid "For example you might have %(name)s send a message every Friday reminding people in the <i>Field Staff</i> group to complete their weekly report. If anybody joins the <i>Field Staff</i> group later, they will automatically start receiving the weekly reminder."
+msgstr ""
+
+msgid "Send Message"
 msgstr ""
 
 #, python-format
