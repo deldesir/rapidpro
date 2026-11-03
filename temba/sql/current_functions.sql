@@ -434,7 +434,6 @@ BEGIN
     INSERT INTO flows_flowactivitycount("flow_id", "scope", "count", "is_squashed")
     SELECT s.flow_id, unnest(ARRAY[
             format('msgsin:hour:%s', extract(hour FROM NOW())),
-            format('msgsin:dow:%s', extract(isodow FROM NOW())),
             format('msgsin:date:%s', NOW()::date)
         ]), s.msgs, FALSE
     FROM (
@@ -511,30 +510,6 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION temba_ticket_countscope(_ticket tickets_ticket) RETURNS TEXT STABLE AS $$
 BEGIN
     RETURN format('tickets:%s:%s:%s', _ticket.status, _ticket.topic_id, COALESCE(_ticket.assignee_id, 0));
-END;
-$$ LANGUAGE plpgsql;
-
-----------------------------------------------------------------------
--- Trigger procedure to update contact ticket counts
-----------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION temba_ticket_on_change() RETURNS TRIGGER AS $$
-BEGIN
-  IF TG_OP = 'INSERT' THEN -- new ticket inserted
-    IF NEW.status = 'O' THEN
-      UPDATE contacts_contact SET ticket_count = ticket_count + 1, modified_on = NOW() WHERE id = NEW.contact_id;
-    END IF;
-  ELSIF TG_OP = 'UPDATE' THEN -- existing ticket updated
-    IF OLD.status = 'O' AND NEW.status = 'C' THEN -- ticket closed
-      UPDATE contacts_contact SET ticket_count = ticket_count - 1, modified_on = NOW() WHERE id = OLD.contact_id;
-    ELSIF OLD.status = 'C' AND NEW.status = 'O' THEN -- ticket reopened
-      UPDATE contacts_contact SET ticket_count = ticket_count + 1, modified_on = NOW() WHERE id = OLD.contact_id;
-    END IF;
-  ELSIF TG_OP = 'DELETE' THEN -- existing ticket deleted
-    IF OLD.status = 'O' THEN -- open ticket deleted
-      UPDATE contacts_contact SET ticket_count = ticket_count - 1, modified_on = NOW() WHERE id = OLD.contact_id;
-    END IF;
-  END IF;
-  RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
 

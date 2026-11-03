@@ -31,11 +31,10 @@ export const split_by_expression: NodeConfig = {
     operand: {
       type: 'text',
       label: 'Expression',
-      helpText: 'The expression to evaluate and split on',
       required: true,
       evaluated: true,
       maxLength: 10000,
-      placeholder: '@fields.age'
+      placeholder: 'e.g. @fields.age'
     },
     rules: createRulesArrayConfig(
       operatorsToSelectOptions(getWaitForResponseOperators()),

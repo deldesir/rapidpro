@@ -11,7 +11,7 @@ from django.http import HttpResponseRedirect, JsonResponse
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
-from temba.channels.views import ChannelTypeMixin
+from temba.channels.views import ChannelTypeMixin, UpdateChannelForm
 from temba.orgs.views.mixins import OrgObjPermsMixin, OrgPermsMixin
 from temba.utils.fields import InputWidget
 from temba.utils.text import truncate
@@ -28,6 +28,34 @@ WHATSAPP_GRAPH_API_BASE = "https://graph.facebook.com/v25.0"
 # whatsapp_business_management and whatsapp_business_messaging permissions are granted as
 # granular (per-WABA) scopes and so are not present in the token's top-level scopes list.
 REQUIRED_SCOPE = "business_management"
+
+# opts a channel into sending messages outside the customer service window as utility messages without a template
+CONFIG_DIRECT_SEND = "wa_direct_send"
+
+
+def add_direct_send_field(form: UpdateChannelForm):
+    """
+    Adds the Direct Send setting to the update form of a channel type which sends via the WhatsApp Cloud API
+    """
+    form.add_config_field(
+        CONFIG_DIRECT_SEND,
+        forms.BooleanField(
+            label=_("Direct Send"),
+            required=False,
+            help_text=_(
+                "Sends messages outside the customer service window as utility messages without a template, if Meta "
+                "has enabled Direct Send for the WhatsApp Business Account."
+            ),
+        ),
+        default=False,
+    )
+
+
+class UpdateForm(UpdateChannelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        add_direct_send_field(self)
 
 
 class ClaimView(ClaimViewMixin, SmartFormView):
@@ -188,7 +216,6 @@ class ClaimView(ClaimViewMixin, SmartFormView):
             name=name,
             address=phone_number_id,
             config=config,
-            tps=80,
         )
         self.remove_token_credentials_from_session()
         return super().form_valid(form)
@@ -334,7 +361,7 @@ class RequestCode(ChannelTypeMixin, OrgObjPermsMixin, SmartModelActionView, Smar
 class VerifyCode(ChannelTypeMixin, OrgObjPermsMixin, SmartModelActionView, SmartFormView):
     class Form(forms.Form):
         code = forms.CharField(
-            min_length=6, required=True, help_text=_("The 6-digits number verification code"), widget=InputWidget()
+            min_length=6, required=True, help_text=_("The 6-digit verification code."), widget=InputWidget()
         )
 
     slug_url_kwarg = "uuid"

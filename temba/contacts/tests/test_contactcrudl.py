@@ -452,9 +452,23 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
         self.assertContentMenu(read_url, self.editor, ["Start Flow", "Open Ticket"])
         self.assertContentMenu(read_url, self.admin, ["Start Flow", "Open Ticket"])
 
-        # if there's an open ticket already, don't show open ticket option
-        self.create_ticket(joe)
+        # a closed ticket doesn't stop another being opened
+        self.create_ticket(joe, closed_on=timezone.now())
+        self.assertContentMenu(read_url, self.editor, ["Start Flow", "Open Ticket"])
+
+        # but an open or pending one does
+        ticket = self.create_ticket(joe)
         self.assertContentMenu(read_url, self.editor, ["Start Flow"])
+
+        ticket.status = Ticket.STATUS_PENDING
+        ticket.save(update_fields=("status",))
+        self.assertContentMenu(read_url, self.editor, ["Start Flow"])
+
+        ticket.status = Ticket.STATUS_CLOSED
+        ticket.closed_on = timezone.now()
+        ticket.outcome = Ticket.OUTCOME_RESOLVED
+        ticket.save(update_fields=("status", "closed_on", "outcome"))
+        self.assertContentMenu(read_url, self.editor, ["Start Flow", "Open Ticket"])
 
         # login as admin
         self.login(self.admin)
@@ -1350,11 +1364,27 @@ class ContactCRUDLTest(CRUDLTestMixin, TembaTest):
         inactive.is_active = False
         inactive.save(update_fields=("is_active",))
 
+        # an event on a field whose value is so early that the event time isn't representable -> omitted
+        due = self.create_field("due", "Due On", value_type=ContactField.TYPE_DATETIME)
+        contact.fields[str(due.uuid)] = {"text": "0001-01-01", "datetime": "0001-01-01T00:00:00-06:36"}
+        contact.save(update_fields=("fields",))
+        CampaignEvent.create_message_event(
+            self.org,
+            self.admin,
+            campaign,
+            due,
+            -3,
+            unit="D",
+            translations={"eng": {"text": "Overflow"}},
+            base_language="eng",
+        )
+
         response = self.requestView(timeline_url, self.admin)
         future = response.json()["future"]
 
         # only the single visible event survives
         self.assertEqual(1, len(future))
+        self.assertEqual([], response.json()["past"])
         self.assertEqual(1, response.json()["future_count"])
         self.assertEqual(reverse("campaigns.campaign_read", args=[campaign.uuid]), future[0]["url"])
         self.assertEqual("Visible", future[0]["message"])

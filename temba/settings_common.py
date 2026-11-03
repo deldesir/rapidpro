@@ -223,6 +223,7 @@ FORM_RENDERER = "django.forms.renderers.TemplatesSetting"
 # far-future max-age and mustn't be gzipped again or marked uncacheable.
 MIDDLEWARE = (
     "temba.middleware.ProxiedRequestMiddleware",
+    "temba.middleware.IncompleteBodyMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.csp.ContentSecurityPolicyMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -233,6 +234,7 @@ MIDDLEWARE = (
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "temba.utils.audit.AuditMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "temba.middleware.OrgMiddleware",
     "temba.knowledge.middleware.HelpSiteMiddleware",
@@ -351,11 +353,20 @@ LOGGING = {
     # loggers created before this is applied stay enabled - gunicorn sets up its access and error loggers in the master
     # before the app loads in a worker, and disabling them silences its request log
     "disable_existing_loggers": False,
-    "formatters": {"verbose": {"format": "%(levelname)s %(asctime)s %(module)s %(message)s"}},
+    "formatters": {
+        "verbose": {"format": "%(levelname)s %(asctime)s %(module)s %(message)s"},
+        "audit": {"()": "temba.utils.audit.AuditFormatter"},
+    },
     "handlers": {
         "console": {"level": "DEBUG", "class": "logging.StreamHandler", "formatter": "verbose"},
+        "audit": {"level": "INFO", "class": "logging.StreamHandler", "formatter": "audit"},
     },
     "root": {"level": "INFO", "handlers": ["console"]},
+    "loggers": {
+        # audit entries are written as JSON for log collectors to parse - but not under test, where every fixture would
+        # add some
+        "temba.audit": {"level": "WARNING" if TESTING else "INFO", "handlers": ["audit"], "propagate": False},
+    },
 }
 
 # -----------------------------------------------------------------------------------
@@ -574,13 +585,8 @@ GROUP_PERMISSIONS = {
         "archives.archive.*",
         "campaigns.campaign.*",
         "campaigns.campaignevent.*",
-        "channels.channel_claim",
-        "channels.channel_configuration",
-        "channels.channel_create",
-        "channels.channel_delete",
         "channels.channel_list",
         "channels.channel_read",
-        "channels.channel_update",
         "channels.channelevent_list",
         "contacts.contact_chat",
         "contacts.contact_create",
@@ -798,6 +804,7 @@ CELERY_BEAT_SCHEDULE = {
     "trim-http-logs": {"task": "trim_http_logs", "schedule": crontab(hour=2, minute=0)},
     "trim-llm-counts": {"task": "trim_llm_counts", "schedule": crontab(hour=3, minute=0)},
     "trim-notifications": {"task": "trim_notifications", "schedule": crontab(hour=2, minute=0)},
+    "trim-tallies": {"task": "trim_tallies", "schedule": crontab(hour=3, minute=0)},
     "trim-webhook-events": {"task": "trim_webhook_events", "schedule": crontab(hour=3, minute=0)},
     "update-members-seen": {"task": "update_members_seen", "schedule": timedelta(seconds=30)},
     "update-tokens-used": {"task": "update_tokens_used", "schedule": timedelta(seconds=30)},

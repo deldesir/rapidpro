@@ -90,11 +90,12 @@ export const split_by_webhook: NodeConfig = {
       required: true,
       evaluated: true,
       maxLength: 8192,
-      placeholder: 'https://example.com/webhook'
+      placeholder: 'e.g. https://example.com/webhook'
     },
     headers: {
       type: 'key-value',
       sortable: true,
+      evaluated: true,
       keyPlaceholder: 'Header name',
       valuePlaceholder: 'Header value',
       maxItems: 100,

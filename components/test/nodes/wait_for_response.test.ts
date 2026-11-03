@@ -340,13 +340,17 @@ describe('wait_for_response node config', () => {
         operator: createOperatorOption('has_any_word'),
         value1: 'red',
         value2: '',
-        category: 'Red'
+        category: 'Red',
+        case_uuid: 'red-case',
+        category_uuid: 'red-cat'
       });
       expect(formData.rules[1]).to.deep.equal({
         operator: createOperatorOption('has_phrase'),
         value1: 'green',
         value2: '',
-        category: 'Green'
+        category: 'Green',
+        case_uuid: 'green-case',
+        category_uuid: 'green-cat'
       });
     });
 
@@ -566,6 +570,62 @@ describe('wait_for_response node config', () => {
 
       // Verify timeout configuration is preserved
       expect(result.router?.wait).to.exist;
+      expect(result.router?.wait?.timeout?.category_uuid).to.equal(
+        'timeout-cat'
+      );
+    });
+
+    it('gives No Response its own exit when it shared one with a user category', () => {
+      const formData = {
+        uuid: 'test-node',
+        result_name: 'response',
+        timeout_enabled: true,
+        timeout_duration: [{ value: '300', name: '5 minutes' }],
+        rules: [{ operator: 'has_text', value: 'yes', category: 'Positive' }]
+      };
+
+      const originalNode: Node = {
+        uuid: 'test-node',
+        actions: [],
+        router: {
+          type: 'switch',
+          wait: {
+            type: 'msg',
+            timeout: { category_uuid: 'timeout-cat', seconds: 300 }
+          },
+          categories: [
+            {
+              uuid: 'positive-cat',
+              name: 'Positive',
+              exit_uuid: 'shared-exit'
+            },
+            {
+              uuid: 'timeout-cat',
+              name: 'No Response',
+              exit_uuid: 'shared-exit'
+            }
+          ]
+        },
+        exits: [{ uuid: 'shared-exit', destination_uuid: 'node-x' }]
+      };
+
+      const result = wait_for_response.fromFormData!(formData, originalNode);
+
+      const exitUuids = result.exits.map((exit) => exit.uuid);
+      expect(new Set(exitUuids).size).to.equal(exitUuids.length);
+      expect(
+        result.router!.categories.map((cat) => cat.exit_uuid)
+      ).to.have.members(exitUuids);
+
+      const noResponse = result.router!.categories.find(
+        (cat) => cat.name === 'No Response'
+      )!;
+      expect(noResponse.uuid).to.equal('timeout-cat');
+      expect(noResponse.exit_uuid).to.not.equal('shared-exit');
+      expect(
+        result.exits.find((exit) => exit.uuid === noResponse.exit_uuid)!
+          .destination_uuid
+      ).to.equal('node-x');
       expect(result.router?.wait?.timeout?.category_uuid).to.equal(
         'timeout-cat'
       );
@@ -869,7 +929,7 @@ describe('wait_for_response node config', () => {
       expect(validation.errors).to.be.empty;
     });
 
-    it('preserves category UUIDs when names are updated', () => {
+    it('preserves UUIDs through the form when categories are renamed and moved', () => {
       // Create original node with specific UUIDs
       const originalNode: Node = {
         uuid: 'test-node',
@@ -916,23 +976,12 @@ describe('wait_for_response node config', () => {
         ]
       };
 
-      // Update category names but keep same rules in same order
-      const formData = {
-        uuid: 'test-node',
-        result_name: 'response',
-        rules: [
-          {
-            operator: { value: 'has_phrase', name: 'contains phrase' },
-            value1: 'yes',
-            category: 'New Name 1' // Changed from "Old Name 1"
-          },
-          {
-            operator: { value: 'has_phrase', name: 'contains phrase' },
-            value1: 'no',
-            category: 'New Name 2' // Changed from "Old Name 2"
-          }
-        ]
-      };
+      // Load the node into the form, rename both categories and swap the rules, as the editor would
+      const formData = wait_for_response.toFormData!(originalNode);
+      formData.rules = [
+        { ...formData.rules[1], category: 'New Name 2' },
+        { ...formData.rules[0], category: 'New Name 1' }
+      ];
 
       const result = wait_for_response.fromFormData!(formData, originalNode);
 
@@ -968,7 +1017,16 @@ describe('wait_for_response node config', () => {
       );
 
       expect(case1?.uuid).to.equal('case-1-uuid');
+      expect(case1?.arguments).to.deep.equal(['yes']);
       expect(case2?.uuid).to.equal('case-2-uuid');
+      expect(case2?.arguments).to.deep.equal(['no']);
+
+      // the new rule order is kept
+      expect(result.router!.categories.map((cat) => cat.name)).to.deep.equal([
+        'New Name 2',
+        'New Name 1',
+        'Other'
+      ]);
 
       // Verify exits are preserved
       expect(result.exits).to.have.length(3);

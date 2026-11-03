@@ -21,13 +21,11 @@ export const split_by_resthook: NodeConfig = {
       required: true,
       searchable: true,
       clearable: false,
-      placeholder: 'Select a resthook...',
       endpoint: '/api/v2/resthooks.json',
       valueKey: 'resthook',
-      nameKey: 'resthook',
-      helpText: 'Select the resthook to call'
+      nameKey: 'resthook'
     },
-    result_name: resultNameField
+    result_name: { ...resultNameField, label: 'Result Name' }
   },
   layout: ['resthook', 'result_name'],
   validate: validateWith((formData, errors) => {

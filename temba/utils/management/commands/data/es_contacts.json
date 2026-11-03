@@ -184,8 +184,8 @@
             "flow_history_ids": {
                 "type": "keyword"
             },
-            "tickets": {
-                "type": "integer"
+            "ticket": {
+                "type": "keyword"
             },
             "created_on": {
                 "type": "date"

@@ -23,6 +23,7 @@ from django.contrib.postgres.validators import ArrayMinLengthValidator
 from django.contrib.staticfiles import finders
 from django.core.files import File
 from django.core.files.storage import FileSystemStorage, default_storage, storages
+from django.core.validators import MaxValueValidator
 from django.db import models, transaction
 from django.db.models import Count, Exists, Prefetch, Q
 from django.utils import timezone
@@ -35,7 +36,7 @@ from temba import mailroom
 from temba.archives.models import Archive
 from temba.locations.models import AdminBoundary
 from temba.users.models import User
-from temba.utils import json, languages, on_transaction_commit
+from temba.utils import audit, json, languages, on_transaction_commit
 from temba.utils.dates import datetime_to_str
 from temba.utils.email import EmailSender
 from temba.utils.models import (
@@ -252,6 +253,7 @@ class Org(LegacyIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     FEATURE_SHARED_CHANNELS = "shared_channels"  # can share channels between orgs
     FEATURE_AGENTS = "agents"  # can create AI agents to handle contact conversations
     FEATURE_UNRESTRICTED_WEBHOOKS = "unrestricted_webhooks"  # can call webhooks to otherwise blocked domains
+    FEATURE_TICKET_TRIGGERS = "ticket_triggers"  # triggers still fire for contacts with open tickets
     FEATURES_CHOICES = (
         (FEATURE_USERS, _("Users")),
         (FEATURE_NEW_ORGS, _("New Orgs")),
@@ -261,6 +263,7 @@ class Org(LegacyIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
         (FEATURE_SHARED_CHANNELS, _("Shared Channels")),
         (FEATURE_AGENTS, _("Agents")),
         (FEATURE_UNRESTRICTED_WEBHOOKS, _("Unrestricted Webhooks")),
+        (FEATURE_TICKET_TRIGGERS, _("Ticket Triggers")),
     )
 
     LIMIT_CHANNELS = "channels"
@@ -319,6 +322,9 @@ class Org(LegacyIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     input_collation = models.CharField(max_length=32, choices=COLLATION_CHOICES, default=COLLATION_DEFAULT)
     flow_smtp = models.CharField(null=True)  # e.g. smtp://...
     prometheus_token = models.CharField(null=True, max_length=40)
+
+    # how long open tickets can go without activity before being closed automatically, zero to never close them
+    max_ticket_idle_days = models.PositiveIntegerField(default=30, validators=[MaxValueValidator(30)])
 
     config = models.JSONField(default=dict)
     slug = models.SlugField(
@@ -872,8 +878,9 @@ class Org(LegacyIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
         assert role == OrgRole.AGENT or not team, "only agent users can be assigned to a team"
         assert not team or team.org == self, "team must belong to this org"
 
-        if self.has_user(user):  # remove user from any existing roles
-            self.remove_user(user)
+        previous = OrgMembership.objects.filter(org=self, user=user).first()
+        if previous:  # remove user from any existing roles
+            self._remove_user(user)
 
         if role == OrgRole.AGENT and not team:
             team = self.default_team
@@ -887,10 +894,32 @@ class Org(LegacyIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
             can_reply_non_own=can_reply_non_own,
         )
 
+        if not previous:
+            audit.record("workspace.member_added", user=user, org=self, role=role.code)
+        elif previous.role_code != role.code:
+            audit.record(
+                "workspace.member_role_changed", user=user, org=self, role=role.code, previous_role=previous.role_code
+            )
+        else:  # only the team or permissions changed
+            audit.record(
+                "workspace.member_updated",
+                user=user,
+                org=self,
+                role=role.code,
+                team=str(team.uuid) if team else None,
+                can_assign=can_assign,
+                can_reply_non_own=can_reply_non_own,
+            )
+
     def remove_user(self, user: User):
         """
         Removes the given user from this org by removing them from any roles
         """
+        self._remove_user(user)
+
+        audit.record("workspace.member_removed", user=user, org=self)
+
+    def _remove_user(self, user: User):
         self.users.remove(user)
         if user in self._membership_cache:
             del self._membership_cache[user]
@@ -1098,6 +1127,8 @@ class Org(LegacyIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
         for child in self.children.all():
             child.release(user, release_users=release_users)
 
+        audit.record("workspace.released", org=self, actor=user)
+
         # deactivate ourselves
         self.is_active = False
         self.modified_by = user
@@ -1236,6 +1267,10 @@ class Org(LegacyIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
         delete_in_batches(self.counts.all())
         delete_in_batches(self.daily_counts.all())
 
+        # clear buffered tallies first so that nothing is flushed after their rows are deleted
+        Tally.clear_buffered(self)
+        delete_in_batches(self.tallies.all())
+
         # now that contacts are no longer in the database, we can start de-indexing them from search
         mailroom.get_client().org_deindex(self)
 
@@ -1361,7 +1396,7 @@ class Invitation(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     def create(cls, org, user, email: str, role: OrgRole, *, team=None):
         assert not team or org == team.org
 
-        return cls.objects.create(
+        invitation = cls.objects.create(
             org=org,
             email=User.objects.normalize_email(email),
             role_code=role.code,
@@ -1369,6 +1404,9 @@ class Invitation(CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
             created_by=user,
             modified_by=user,
         )
+
+        audit.record("workspace.invitation_created", org=org, email=invitation.email, role=role.code)
+        return invitation
 
     def save(self, *args, **kwargs):
         if not self.secret:
@@ -1531,6 +1569,8 @@ class Export(UUIDMixin, CreatedByMixin):
 
     def start(self):
         from .tasks import perform_export
+
+        audit.record("export.started", user=self.created_by, org=self.org, export=str(self.uuid), type=self.export_type)
 
         perform_export.delay(self.id)
 
@@ -1711,6 +1751,9 @@ class ItemCount(BaseScopedCount):
             # for squashing task
             models.Index(name="orgcount_unsquashed", fields=("org", "scope"), condition=Q(is_squashed=False)),
         ]
+        constraints = [
+            models.UniqueConstraint(name="orgcount_squashed", fields=("org", "scope"), condition=Q(is_squashed=True))
+        ]
 
 
 class DailyCount(BaseDailyCount):
@@ -1729,4 +1772,78 @@ class DailyCount(BaseDailyCount):
             models.Index(
                 name="orgdailycount_unsquashed", fields=("org", "day", "scope"), condition=Q(is_squashed=False)
             ),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                name="orgdailycount_squashed", fields=("org", "day", "scope"), condition=Q(is_squashed=True)
+            )
+        ]
+
+
+class Tally(models.Model):
+    """
+    Org-level totals of things which only go up. Writers increment a per-org hash in Valkey which mailroom flushes into
+    these rows, so a total is the sum of both. Reads aren't atomic with flushes so a total can be briefly off while one
+    is in progress. Key layout must match mailroom's tallies package.
+
+    Daily totals end their scope with the UTC date, e.g. "emails/shared/2026-11-02", and are given an expiry by mailroom
+    when first flushed. Rows without one are kept forever.
+    """
+
+    PENDING_KEY = "tallies:pending"
+    GENERATION = "_gen"  # reserved hash field and scope which mailroom uses to make flushes exactly-once
+
+    id = models.BigAutoField(primary_key=True)
+    org = models.ForeignKey(Org, on_delete=models.PROTECT, related_name="tallies", db_index=False)  # indexed below
+    scope = models.CharField(max_length=255)
+    count = models.BigIntegerField()
+    expires_on = models.DateField(null=True)
+
+    @classmethod
+    def get_keys(cls, org) -> tuple[str, str]:
+        """
+        Gets the live and flushing hash keys for the given org.
+        """
+        key = f"tallies:{org.id}"
+        return key, f"{key}:flushing"
+
+    @classmethod
+    def get_totals(cls, org, prefix: str) -> dict[str, int]:
+        """
+        Gets totals by scope for scopes with the given prefix.
+        """
+        totals = defaultdict(int)
+        rows = org.tallies.filter(scope__startswith=prefix).exclude(scope=cls.GENERATION)
+
+        for scope, count in rows.values_list("scope", "count"):
+            totals[scope] += count
+
+        r = get_valkey_connection()
+        with r.pipeline(transaction=False) as pipe:
+            for key in cls.get_keys(org):
+                pipe.hgetall(key)
+            hashes = pipe.execute()
+
+        for field, count in itertools.chain(*[h.items() for h in hashes]):
+            scope = field.decode()
+            if scope != cls.GENERATION and scope.startswith(prefix):
+                totals[scope] += int(count)
+
+        return dict(totals)
+
+    @classmethod
+    def clear_buffered(cls, org):
+        r = get_valkey_connection()
+        with r.pipeline() as pipe:
+            pipe.delete(*cls.get_keys(org))
+            pipe.srem(cls.PENDING_KEY, org.id)
+            pipe.execute()
+
+    class Meta:
+        indexes = [
+            # for trimming
+            models.Index(name="orgtally_expires_on", fields=("expires_on",), condition=Q(expires_on__isnull=False))
+        ]
+        constraints = [
+            models.UniqueConstraint("org", OpClass("scope", name="varchar_pattern_ops"), name="orgtally_org_scope")
         ]

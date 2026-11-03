@@ -1,8 +1,15 @@
-import { TemplateResult, html, css } from 'lit';
+import { TemplateResult, html, css, unsafeCSS } from 'lit';
 import { property } from 'lit/decorators.js';
+import { msg } from '@lit/localize';
 import { RapidElement } from '../RapidElement';
 import { renderMarkdownInline } from '../markdown';
 import { designTokens } from '../styles/designTokens';
+
+// Shared with labels drawn outside a FieldElement's shadow root as an inline style
+export const fieldLabelStyle =
+  'margin-bottom: 6px; display: block; font-weight: var(--w-medium); font-size: 12.5px; line-height: normal; color: var(--color-label);';
+export const fieldOptionalStyle =
+  'margin-left: 6px; font-weight: normal; color: var(--color-text-help);';
 
 /**
  * FieldElement is a base class for form components that provides built-in
@@ -56,6 +63,9 @@ export abstract class FieldElement extends RapidElement {
   @property({ type: String })
   label: string;
 
+  @property({ type: Boolean })
+  optional = false;
+
   constructor() {
     super();
     this.internals = this.attachInternals();
@@ -70,12 +80,11 @@ export abstract class FieldElement extends RapidElement {
       }
 
       label {
-        margin-bottom: 6px;
-        display: block;
-        font-weight: var(--w-medium);
-        font-size: 12.5px;
-        line-height: normal;
-        color: var(--color-label);
+        ${unsafeCSS(fieldLabelStyle)}
+      }
+
+      .optional {
+        ${unsafeCSS(fieldOptionalStyle)}
       }
 
       .help-text {
@@ -268,7 +277,9 @@ export abstract class FieldElement extends RapidElement {
         ${!!this.name && !this.hideLabel && !!this.label
           ? html`
               <label class="control-label" for="${this.name}"
-                >${this.label}</label
+                >${this.label}${this.optional
+                  ? html`<span class="optional">${msg('Optional')}</span>`
+                  : null}</label
               >
             `
           : null}

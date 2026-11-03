@@ -40,8 +40,8 @@ class ChannelCRUDLTest(TembaTest, CRUDLTestMixin):
 
     def test_claim(self):
         claim_url = reverse("channels.channel_claim")
-        self.assertRequestDisallowed(claim_url, [None, self.agent])
-        response = self.assertReadFetch(claim_url, [self.editor, self.admin])
+        self.assertRequestDisallowed(claim_url, [None, self.agent, self.editor])
+        response = self.assertReadFetch(claim_url, [self.admin])
 
         # 3 recommended channels for Rwanda
         self.assertEqual(["AT", "MT", "TG"], [t.code for t in response.context["recommended_channels"]])
@@ -74,8 +74,8 @@ class ChannelCRUDLTest(TembaTest, CRUDLTestMixin):
 
     def test_claim_all(self):
         claim_url = reverse("channels.channel_claim_all")
-        self.assertRequestDisallowed(claim_url, [None, self.agent])
-        response = self.assertReadFetch(claim_url, [self.editor, self.admin])
+        self.assertRequestDisallowed(claim_url, [None, self.agent, self.editor])
+        response = self.assertReadFetch(claim_url, [self.admin])
 
         # should see all channel types having a category
         self.assertEqual(["AT", "MT", "TG"], [t.code for t in response.context["recommended_channels"]])
@@ -118,7 +118,7 @@ class ChannelCRUDLTest(TembaTest, CRUDLTestMixin):
         config_url = reverse("channels.channel_configuration", args=[self.ex_channel.uuid])
 
         # can't view configuration if not logged in
-        self.assertRequestDisallowed(config_url, [None, self.agent])
+        self.assertRequestDisallowed(config_url, [None, self.agent, self.editor])
 
         self.login(self.admin)
 
@@ -145,12 +145,12 @@ class ChannelCRUDLTest(TembaTest, CRUDLTestMixin):
         vonage_url = reverse("channels.channel_update", args=[vonage_channel.id])
         telegram_url = reverse("channels.channel_update", args=[telegram_channel.id])
 
-        self.assertRequestDisallowed(android_url, [None, self.agent, self.admin2])
+        self.assertRequestDisallowed(android_url, [None, self.agent, self.editor, self.admin2])
 
         # fields shown depend on scheme and role
         self.assertUpdateFetch(
             android_url,
-            [self.editor, self.admin],
+            [self.admin],
             form_fields={
                 "name": "My Android",
                 "is_enabled": True,
@@ -159,7 +159,7 @@ class ChannelCRUDLTest(TembaTest, CRUDLTestMixin):
         )
         self.assertUpdateFetch(
             vonage_url,
-            [self.editor, self.admin],
+            [self.admin],
             form_fields={
                 "name": "My Vonage",
                 "is_enabled": True,
@@ -167,9 +167,7 @@ class ChannelCRUDLTest(TembaTest, CRUDLTestMixin):
                 "machine_detection": False,
             },
         )
-        self.assertUpdateFetch(
-            telegram_url, [self.editor, self.admin], form_fields={"name": "My Telegram", "is_enabled": True}
-        )
+        self.assertUpdateFetch(telegram_url, [self.admin], form_fields={"name": "My Telegram", "is_enabled": True})
 
         # name can't be empty
         self.assertUpdateSubmit(
@@ -200,7 +198,7 @@ class ChannelCRUDLTest(TembaTest, CRUDLTestMixin):
 
         self.assertUpdateFetch(
             vonage_url,
-            [self.editor, self.admin],
+            [self.admin],
             form_fields={
                 "name": "Updated Name",
                 "is_enabled": True,
@@ -209,13 +207,65 @@ class ChannelCRUDLTest(TembaTest, CRUDLTestMixin):
             },
         )
 
-        # staff users see extra fields
+        # staff users also see the TPS field
         self.assertUpdateFetch(
             vonage_url,
             [self.customer_support],
-            form_fields=["name", "is_enabled", "allow_international", "machine_detection"],
+            form_fields={
+                "name": "Updated Name",
+                "is_enabled": True,
+                "allow_international": True,
+                "machine_detection": True,
+                "tps": None,
+            },
             choose_org=self.org,
         )
+
+        # but can only change it if they're also superusers
+        response = self.requestView(
+            vonage_url, self.customer_support, post_data={"name": "Updated Name", "tps": "25"}, choose_org=self.org
+        )
+        self.assertEqual(403, response.status_code)
+
+        self.customer_support.is_superuser = True
+        self.customer_support.save(update_fields=("is_superuser",))
+
+        # TPS must be in range
+        self.assertUpdateSubmit(
+            vonage_url,
+            self.customer_support,
+            {"name": "Updated Name", "is_enabled": True, "tps": "0"},
+            form_errors={"tps": "Ensure this value is greater than or equal to 1."},
+            object_unchanged=vonage_channel,
+        )
+        self.assertUpdateSubmit(
+            vonage_url,
+            self.customer_support,
+            {"name": "Updated Name", "is_enabled": True, "tps": "1001"},
+            form_errors={"tps": "Ensure this value is less than or equal to 1000."},
+            object_unchanged=vonage_channel,
+        )
+
+        self.assertUpdateSubmit(
+            vonage_url, self.customer_support, {"name": "Updated Name", "is_enabled": True, "tps": "25"}
+        )
+
+        vonage_channel.refresh_from_db()
+        self.assertEqual(25, vonage_channel.tps)
+
+        # non-staff saving the form leave it alone
+        self.assertUpdateSubmit(vonage_url, self.admin, {"name": "Updated Name", "is_enabled": True})
+
+        vonage_channel.refresh_from_db()
+        self.assertEqual(25, vonage_channel.tps)
+
+        # blank leaves it unchanged
+        self.assertUpdateSubmit(
+            vonage_url, self.customer_support, {"name": "Updated Name", "is_enabled": True, "tps": ""}
+        )
+
+        vonage_channel.refresh_from_db()
+        self.assertEqual(25, vonage_channel.tps)
 
     def test_read_menu(self):
         # normal channel types get a logs menu item on their read page
@@ -233,12 +283,14 @@ class ChannelCRUDLTest(TembaTest, CRUDLTestMixin):
             ["Configuration", "Edit", "Delete"],
         )
 
-        # and not for users without permission to view logs
-        self.assertContentMenu(
-            reverse("channels.channel_read", args=[self.ex_channel.uuid]),
-            self.editor,
-            ["Configuration", "Edit", "Delete"],
-        )
+        # and editors can't manage channels or view their logs
+        self.assertContentMenu(reverse("channels.channel_read", args=[self.ex_channel.uuid]), self.editor, [])
+
+        # types can add their own management items
+        fb_channel = self.create_channel("FBA", "Facebook", "12345")
+        fb_read_url = reverse("channels.channel_read", args=[fb_channel.uuid])
+        self.assertContentMenu(fb_read_url, self.admin, ["Reconnect Facebook Page", "Logs", "Edit", "Delete"])
+        self.assertContentMenu(fb_read_url, self.editor, [])
 
     def test_logs_list(self):
         channel = self.create_channel("T", "My Channel", "+250785551212")
@@ -449,9 +501,9 @@ class ChannelCRUDLTest(TembaTest, CRUDLTestMixin):
     def test_delete(self):
         delete_url = reverse("channels.channel_delete", args=[self.ex_channel.uuid])
 
-        self.assertRequestDisallowed(delete_url, [None, self.agent, self.admin2])
+        self.assertRequestDisallowed(delete_url, [None, self.agent, self.editor, self.admin2])
 
-        response = self.assertDeleteFetch(delete_url, [self.editor, self.admin])
+        response = self.assertDeleteFetch(delete_url, [self.admin])
         self.assertContains(response, "You are about to delete")
 
         # submit to delete it

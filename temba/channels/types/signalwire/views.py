@@ -8,7 +8,7 @@ from django import forms
 from django.forms import ValidationError
 from django.utils.translation import gettext_lazy as _
 
-from temba.utils.fields import SelectWidget
+from temba.utils.fields import InputWidget, SelectWidget
 
 from ...models import Channel
 from ...views import ALL_COUNTRIES, ClaimViewMixin
@@ -22,29 +22,25 @@ class SignalWireClaimView(ClaimViewMixin, SmartFormView):
             choices=ALL_COUNTRIES,
             widget=SelectWidget(attrs={"searchable": True}),
             label=_("Country"),
-            help_text=_("The country this phone number is used in"),
             initial="US",
         )
-        number = forms.CharField(
-            max_length=14,
-            min_length=1,
-            label=_("Number"),
-            help_text=_("The phone number or short code you are connecting."),
-        )
+        number = forms.CharField(max_length=14, min_length=1, label=_("Number"))
         space = forms.CharField(
             max_length=63,
             label=_("Space"),
-            help_text=_("Your SignalWire Space name. For example, if your space is rapid.signalwire.com, enter rapid."),
+            help_text=_("e.g. rapid for rapid.signalwire.com"),
         )
         project_key = forms.CharField(
             max_length=64,
             label=_("Project Key"),
-            help_text=_("The key for your project ex: 990c5c10-bf8f-4156-b014-44282e60b3a1"),
+            widget=forms.TextInput(attrs={"placeholder": _("e.g. 990c5c10-bf8f-4156-b014-44282e60b3a1")}),
         )
         api_token = forms.CharField(
             max_length=64,
             required=False,
-            help_text=_("The API token to use to authenticate ex: FPd199eb93e878f8a3tw9ttna313914tnauwy"),
+            widget=InputWidget(
+                attrs={"placeholder": _("e.g. FPd199eb93e878f8a3tw9ttna313914tnauwy"), "optional": False}
+            ),
         )
 
         def clean_space(self):
