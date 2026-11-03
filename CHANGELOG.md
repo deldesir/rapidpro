@@ -1,3 +1,95 @@
+## v26.3.172 (2026-11-03)
+ * Require closed tickets to have closed_on and outcome, and other tickets neither
+ * Update dependencies, including dnspython to 2.9.0
+
+## v26.3.171 (2026-11-02)
+ * Add Tally model for Valkey-buffered org totals
+ * Backfill outcome of closed tickets
+
+## v26.3.170 (2026-11-02)
+ * Add outcome to tickets
+ * Add Direct Send setting to WhatsApp channels
+ * Add flagged workspace alert and restyle the suspended workspace alert as a full-width banner above the page header
+ * Return 400 for invalid UUIDs in definitions endpoint
+ * Remove unused tickets field from contacts index mapping
+
+## v26.3.169 (2026-10-30)
+ * Drop Contact.ticket_count
+
+## v26.3.168 (2026-10-29)
+ * Make optional single selects clearable so they don't default to the first option
+
+## v26.3.167 (2026-10-29)
+ * Stop maintaining Contact.ticket_count
+ * Highlight expressions in webhook header values
+ * Use ticket = "open" as the Open Tickets group query
+ * Add ticket keyword field to contacts index mapping
+ * Don't default multi and clearable selects to the first option
+ * Drop redundant tickets_contact_open index
+
+## v26.3.166 (2026-10-28)
+ * Mark optional fields in forms and in the flow editor
+ * Mark the number search pattern as optional
+ * Use placeholders only for example values
+ * Hide Django's default blank choice in select widgets however it's labelled
+ * Label the result name field on resthook and airtime nodes
+ * Make the flow editor's media field label match other field labels
+ * Record an audit entry when a channel's TPS is changed
+
+## v26.3.165 (2026-10-28)
+ * Simplify form and channel form help texts and make them consistent, including the flow editor
+ * Add real labels to Twilio, Plivo and Vonage connect fields
+ * Allow webchat channels to be configured with Mailgun for sending emails
+ * Let staff set a channel's TPS from its update form
+ * Add pending ticket status and enforce one non-closed ticket per contact
+ * Exclude smart groups from the remove from group action picker
+
+## v26.3.164 (2026-10-27)
+ * Add a security audit log
+
+## v26.3.163 (2026-10-27)
+ * Reject requests whose body is shorter than its Content-Length
+ * End a user's other sessions when they log in, keeping track of the session key when a password change cycles it
+ * Exclude data migrations whose tests were removed from coverage
+
+## v26.3.162 (2026-10-27)
+ * Add unsquashed partial indexes to label and broadcast msg counts
+ * Match rules form cases and categories on carried UUIDs when saving, falling back to the first unclaimed category on rename
+ * Keep cases with their category and dedupe the No Response category in the rules router
+ * Reuse each existing category, exit and case UUID at most once in the rules router
+ * Stop guessing renames for rules without UUIDs
+
+## v26.3.161 (2026-10-26)
+ * Restrict editors to read-only access to channels
+ * Squash counts by updating a single squashed row per set in place (#7147)
+
+## v26.3.160 (2026-10-26)
+ * Let channel types define the TPS set on new channels (#7151)
+ * Derive flow engagement by weekday from daily counts and stop writing weekday counts (#7146)
+
+## v26.3.159 (2026-10-24)
+ * Bump dependencies
+
+## v26.3.158 (2026-10-22)
+ * Show a centered placeholder card in the My Tickets folder when it has no tickets
+ * Drop index on open tickets by last activity
+
+## v26.3.157 (2026-10-22)
+ * Backfill close fires for open tickets
+
+## v26.3.156 (2026-10-22)
+ * Add ticket_triggers org feature
+
+## v26.3.155 (2026-10-22)
+ * Add per-workspace ticket idle limit and ticket close contact fire type
+ * Allow updating the API key of 360Dialog channels and only check credentials when config changes
+
+## v26.3.154 (2026-10-21)
+ * Skip campaign events with unrepresentable times on the contact timeline
+
+## v26.3.153 (2026-10-21)
+ * Skip importing triggers whose flow type isn't allowed for the trigger type
+
 ## v26.3.152 (2026-10-21)
  * Treat WhatsApp templates without components as unsupported rather than failing the sync
  * Remove the old campaign event read page, now replaced by the campaign page's event modal

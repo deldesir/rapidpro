@@ -5,7 +5,7 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from temba.channels.models import Channel
-from temba.channels.types.dialog360.views import ClaimView
+from temba.channels.types.dialog360.views import ClaimView, UpdateForm
 from temba.contacts.models import URN
 from temba.request_logs.models import HTTPLog
 
@@ -22,6 +22,7 @@ class Dialog360Type(ChannelType):
     category = ChannelType.Category.SOCIAL_MEDIA
 
     unique_addresses = True
+    tps = 45
 
     schemes = [URN.WHATSAPP_SCHEME]
     template_type = "whatsapp"
@@ -30,11 +31,24 @@ class Dialog360Type(ChannelType):
         "Activate your own enterprise WhatsApp account in %(link)s (Cloud) to communicate with your contacts. "
     ) % {"link": '<a target="_blank" href="https://www.360dialog.com/">360Dialog</a>'}
     claim_view = ClaimView
+    update_form = UpdateForm
 
     config_ui = ConfigUI()  # has own template
 
     def get_headers(self, channel):
         return {"D360-API-KEY": channel.config[Channel.CONFIG_AUTH_TOKEN], "Content-Type": "application/json"}
+
+    def check_credentials(self, config: dict) -> bool:
+        try:
+            response = requests.get(
+                config[Channel.CONFIG_BASE_URL] + "/v1/configs/templates",
+                headers={"D360-API-KEY": config[Channel.CONFIG_AUTH_TOKEN]},
+                timeout=10,
+            )
+        except requests.RequestException:
+            return False
+
+        return response.status_code == 200
 
     def activate(self, channel):
         # first set our callbacks
@@ -59,7 +73,8 @@ class Dialog360Type(ChannelType):
             HTTPLog.from_exception(HTTPLog.WHATSAPP_TEMPLATES_SYNCED, e, start, channel=channel)
             raise e
 
-        return response.json()["waba_templates"]
+        # skip templates Meta generates for Direct Send messages
+        return [t for t in response.json()["waba_templates"] if t.get("source") != "AUTO_GENERATED"]
 
     def get_redact_values(self, channel) -> tuple:
         return (channel.config[Channel.CONFIG_AUTH_TOKEN],)

@@ -53,7 +53,7 @@ class KnowledgeSourceForm(UniqueNameMixin, forms.ModelForm):
         required=False,
         max_length=KnowledgeSource.MAX_URL_LEN,
         label=_("URL"),
-        widget=InputWidget(),
+        widget=InputWidget(attrs={"optional": False}),
         help_text=_("The address to crawl, e.g. https://help.example.com"),
     )
     max_pages = forms.IntegerField(
@@ -189,7 +189,7 @@ class HelpSiteForm(forms.ModelForm):
     title = forms.CharField(
         max_length=HelpSite.MAX_TITLE_LEN,
         label=_("Title"),
-        help_text=_("The name of your help site, shown in its header."),
+        help_text=_("Shown in the header of every page."),
         widget=InputWidget(),
     )
     tagline = forms.CharField(
@@ -210,7 +210,7 @@ class HelpSiteForm(forms.ModelForm):
     favicon = FaviconField(
         required=False,
         label=_("Icon"),
-        help_text=_("Shown in the browser tab. An open book if you don't choose one."),
+        help_text=_("Shown in the browser tab. Defaults to an open book."),
         widget=ImagePickerWidget(attrs={"clearable": True}),
     )
     chat_channel = forms.ChoiceField(
@@ -230,15 +230,9 @@ class HelpSiteForm(forms.ModelForm):
         widget=ColorInputWidget(),
     )
     # the bubbles share a help text, which the dialog shows beneath all three of them
-    bubble_1 = forms.CharField(
-        required=False, label=_("Bubble 1"), widget=ColorInputWidget(attrs={"placeholder": _("None")})
-    )
-    bubble_2 = forms.CharField(
-        required=False, label=_("Bubble 2"), widget=ColorInputWidget(attrs={"placeholder": _("None")})
-    )
-    bubble_3 = forms.CharField(
-        required=False, label=_("Bubble 3"), widget=ColorInputWidget(attrs={"placeholder": _("None")})
-    )
+    bubble_1 = forms.CharField(required=False, label=_("Bubble 1"), widget=ColorInputWidget())
+    bubble_2 = forms.CharField(required=False, label=_("Bubble 2"), widget=ColorInputWidget())
+    bubble_3 = forms.CharField(required=False, label=_("Bubble 3"), widget=ColorInputWidget())
 
     def __init__(self, org, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -299,15 +293,15 @@ class HelpSiteDomainForm(forms.ModelForm):
         required=False,
         max_length=HelpSite.MAX_DOMAIN_LEN,
         label=_("Domain"),
-        help_text=_("A domain of your own to serve your help site on, such as help.example.com."),
+        help_text=_("Your own domain to serve the help site on."),
         # the dialog shows the records to add for whatever domain is being typed - see helpsite_domain.html
-        widget=InputWidget(attrs={"placeholder": "help.example.com", "oninput": "updateHelpSiteRecords(this)"}),
+        widget=InputWidget(attrs={"placeholder": _("e.g. help.example.com"), "oninput": "updateHelpSiteRecords(this)"}),
     )
 
     is_enabled = forms.BooleanField(
         required=False,
         label=_("Enabled"),
-        help_text=_("Whether the site is available to the public on its domain."),
+        help_text=_("Makes the site available to the public on its domain."),
         widget=CheckboxWidget(),
     )
 

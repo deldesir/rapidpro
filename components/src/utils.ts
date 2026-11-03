@@ -1322,15 +1322,6 @@ export const createMultiCategoryRouter = (
   };
 };
 
-// Helper function to check if a UUID belongs to a system category
-export const isSystemCategoryUuid = (
-  uuid: string,
-  categories: any[]
-): boolean => {
-  const category = categories.find((cat) => cat.uuid === uuid);
-  return category ? isSystemCategory(category.name) : false;
-};
-
 // Helper function to generate default category name based on operator and operands
 export const generateDefaultCategoryName = (
   operator: string,
@@ -1456,7 +1447,13 @@ const parseTwoOperandRuleValues = (rule: any): string[] => {
   return [value1, value2].filter((value) => value !== '');
 };
 
-// Helper function to create a rules-based router (used by wait_for_response and split_by_expression)
+// Helper function to create a rules-based router from form rules, reusing what it can of the
+// existing router (used by the rules-based split and wait nodes).
+//
+// Rules loaded from an existing node carry the UUIDs of the case and category they came from, and
+// rules added in the editor carry none. Each category keeps the existing category with its name,
+// else one its rules came from that no other rule keeps by name, else it's new. Each rule keeps
+// the case it came from, else gets a new one.
 export const createRulesRouter = (
   operand: string,
   userRules: any[],
@@ -1480,8 +1477,50 @@ export const createRulesRouter = (
     { uuid: string; name: string; exit_uuid: string }
   >();
 
+  // UUIDs already given out, so that existing categories, exits and cases are each reused at
+  // most once - the existing definition may itself share exits or repeat UUIDs
+  const usedCategoryUuids = new Set<string>();
+  const usedExitUuids = new Set<string>();
+  const usedCaseUuids = new Set<string>();
+
+  // Existing categories that some rule will match by name, which a rename must leave for that
+  // rule
+  const nameMatchedCategoryUuids = new Set(
+    existingUserCategories
+      .filter((cat) =>
+        userRules.some((rule) => categoryNamesEqual(cat.name, rule.category))
+      )
+      .map((cat) => cat.uuid)
+  );
+
+  // Takes an existing category's UUID and its exit, generating new UUIDs for any already used
+  // but keeping the exit's destination
+  const takeCategory = (existingCategory: any) => {
+    const existingExit = existingCategory
+      ? existingExits.find((exit) => exit.uuid === existingCategory.exit_uuid)
+      : null;
+
+    const categoryUuid =
+      existingCategory && !usedCategoryUuids.has(existingCategory.uuid)
+        ? existingCategory.uuid
+        : generateUUID();
+    const exitUuid =
+      existingExit && !usedExitUuids.has(existingExit.uuid)
+        ? existingExit.uuid
+        : generateUUID();
+
+    usedCategoryUuids.add(categoryUuid);
+    usedExitUuids.add(exitUuid);
+
+    return {
+      categoryUuid,
+      exitUuid,
+      destinationUuid: existingExit?.destination_uuid || null
+    };
+  };
+
   // Process rules in their original order to preserve rule order
-  userRules.forEach((rule, ruleIndex) => {
+  userRules.forEach((rule) => {
     const categoryKey = rule.category.trim().toLowerCase();
     const categoryName = rule.category.trim(); // Use original casing
 
@@ -1490,40 +1529,30 @@ export const createRulesRouter = (
     if (!categoryInfo) {
       // First time seeing this category - create it
 
-      // Smart category matching: try by name first, then fall back to position
+      // An existing category with this name keeps its routing, whichever rules now use it
       let existingCategory = existingUserCategories.find(
-        (cat) => cat.name.toLowerCase() === categoryKey
+        (cat) =>
+          categoryNamesEqual(cat.name, categoryName) &&
+          !usedCategoryUuids.has(cat.uuid)
       );
 
-      // If no match by name, try by position (for category rename scenarios)
-      const categoryCreationOrder = Array.from(createdCategories.keys()).length;
-      if (
-        !existingCategory &&
-        categoryCreationOrder < existingUserCategories.length
-      ) {
-        const candidateCategory = existingUserCategories[categoryCreationOrder];
-        // Double-check that this candidate is not a system category UUID
-        if (
-          candidateCategory &&
-          !isSystemCategoryUuid(candidateCategory.uuid, existingCategories)
-        ) {
-          existingCategory = candidateCategory;
-        }
+      // Otherwise a rename of the category one of these rules came from, if no other rule keeps
+      // it, and failing that a new category
+      if (!existingCategory) {
+        const sourceUuids = userRules
+          .filter((r) => categoryNamesEqual(r.category, categoryName))
+          .map((r) => r.category_uuid)
+          .filter(Boolean);
+        existingCategory = existingUserCategories.find(
+          (cat) =>
+            sourceUuids.includes(cat.uuid) &&
+            !nameMatchedCategoryUuids.has(cat.uuid) &&
+            !usedCategoryUuids.has(cat.uuid)
+        );
       }
 
-      const existingExit = existingCategory
-        ? existingExits.find((exit) => exit.uuid === existingCategory.exit_uuid)
-        : null;
-
-      // Generate UUIDs, ensuring we don't reuse system category UUIDs
-      let exitUuid = existingExit?.uuid || generateUUID();
-      let categoryUuid = existingCategory?.uuid || generateUUID();
-
-      // Additional safety check: if somehow we got a system category UUID, generate new ones
-      if (isSystemCategoryUuid(categoryUuid, existingCategories)) {
-        categoryUuid = generateUUID();
-        exitUuid = generateUUID();
-      }
+      const { categoryUuid, exitUuid, destinationUuid } =
+        takeCategory(existingCategory);
 
       categoryInfo = {
         uuid: categoryUuid,
@@ -1542,30 +1571,20 @@ export const createRulesRouter = (
 
       exits.push({
         uuid: exitUuid,
-        destination_uuid: existingExit?.destination_uuid || null
+        destination_uuid: destinationUuid
       });
     }
 
-    // Create case for this rule
-    let existingCase = existingCases[ruleIndex];
-
-    // If we can't find by position, try to find by matching rule content
-    if (!existingCase && existingCases.length > 0) {
-      existingCase = existingCases.find((case_) => {
-        // Find the category for this case
-        const caseCategory = existingCategories.find(
-          (cat) => cat.uuid === case_.category_uuid
-        );
-
-        // Match by operator type and category name
-        return (
-          case_.type === rule.operator &&
-          caseCategory?.name.toLowerCase() === categoryKey
-        );
-      });
-    }
+    // The rule keeps its own case, so its translations stay with it wherever it moves
+    const existingCase = rule.case_uuid
+      ? existingCases.find(
+          (case_) =>
+            case_.uuid === rule.case_uuid && !usedCaseUuids.has(case_.uuid)
+        )
+      : null;
 
     const caseUuid = existingCase?.uuid || generateUUID();
+    usedCaseUuids.add(caseUuid);
 
     // Parse rule value based on operator configuration
     const operatorConfig = getOperatorConfig(rule.operator);
@@ -1622,14 +1641,11 @@ export const createRulesRouter = (
     );
   }
 
-  const existingDefaultExit = existingDefaultCategory
-    ? existingExits.find(
-        (exit) => exit.uuid === existingDefaultCategory.exit_uuid
-      )
-    : null;
-
-  const defaultExitUuid = existingDefaultExit?.uuid || generateUUID();
-  const defaultCategoryUuid = existingDefaultCategory?.uuid || generateUUID();
+  const {
+    categoryUuid: defaultCategoryUuid,
+    exitUuid: defaultExitUuid,
+    destinationUuid: defaultDestinationUuid
+  } = takeCategory(existingDefaultCategory);
 
   categories.push({
     uuid: defaultCategoryUuid,
@@ -1639,7 +1655,7 @@ export const createRulesRouter = (
 
   exits.push({
     uuid: defaultExitUuid,
-    destination_uuid: existingDefaultExit?.destination_uuid || null
+    destination_uuid: defaultDestinationUuid
   });
 
   // Find the default category (either "Other" or "All Responses")

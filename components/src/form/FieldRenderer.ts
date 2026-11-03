@@ -1,4 +1,5 @@
 import { html, TemplateResult } from 'lit';
+import { msg } from '@lit/localize';
 import { spread } from '@open-wc/lit-helpers';
 import {
   FieldConfig,
@@ -14,6 +15,7 @@ import {
 } from '../flow/types';
 import { Attachment } from '../interfaces';
 import { DEFAULT_MEDIA_ENDPOINT } from '../utils';
+import { fieldLabelStyle, fieldOptionalStyle } from './FieldElement';
 
 /**
  * FieldRenderer provides a consistent way to render field configurations
@@ -115,6 +117,17 @@ export class FieldRenderer {
     }
   }
 
+  /**
+   * Fields are marked optional only when they explicitly opt out of being required, since some fields
+   * leave required unset and are validated another way.
+   */
+  private static isOptional(
+    config: FieldConfig,
+    context: FieldRenderContext
+  ): boolean {
+    return !!context.markOptional && (config as any).required === false;
+  }
+
   private static renderTextInput(
     fieldName: string,
     config: TextFieldConfig,
@@ -141,6 +154,7 @@ export class FieldRenderer {
         name="${fieldName}"
         label="${showLabel ? config.label : ''}"
         ?required="${config.required}"
+        ?optional="${FieldRenderer.isOptional(config, context)}"
         .errors="${errors}"
         .value="${value || ''}"
         placeholder="${placeholder}"
@@ -157,6 +171,7 @@ export class FieldRenderer {
       name="${fieldName}"
       label="${showLabel ? config.label : ''}"
       ?required="${config.required}"
+      ?optional="${FieldRenderer.isOptional(config, context)}"
       .errors="${errors}"
       .value="${value || ''}"
       placeholder="${placeholder}"
@@ -193,6 +208,7 @@ export class FieldRenderer {
         name="${fieldName}"
         label="${showLabel ? config.label : ''}"
         ?required="${config.required}"
+        ?optional="${FieldRenderer.isOptional(config, context)}"
         .errors="${errors}"
         .value="${value || ''}"
         placeholder="${config.placeholder || ''}"
@@ -209,6 +225,7 @@ export class FieldRenderer {
       name="${fieldName}"
       label="${showLabel ? config.label : ''}"
       ?required="${config.required}"
+      ?optional="${FieldRenderer.isOptional(config, context)}"
       .errors="${errors}"
       .value="${value || ''}"
       placeholder="${config.placeholder || ''}"
@@ -251,6 +268,7 @@ export class FieldRenderer {
       name="${fieldName}"
       label="${showLabel ? config.label : ''}"
       ?required="${config.required}"
+      ?optional="${FieldRenderer.isOptional(config, context)}"
       .errors="${errors}"
       .values=${value}
       ?multi="${config.multi}"
@@ -362,6 +380,7 @@ export class FieldRenderer {
         .valuePlaceholder="${config.valuePlaceholder || 'Value'}"
         .minRows="${config.minRows || 0}"
         ?readOnlyKeys="${config.readOnlyKeys}"
+        ?evaluatedValues="${config.evaluated}"
         class="${extraClasses}"
         style="${style}"
         @change="${onChange || (() => {})}"
@@ -450,9 +469,12 @@ export class FieldRenderer {
     return html`
       <div>
         ${showLabel && config.label
-          ? html`<label
-              style="margin-bottom: 5px; margin-left: 4px; display: block; font-weight: 400; font-size: var(--label-size); letter-spacing: 0.05em; line-height: normal; color: var(--color-label, #777);"
-              >${config.label}</label
+          ? html`<label style="${fieldLabelStyle}"
+              >${config.label}${FieldRenderer.isOptional(config, context)
+                ? html`<span style="${fieldOptionalStyle}"
+                    >${msg('Optional')}</span
+                  >`
+                : ''}</label
             >`
           : ''}
         <temba-media-picker
@@ -486,6 +508,7 @@ export class FieldRenderer {
       name="${fieldName}"
       label="${showLabel ? config.label : ''}"
       ?required="${config.required}"
+      ?optional="${FieldRenderer.isOptional(config, context)}"
       .errors="${errors}"
       .value="${value || ''}"
       .attachments="${additionalData.attachments || []}"
@@ -540,6 +563,8 @@ export interface FieldRenderContext {
   extraClasses?: string;
   /** Additional CSS styles to apply */
   style?: string;
+  /** Whether to mark fields that aren't required as optional */
+  markOptional?: boolean;
   /** Additional data needed for specific field types */
   additionalData?: Record<string, any>;
   /** Form data for dynamic field configurations */

@@ -23,7 +23,6 @@ export const add_contact_groups: ActionConfig = {
     groups: {
       type: 'select',
       label: 'Groups',
-      helpText: 'Select the groups to add the contact to',
       required: true,
       options: [],
       multi: true,
@@ -31,7 +30,6 @@ export const add_contact_groups: ActionConfig = {
       endpoint: '/api/v2/groups.json',
       valueKey: 'uuid',
       nameKey: 'name',
-      placeholder: 'Search for groups...',
       shouldExclude: (option: any) => !!option.query,
       allowCreate: true,
       createArbitraryOption: (input: string, options: any[]) => {

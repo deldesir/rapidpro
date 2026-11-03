@@ -20,8 +20,7 @@ export const split_by_groups: NodeConfig = {
     groups: {
       type: 'select',
       label: 'Groups',
-      helpText:
-        'Select the groups to split contacts by. Contacts will be routed based on their group membership.',
+      helpText: 'Routes contacts to the first of these groups they belong to.',
       required: true,
       options: [],
       multi: true,
@@ -29,7 +28,6 @@ export const split_by_groups: NodeConfig = {
       endpoint: '/api/v2/groups.json',
       valueKey: 'uuid',
       nameKey: 'name',
-      placeholder: 'Search for groups...',
       allowCreate: true,
       createArbitraryOption: (input: string, options: any[]) => {
         // Check if a group with this name already exists

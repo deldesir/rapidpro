@@ -38,7 +38,7 @@ from temba.campaigns.models import Campaign
 from temba.flows.models import Flow
 from temba.formax import FormaxMixin, FormaxSectionMixin
 from temba.tickets.models import Team
-from temba.utils import json, languages, on_transaction_commit, str_to_bool
+from temba.utils import audit, json, languages, on_transaction_commit, str_to_bool
 from temba.utils.email import parse_smtp_url
 from temba.utils.fields import (
     ArbitraryJsonChoiceField,
@@ -331,10 +331,8 @@ class UserCRUDL(SmartCRUDL):
 
     class Edit(ComponentFormMixin, InferUserMixin, SmartUpdateView):
         class Form(forms.ModelForm):
-            first_name = forms.CharField(
-                label=_("First Name"), widget=InputWidget(attrs={"placeholder": _("Required")})
-            )
-            last_name = forms.CharField(label=_("Last Name"), widget=InputWidget(attrs={"placeholder": _("Required")}))
+            first_name = forms.CharField(label=_("First Name"), widget=InputWidget())
+            last_name = forms.CharField(label=_("Last Name"), widget=InputWidget())
             avatar = forms.ImageField(
                 required=False, label=_("Profile Picture"), widget=ImagePickerWidget(attrs={"shape": "circle"})
             )
@@ -1252,24 +1250,16 @@ class OrgCRUDL(SmartCRUDL):
 
     class Grant(SpaMixin, ComponentFormMixin, NonAtomicMixin, SmartCreateView):
         class Form(forms.ModelForm):
-            first_name = forms.CharField(
-                help_text=_("The first name of the workspace administrator"),
-                max_length=User._meta.get_field("first_name").max_length,
-            )
-            last_name = forms.CharField(
-                help_text=_("Your last name of the workspace administrator"),
-                max_length=User._meta.get_field("last_name").max_length,
-            )
-            email = forms.EmailField(
-                help_text=_("Their email address"), max_length=User._meta.get_field("email").max_length
-            )
-            timezone = TimeZoneFormField(help_text=_("The timezone for the workspace"))
+            first_name = forms.CharField(max_length=User._meta.get_field("first_name").max_length)
+            last_name = forms.CharField(max_length=User._meta.get_field("last_name").max_length)
+            email = forms.EmailField(max_length=User._meta.get_field("email").max_length)
+            timezone = TimeZoneFormField()
             password = forms.CharField(
                 widget=forms.PasswordInput,
                 required=False,
-                help_text=_("Their password, at least eight letters please. (leave blank for existing login)"),
+                help_text=_("At least eight characters. Leave blank if the user already has a login."),
             )
-            name = forms.CharField(label=_("Workspace"), help_text=_("The name of the new workspace"))
+            name = forms.CharField(label=_("Workspace"))
 
             def clean(self):
                 data = self.cleaned_data
@@ -1322,8 +1312,7 @@ class OrgCRUDL(SmartCRUDL):
             new_slug = forms.SlugField(
                 required=False,
                 label=_("New Event"),
-                help_text=_("Enter a name for your event. ex: new-registration"),
-                widget=InputWidget(),
+                widget=InputWidget(attrs={"placeholder": _("e.g. new-registration")}),
                 max_length=Resthook._meta.get_field("slug").max_length,
             )
 
@@ -1453,7 +1442,7 @@ class OrgCRUDL(SmartCRUDL):
             root_location = forms.ModelChoiceField(
                 Org.get_possible_countries(),
                 required=False,
-                label=_("The country used for location values. (optional)"),
+                label=_("Country"),
                 help_text=_("State and district names will be searched against this country."),
                 widget=SelectWidget(),
             )
@@ -1472,7 +1461,6 @@ class OrgCRUDL(SmartCRUDL):
                 help_text=_("Used for contacts with no language preference."),
                 widget=SelectWidget(
                     attrs={
-                        "placeholder": _("Select a language"),
                         "searchable": True,
                         "queryParam": "q",
                         "endpoint": reverse_lazy("orgs.org_languages"),
@@ -1485,7 +1473,6 @@ class OrgCRUDL(SmartCRUDL):
                 help_text=_("The languages that your flows can be translated into."),
                 widget=SelectMultipleWidget(
                     attrs={
-                        "placeholder": _("Select languages"),
                         "searchable": True,
                         "queryParam": "q",
                         "endpoint": reverse_lazy("orgs.org_languages"),
@@ -1684,7 +1671,7 @@ class OrgImportCRUDL(SmartCRUDL):
         menu_path = "/settings/import"
 
         class Form(forms.ModelForm):
-            file = forms.FileField(help_text=_("The import file"))
+            file = forms.FileField()
 
             def __init__(self, org, *args, **kwargs):
                 super().__init__(*args, **kwargs)
@@ -1763,6 +1750,8 @@ class ExportCRUDL(SmartCRUDL):
         def get(self, request, *args, **kwargs):
             if str_to_bool(request.GET.get("raw", 0)):
                 export = self.get_object()
+
+                audit.record("export.downloaded", org=export.org, export=str(export.uuid), type=export.export_type)
 
                 url = export.get_raw_url()
 

@@ -1458,8 +1458,8 @@ class DefinitionsEndpoint(BaseEndpoint):
         record_deprecated(org, "definitions#get")
 
         params = request.query_params
-        flow_uuids = params.getlist("flow")
-        campaign_uuids = params.getlist("campaign")
+        flow_uuids = self.get_uuid_param("flow", list=True)
+        campaign_uuids = self.get_uuid_param("campaign", list=True)
         include = params.get("dependencies", "none")
 
         if include not in DefinitionsEndpoint.Depends.__members__:
@@ -3252,7 +3252,7 @@ class TicketsEndpoint(ListAPIMixin, BaseEndpoint):
 
      * **uuid** - the UUID of the ticket, filterable as `uuid`.
      * **contact** - the UUID and name of the contact (object).
-     * **status** - the status of the ticket, either `open` or `closed`.
+     * **status** - the status of the ticket, one of `pending`, `open` or `closed`.
      * **topic** - the topic of the ticket (object).
      * **assignee** - the user assigned to the ticket (object).
      * **opened_on** - when this ticket was opened (datetime).

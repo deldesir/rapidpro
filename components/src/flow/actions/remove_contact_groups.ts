@@ -32,23 +32,20 @@ export const remove_contact_groups: ActionConfig = {
     groups: {
       type: 'select',
       label: 'Groups',
-      helpText: 'Select the groups to remove the contact from',
       options: [],
       multi: true,
       searchable: true,
       endpoint: '/api/v2/groups.json',
       valueKey: 'uuid',
       nameKey: 'name',
-      placeholder: 'Search for groups...',
+      shouldExclude: (option: any) => !!option.query,
       conditions: {
         visible: (formData) => !formData.all_groups
       }
     },
     all_groups: {
       type: 'checkbox',
-      label: 'Remove from All Groups',
-      helpText:
-        'Check this to remove the contact from all groups instead of specific ones'
+      label: 'Remove from all groups'
     }
   },
   validate: (formData: FormData): ValidationResult => {
@@ -59,7 +56,7 @@ export const remove_contact_groups: ActionConfig = {
       (!formData.groups || formData.groups.length === 0)
     ) {
       errors.groups =
-        'At least one group must be selected or check "Remove from All Groups"';
+        'At least one group must be selected or check "Remove from all groups"';
     }
 
     return {

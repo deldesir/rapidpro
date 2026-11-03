@@ -29,7 +29,7 @@ from temba.msgs.models import Msg
 from temba.orgs.models import Org
 from temba.orgs.views.base import BaseDependencyDeleteModal, BaseReadView
 from temba.orgs.views.mixins import OrgObjPermsMixin, OrgPermsMixin
-from temba.utils import countries
+from temba.utils import audit, countries
 from temba.utils.fields import SelectWidget
 from temba.utils.views.mixins import ChartViewMixin, ComponentFormMixin, ContextMenuMixin, ModalFormMixin, SpaMixin
 
@@ -125,9 +125,9 @@ class ClaimViewMixin(ChannelTypeMixin, OrgPermsMixin, ComponentFormMixin):
 class AuthenticatedExternalClaimView(ClaimViewMixin, SmartFormView):
     form_blurb = _("You can connect your number by entering your credentials here.")
     username_label = _("Username")
-    username_help = _("The username provided by the provider to use their API")
+    username_help = None
     password_label = _("Password")
-    password_help = _("The password provided by the provider to use their API")
+    password_help = None
 
     def __init__(self, **kwargs):
         self.form_blurb = kwargs.pop("form_blurb", self.form_blurb)
@@ -140,23 +140,16 @@ class AuthenticatedExternalClaimView(ClaimViewMixin, SmartFormView):
 
     class Form(ClaimViewMixin.Form):
         country = forms.ChoiceField(
-            choices=ALL_COUNTRIES,
-            widget=SelectWidget(attrs={"searchable": True}),
-            label=_("Country"),
-            help_text=_("The country this phone number is used in"),
+            choices=ALL_COUNTRIES, widget=SelectWidget(attrs={"searchable": True}), label=_("Country")
         )
         number = forms.CharField(
             max_length=14,
             min_length=1,
             label=_("Number"),
-            help_text=_("The phone number or short code you are connecting with country code. ex: +250788123124"),
+            help_text=_("A phone number with country code or a short code, e.g. +250788123124 or 15543."),
         )
-        username = forms.CharField(
-            label=_("Username"), help_text=_("The username provided by the provider to use their API")
-        )
-        password = forms.CharField(
-            label=_("Password"), help_text=_("The password provided by the provider to use their API")
-        )
+        username = forms.CharField(label=_("Username"))
+        password = forms.CharField(label=_("Password"))
 
         def clean_number(self):
             number = self.data["number"]
@@ -400,29 +393,36 @@ class BaseClaimNumberMixin(ClaimViewMixin):
 
 
 class UpdateChannelForm(forms.ModelForm):
-    name = forms.CharField(
-        label=_("Name"), max_length=64, required=True, help_text=_("Descriptive name for this channel.")
-    )
+    name = forms.CharField(label=_("Name"), max_length=64, required=True)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.config_fields = []
+        self.config_defaults = {}
 
         if URN.TEL_SCHEME in self.instance.schemes:
             self.add_config_field(
                 Channel.CONFIG_ALLOW_INTERNATIONAL,
-                forms.BooleanField(required=False, help_text=_("Allow sending to and calling international numbers.")),
+                forms.BooleanField(required=False, help_text=_("Allows sending to and calling international numbers.")),
                 default=False,
             )
 
         if Channel.ROLE_CALL in self.instance.role:
             self.add_config_field(
                 Channel.CONFIG_MACHINE_DETECTION,
-                forms.BooleanField(
-                    required=False, help_text=_("Perform answering machine detection and hangup if machine detected.")
-                ),
+                forms.BooleanField(required=False, help_text=_("Hangs up calls answered by an answering machine.")),
                 default=False,
+            )
+
+        if user.is_staff:
+            self.fields["tps"] = forms.IntegerField(
+                label=_("TPS"),
+                min_value=1,
+                max_value=1000,
+                required=False,
+                initial=self.instance.tps,
+                help_text=_("Maximum messages sent per second."),
             )
 
     def add_config_field(self, config_key: str, field, *, default):
@@ -430,16 +430,27 @@ class UpdateChannelForm(forms.ModelForm):
 
         self.fields[config_key] = field
         self.config_fields.append(config_key)
+        self.config_defaults[config_key] = default
 
     def get_config_values(self):
         return {k: v for k, v in self.cleaned_data.items() if k in self.config_fields}
 
+    def clean_tps(self):
+        # some types set TPS at claim time, e.g. by country, so there's no default to safely reset to
+        tps = self.cleaned_data["tps"]
+        return tps if tps is not None else self.instance.tps
+
     def clean(self) -> dict[str, Any]:
         cleaned_data = super().clean()
-        updated_config = self.instance.config | self.get_config_values()
+        config_values = self.get_config_values()
+        updated_config = self.instance.config | config_values
 
-        if not Channel.get_type_from_code(self.instance.channel_type).check_credentials(updated_config):
-            raise ValidationError(_("Credentials don't appear to be valid."))
+        # only check credentials when config has changed (a missing key being unchanged if it's set to its default),
+        # so a channel whose credentials have been revoked can still be renamed or disabled
+        if any(self.instance.config.get(k, self.config_defaults[k]) != v for k, v in config_values.items()):
+            if not self.instance.type.check_credentials(updated_config):
+                raise ValidationError(_("Credentials don't appear to be valid."))
+
         return cleaned_data
 
     class Meta:
@@ -473,10 +484,12 @@ class ChannelCRUDL(SmartCRUDL):
         def build_context_menu(self, menu):
             obj = self.get_object()
 
-            for item in obj.type.menu_items:
-                menu.add_link(item["label"], reverse(item["view_name"], args=[obj.uuid]))
+            # type specific actions like reconnecting are all claim views
+            if self.has_org_perm("channels.channel_claim"):
+                for item in obj.type.menu_items:
+                    menu.add_link(item["label"], reverse(item["view_name"], args=[obj.uuid]))
 
-            if obj.type.config_ui:
+            if obj.type.config_ui and self.has_org_perm("channels.channel_configuration"):
                 menu.add_link(_("Configuration"), reverse("channels.channel_configuration", args=[obj.uuid]))
 
             if obj.type.has_logs and self.has_org_perm("channels.channel_logs"):
@@ -628,7 +641,7 @@ class ChannelCRUDL(SmartCRUDL):
             whitelisted_domain = forms.URLField(
                 required=True,
                 initial="https://",
-                help_text=_("The domain to whitelist for Messenger extensions ex: https://yourdomain.com"),
+                help_text=_("Allows Messenger extensions on this domain, e.g. https://example.com."),
             )
 
         slug_url_kwarg = "uuid"
@@ -712,7 +725,12 @@ class ChannelCRUDL(SmartCRUDL):
             return reverse("channels.channel_read", args=[self.object.uuid])
 
         def get_form_class(self):
-            return Channel.get_type_from_code(self.object.channel_type).get_update_form()
+            return self.object.type.get_update_form()
+
+        def get_form_kwargs(self):
+            kwargs = super().get_form_kwargs()
+            kwargs["user"] = self.request.user
+            return kwargs
 
         def derive_initial(self):
             initial = super().derive_initial()
@@ -722,6 +740,25 @@ class ChannelCRUDL(SmartCRUDL):
         def pre_save(self, obj):
             obj = super().pre_save(obj)
             obj.config.update(self.form.get_config_values())
+
+            self.previous_tps = obj.tps
+            if "tps" in self.form.cleaned_data:
+                obj.tps = self.form.cleaned_data["tps"]
+
+            return obj
+
+        def post_save(self, obj):
+            obj = super().post_save(obj)
+
+            if obj.tps != self.previous_tps:
+                audit.record(
+                    "channel.tps_changed",
+                    org=obj.org,
+                    channel=str(obj.uuid),
+                    tps=obj.tps,
+                    previous_tps=self.previous_tps,
+                )
+
             return obj
 
     class Claim(SpaMixin, OrgPermsMixin, SmartTemplateView):

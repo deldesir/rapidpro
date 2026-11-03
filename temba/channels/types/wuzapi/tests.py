@@ -247,9 +247,9 @@ class WuzapiTypeTest(TembaTest, CRUDLTestMixin):
         self.assertEqual("mine", channel.config["wuzapi_token"])
 
     def test_connect(self):
-        self.assertRequestDisallowed(self.connect_url, [None, self.agent, self.admin2])
+        self.assertRequestDisallowed(self.connect_url, [None, self.agent, self.editor, self.admin2])
 
-        response = self.assertReadFetch(self.connect_url, [self.editor, self.admin], context_object=self.channel)
+        response = self.assertReadFetch(self.connect_url, [self.admin], context_object=self.channel)
         self.assertContains(response, self.status_url)
         self.assertContains(response, self.pair_url)
         self.assertEqual(f"/settings/channels/{self.channel.uuid}", response.headers["temba_menu_selection"])
@@ -262,7 +262,7 @@ class WuzapiTypeTest(TembaTest, CRUDLTestMixin):
 
     @patch("requests.request")
     def test_status(self, mock_request):
-        self.assertRequestDisallowed(self.status_url, [None, self.agent, self.admin2])
+        self.assertRequestDisallowed(self.status_url, [None, self.agent, self.editor, self.admin2])
         self.login(self.admin)
 
         # a linked phone
@@ -311,7 +311,7 @@ class WuzapiTypeTest(TembaTest, CRUDLTestMixin):
 
     @patch("requests.request")
     def test_pair(self, mock_request):
-        self.assertRequestDisallowed(self.pair_url, [None, self.agent, self.admin2])
+        self.assertRequestDisallowed(self.pair_url, [None, self.agent, self.editor, self.admin2])
         self.login(self.admin)
 
         bridge_answers(
@@ -336,7 +336,7 @@ class WuzapiTypeTest(TembaTest, CRUDLTestMixin):
 
     @patch("requests.request")
     def test_disconnect(self, mock_request):
-        self.assertRequestDisallowed(self.disconnect_url, [None, self.agent, self.admin2])
+        self.assertRequestDisallowed(self.disconnect_url, [None, self.agent, self.editor, self.admin2])
 
         response = self.assertReadFetch(self.disconnect_url, [self.admin], context_object=self.channel)
         self.assertContains(response, "12065551212")

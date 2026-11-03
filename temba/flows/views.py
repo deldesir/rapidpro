@@ -333,7 +333,7 @@ class FlowCRUDL(SmartCRUDL):
             keyword_triggers = forms.CharField(
                 required=False,
                 label=_("Keyword triggers"),
-                help_text=_("When a user sends any of these keywords they will begin this flow"),
+                help_text=_("Contacts who send any of these keywords will start this flow."),
                 widget=SelectWidget(
                     attrs={
                         "widget_only": False,
@@ -341,7 +341,7 @@ class FlowCRUDL(SmartCRUDL):
                         "searchable": True,
                         "tags": True,
                         "space_select": True,
-                        "placeholder": _("Select keywords to trigger this flow"),
+                        "placeholder": _("e.g. join"),
                     }
                 ),
             )
@@ -349,9 +349,10 @@ class FlowCRUDL(SmartCRUDL):
             def __init__(self, org, branding, *args, **kwargs):
                 super().__init__(org, branding, *args, **kwargs)
 
+                self.fields["name"].widget.attrs["placeholder"] = _("e.g. Registration")
+
                 self.fields["flow_type"] = forms.ChoiceField(
                     label=_("Type"),
-                    help_text=_("Choose the method for your flow"),
                     choices=Flow.TYPE_CHOICES[:3],  # exclude SURVEY from options
                     widget=SelectWidget(
                         attrs={"widget_only": False},
@@ -365,6 +366,7 @@ class FlowCRUDL(SmartCRUDL):
 
                 self.fields["base_language"] = forms.ChoiceField(
                     label=_("Language"),
+                    help_text=_("Additional languages can be added later."),
                     initial=org.flow_languages[0],
                     choices=languages.choices(org.flow_languages),
                     widget=SelectWidget(attrs={"widget_only": False}),
@@ -378,7 +380,6 @@ class FlowCRUDL(SmartCRUDL):
         form_class = Form
         success_url = "uuid@flows.flow_editor"
         submit_button_name = _("Create")
-        field_config = {"name": {"help": _("Choose a unique name to describe this flow, e.g. Registration")}}
 
         def derive_exclude(self):
             return ["base_language"] if not self.request.org.flow_languages else []
@@ -467,7 +468,7 @@ class FlowCRUDL(SmartCRUDL):
             keyword_triggers = forms.CharField(
                 required=False,
                 label=_("Keyword triggers"),
-                help_text=_("When a user sends any of these keywords they will begin this flow"),
+                help_text=_("Contacts who send any of these keywords will start this flow."),
                 widget=SelectWidget(
                     attrs={
                         "widget_only": False,
@@ -475,14 +476,13 @@ class FlowCRUDL(SmartCRUDL):
                         "searchable": True,
                         "tags": True,
                         "space_select": True,
-                        "placeholder": _("Keywords"),
+                        "placeholder": _("e.g. join"),
                     }
                 ),
             )
 
             expires_after_minutes = forms.ChoiceField(
                 label=_("Expire inactive contacts"),
-                help_text=_("When inactive contacts should be removed from the flow"),
                 initial=Flow.EXPIRES_DEFAULTS[Flow.TYPE_VOICE],
                 choices=Flow.EXPIRES_CHOICES[Flow.TYPE_VOICE],
                 widget=SelectWidget(attrs={"widget_only": False}),
@@ -500,7 +500,7 @@ class FlowCRUDL(SmartCRUDL):
         class VoiceForm(BaseOnlineForm):
             ivr_retry = forms.ChoiceField(
                 label=_("Retry call if unable to connect"),
-                help_text=_("Retries call three times for the chosen interval"),
+                help_text=_("Calls are retried up to three times at this interval."),
                 initial=60,
                 choices=Call.RETRY_CHOICES,
                 widget=SelectWidget(attrs={"widget_only": False}),
@@ -517,11 +517,11 @@ class FlowCRUDL(SmartCRUDL):
                 model = Flow
                 fields = ("name", "keyword_triggers", "expires_after_minutes", "ignore_triggers", "ivr_retry")
                 widgets = {"name": InputWidget(), "ignore_triggers": CheckboxWidget()}
+                help_texts = {"ignore_triggers": _("Contacts in this flow won't be interrupted by keyword triggers.")}
 
         class MessagingForm(BaseOnlineForm):
             expires_after_minutes = forms.ChoiceField(
                 label=_("Expire inactive contacts"),
-                help_text=_("When inactive contacts should be removed from the flow"),
                 initial=Flow.EXPIRES_DEFAULTS[Flow.TYPE_MESSAGE],
                 choices=Flow.EXPIRES_CHOICES[Flow.TYPE_MESSAGE],
                 widget=SelectWidget(attrs={"widget_only": False}),
@@ -531,6 +531,7 @@ class FlowCRUDL(SmartCRUDL):
                 model = Flow
                 fields = ("name", "keyword_triggers", "expires_after_minutes", "ignore_triggers")
                 widgets = {"name": InputWidget(), "ignore_triggers": CheckboxWidget()}
+                help_texts = {"ignore_triggers": _("Contacts in this flow won't be interrupted by keyword triggers.")}
 
         success_url = "uuid@flows.flow_editor"
         form_classes = {
@@ -902,16 +903,15 @@ class FlowCRUDL(SmartCRUDL):
             extra_urns = forms.MultipleChoiceField(
                 required=False,
                 label=_("URNs"),
+                help_text=_("Includes these URN types in addition to the one used in the flow."),
                 choices=URN.SCHEME_CHOICES,
-                widget=SelectMultipleWidget(
-                    attrs={"placeholder": _("Optional: URNs in addition to the one used in the flow")}
-                ),
+                widget=SelectMultipleWidget(),
             )
             responded_only = forms.BooleanField(
                 required=False,
                 label=_("Responded Only"),
                 initial=True,
-                help_text=_("Only export results for contacts which responded"),
+                help_text=_("Only includes contacts who responded."),
                 widget=CheckboxWidget(),
             )
 
@@ -1209,6 +1209,14 @@ class FlowCRUDL(SmartCRUDL):
                 'To start this flow you need to <a href="%(link)s">add a voice channel</a> to your workspace which will '
                 "allow you to make and receive calls."
             ),
+            "no_send_channel_ask": _(
+                "To start this flow an administrator needs to add a channel to your workspace which will allow you to "
+                "send messages to your contacts."
+            ),
+            "no_call_channel_ask": _(
+                "To start this flow an administrator needs to add a voice channel to your workspace which will allow "
+                "you to make and receive calls."
+            ),
             "outbox_full": _(
                 "You have too many messages queued in your outbox. Please wait for these messages to send and then try again."
             ),
@@ -1250,11 +1258,17 @@ class FlowCRUDL(SmartCRUDL):
                 blockers.append(self.blockers["too_many_recipients"])
 
             if flow.flow_type == Flow.TYPE_MESSAGE and not flow.org.get_send_channel():
-                blockers.append(self.blockers["no_send_channel"] % {"link": reverse("channels.channel_claim")})
+                blockers.append(self.get_no_channel_blocker("no_send_channel"))
             elif flow.flow_type == Flow.TYPE_VOICE and not flow.org.get_call_channel():
-                blockers.append(self.blockers["no_call_channel"] % {"link": reverse("channels.channel_claim")})
+                blockers.append(self.get_no_channel_blocker("no_call_channel"))
 
             return blockers
+
+        def get_no_channel_blocker(self, key: str) -> str:
+            # users who can't add channels themselves can't follow a link to do so
+            if self.has_org_perm("channels.channel_claim"):
+                return self.blockers[key] % {"link": reverse("channels.channel_claim")}
+            return self.blockers[f"{key}_ask"]
 
         def get_warnings(self, features, flow, query, send_time) -> list:
             warnings = []
@@ -1484,7 +1498,7 @@ class FlowCRUDL(SmartCRUDL):
             archive = forms.BooleanField(
                 required=False,
                 label=_("Archive Flow"),
-                help_text=_("This will prevent new contacts from entering the flow."),
+                help_text=_("Prevents new contacts from entering the flow."),
                 widget=CheckboxWidget(),
             )
 

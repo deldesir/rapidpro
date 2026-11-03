@@ -46,7 +46,7 @@ class UpdateContactForm(forms.ModelForm):
         queryset=ContactGroup.objects.none(),
         required=False,
         label=_("Groups"),
-        widget=SelectMultipleWidget(attrs={"placeholder": _("Select groups for this contact"), "searchable": True}),
+        widget=SelectMultipleWidget(attrs={"searchable": True}),
     )
     new_scheme = forms.ChoiceField(required=False, choices=URN.SCHEME_CHOICES)
     new_path = forms.CharField(required=False)
@@ -94,9 +94,9 @@ class UpdateContactForm(forms.ModelForm):
                 if urn_choice:
                     label = urn_choice[1]
 
-                help_text = _("%(label)s for this contact") % {"label": label}
-                if first_urn:
-                    help_text += f" (@urns.{scheme})"
+                help_text = (
+                    _("Referenced in flows as %(expression)s.") % {"expression": f"@urns.{scheme}"} if first_urn else ""
+                )
 
                 # get all the urns for this scheme
                 ctrl = forms.CharField(

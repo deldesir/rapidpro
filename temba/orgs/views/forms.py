@@ -14,14 +14,14 @@ class SMTPForm(forms.Form):
     from_email = forms.CharField(
         max_length=128,
         label=_("From Address"),
-        help_text=_("Can contain a name e.g. Jane Doe <jane@example.org>"),
+        help_text=_("Can include a name, e.g. Jane Doe <jane@example.org>."),
         widget=InputWidget(),
     )
     host = forms.CharField(
-        label=_("Hostname"), max_length=128, widget=InputWidget(attrs={"placeholder": _("smtp.example.com")})
+        label=_("Hostname"), max_length=128, widget=InputWidget(attrs={"placeholder": _("e.g. smtp.example.com")})
     )
     port = forms.IntegerField(
-        label=_("Port"), min_value=1, max_value=65535, widget=InputWidget(attrs={"placeholder": _("25")})
+        label=_("Port"), min_value=1, max_value=65535, widget=InputWidget(attrs={"placeholder": _("e.g. 25")})
     )
     username = forms.CharField(max_length=128, label=_("Username"), widget=InputWidget())
     password = forms.CharField(max_length=128, label=_("Password"), widget=InputWidget(attrs={"password": True}))

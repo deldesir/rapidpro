@@ -63,27 +63,22 @@ class BaseTriggerForm(forms.ModelForm):
     flow = TembaChoiceField(
         Flow.objects.none(),
         label=_("Flow"),
-        help_text=_("Which flow will be started."),
         required=True,
-        widget=SelectWidget(attrs={"placeholder": _("Select a flow"), "searchable": True}),
+        widget=SelectWidget(attrs={"searchable": True}),
     )
     groups = TembaMultipleChoiceField(
         queryset=ContactGroup.objects.none(),
         label=_("Groups To Include"),
         help_text=_("Only includes contacts in these groups."),
         required=False,
-        widget=SelectMultipleWidget(
-            attrs={"icons": True, "placeholder": _("Optional: Select contact groups"), "searchable": True}
-        ),
+        widget=SelectMultipleWidget(attrs={"icons": True, "searchable": True}),
     )
     exclude_groups = TembaMultipleChoiceField(
         queryset=ContactGroup.objects.none(),
         label=_("Groups To Exclude"),
         help_text=_("Excludes contacts in these groups."),
         required=False,
-        widget=SelectMultipleWidget(
-            attrs={"icons": True, "placeholder": _("Optional: Select contact groups"), "searchable": True}
-        ),
+        widget=SelectMultipleWidget(attrs={"icons": True, "searchable": True}),
     )
 
     def __init__(self, org, user, trigger_type, *args, **kwargs):
@@ -145,9 +140,9 @@ class BaseChannelTriggerForm(BaseTriggerForm):
     channel = TembaChoiceField(
         queryset=Channel.objects.none(),
         label=_("Channel"),
-        help_text=_("Only include activity from this channel."),
+        help_text=_("Only includes activity from this channel."),
         required=False,
-        widget=SelectWidget(attrs={"placeholder": _("Optional: Select channel"), "clearable": True}),
+        widget=SelectWidget(attrs={"clearable": True}),
     )
 
     def __init__(self, org, user, trigger_type, *args, **kwargs):

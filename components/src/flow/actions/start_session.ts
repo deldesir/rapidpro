@@ -117,18 +117,15 @@ export const start_session: ActionConfig = {
     flow: {
       type: 'select',
       label: 'Flow',
-      helpText: 'Select the flow to start',
       required: true,
       searchable: true,
       endpoint: '/api/v2/flows.json?archived=false',
       valueKey: 'uuid',
-      nameKey: 'name',
-      placeholder: 'Select a flow...'
+      nameKey: 'name'
     },
     startType: {
       type: 'select',
       label: 'Start Type',
-      helpText: 'How should contacts be selected?',
       required: true,
       options: [
         { value: 'manual', name: 'Select recipients manually' },
@@ -139,14 +136,12 @@ export const start_session: ActionConfig = {
     recipients: {
       type: 'select',
       label: 'Recipients',
-      helpText: 'Select who should be started in the flow',
       multi: true,
       searchable: true,
       endpoint: '/contact/omnibox/?types=gc',
       queryParam: 'search',
       valueKey: 'id',
       nameKey: 'name',
-      placeholder: 'Search for contacts or groups...',
       expressions: 'session',
       conditions: {
         visible: (formData: FormData) => {
@@ -159,9 +154,9 @@ export const start_session: ActionConfig = {
       type: 'text',
       evaluated: true,
       label: 'Contact Query',
-      helpText: 'Only one matching contact will be started',
+      helpText: 'Only one matching contact is started.',
       maxLength: 10000,
-      placeholder: 'household_id = @fields.household_id',
+      placeholder: 'e.g. household_id = @fields.household_id',
       conditions: {
         visible: (formData: FormData) => {
           const startType = formData.startType?.[0]?.value;
@@ -172,7 +167,7 @@ export const start_session: ActionConfig = {
     skipContactsInFlow: {
       type: 'checkbox',
       label: 'Skip contacts currently in a flow',
-      helpText: 'Avoid interrupting a contact who is already in a flow'
+      helpText: 'Prevents interrupting contacts who are already in a flow.'
     }
   },
 

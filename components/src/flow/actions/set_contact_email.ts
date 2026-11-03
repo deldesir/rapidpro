@@ -21,11 +21,11 @@ export const set_contact_email: ActionConfig = {
     email: {
       type: 'text',
       label: 'Email',
-      placeholder: 'Enter email address...',
+      required: false,
       evaluated: true,
       maxLength: 1000,
       helpText:
-        'The new email address for the contact, or leave empty to clear it. You can use expressions like @input.text'
+        'Clears it when empty, and can include expressions, e.g. `@input.text`.'
     }
   },
   sanitize: (formData: FormData): void => {

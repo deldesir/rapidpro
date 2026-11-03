@@ -608,7 +608,6 @@ class Contact(LegacyIDMixin, LegacyUUIDMixin, CreatedByMixin, ModifiedByMixin, S
 
     current_session_uuid = models.UUIDField(null=True)  # waiting session if any
     current_flow = models.ForeignKey("flows.Flow", on_delete=models.PROTECT, null=True, db_index=False)
-    ticket_count = models.IntegerField(default=0)
     last_seen_on = models.DateTimeField(null=True)
 
     created_by = models.ForeignKey(
@@ -735,11 +734,14 @@ class Contact(LegacyIDMixin, LegacyUUIDMixin, CreatedByMixin, ModifiedByMixin, S
                 if anchor is None:  # contact has no value for this event's anchor field
                     continue
 
-                when = anchor + event.get_offset()
-                if event.delivery_hour >= 0 and event.unit in (CampaignEvent.UNIT_DAYS, CampaignEvent.UNIT_WEEKS):
-                    when = when.astimezone(self.org.timezone).replace(
-                        hour=event.delivery_hour, minute=0, second=0, microsecond=0
-                    )
+                try:
+                    when = anchor + event.get_offset()
+                    if event.delivery_hour >= 0 and event.unit in (CampaignEvent.UNIT_DAYS, CampaignEvent.UNIT_WEEKS):
+                        when = when.astimezone(self.org.timezone).replace(
+                            hour=event.delivery_hour, minute=0, second=0, microsecond=0
+                        )
+                except OverflowError:  # anchor is so close to the min/max date that the event time isn't representable
+                    continue
 
                 obj = {
                     "type": "campaign_event",
@@ -1147,15 +1149,17 @@ class Contact(LegacyIDMixin, LegacyUUIDMixin, CreatedByMixin, ModifiedByMixin, S
 
     def open_ticket(self, user, *, topic, assignee, note: str):
         """
-        Opens a new ticket for this contact.
+        Opens a new ticket for this contact, unless they already have a pending or open ticket, and returns that ticket.
         """
+        from temba.tickets.models import Ticket
+
         mod = modifiers.Ticket(
             topic=modifiers.TopicRef(uuid=str(topic.uuid), name=topic.name),
             assignee=(modifiers.UserRef(uuid=str(assignee.uuid), name=assignee.name) if assignee else None),
             note=note,
         )
         self.modify(user, [mod], refresh=False)
-        return self.tickets.order_by("id").last()
+        return self.tickets.filter(status__in=(Ticket.STATUS_PENDING, Ticket.STATUS_OPEN)).first()
 
     def interrupt(self, user):
         """
@@ -1602,7 +1606,7 @@ class ContactGroup(PublishedAssetMixin, LegacyIDMixin, OrgAsset, DependencyMixin
             name="Open Tickets",
             group_type=ContactGroup.TYPE_SMART,
             is_system=True,
-            query="tickets > 0",
+            query='ticket = "open"',
             status=cls.STATUS_READY,  # since this group will always be empty for new orgs
             created_by=org.created_by,
             modified_by=org.modified_by,
@@ -1871,6 +1875,11 @@ class ContactGroupCount(BaseSquashableCount):
         indexes = [
             models.Index(fields=("group",), condition=Q(is_squashed=False), name="contactgroupcounts_unsquashed")
         ]
+        constraints = [
+            models.UniqueConstraint(
+                name="contactgroupcounts_squashed", fields=("group",), condition=Q(is_squashed=True)
+            )
+        ]
 
 
 class ContactFire(models.Model):
@@ -1882,11 +1891,13 @@ class ContactFire(models.Model):
     TYPE_WAIT_TIMEOUT = "T"
     TYPE_SESSION_EXPIRATION = "S"
     TYPE_CAMPAIGN_EVENT = "C"
+    TYPE_TICKET_CLOSE = "K"
     TYPE_CHOICES = (
         (TYPE_WAIT_EXPIRATION, "Wait Expiration"),
         (TYPE_WAIT_TIMEOUT, "Wait Timeout"),
         (TYPE_SESSION_EXPIRATION, "Session Expiration"),
         (TYPE_CAMPAIGN_EVENT, "Campaign Event"),
+        (TYPE_TICKET_CLOSE, "Ticket Close"),
     )
 
     id = models.BigAutoField(auto_created=True, primary_key=True)

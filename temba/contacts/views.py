@@ -35,7 +35,7 @@ from temba.orgs.views.base import (
     BaseUsagesModal,
 )
 from temba.orgs.views.mixins import OrgObjPermsMixin, OrgPermsMixin, UniqueNameMixin
-from temba.tickets.models import Topic
+from temba.tickets.models import Ticket, Topic
 from temba.users.models import User
 from temba.utils import json, on_transaction_commit
 from temba.utils.fields import CheckboxWidget, InputWidget, SelectWidget, TembaChoiceField
@@ -304,7 +304,10 @@ class ContactCRUDL(SmartCRUDL):
                         on_submit="contactUpdated()",
                         disabled=True,
                     )
-                if self.has_org_perm("contacts.contact_open_ticket") and obj.ticket_count == 0:
+                if (
+                    self.has_org_perm("contacts.contact_open_ticket")
+                    and not obj.tickets.filter(status__in=(Ticket.STATUS_PENDING, Ticket.STATUS_OPEN)).exists()
+                ):
                     menu.add_modax(
                         _("Open Ticket"), "open-ticket", reverse("contacts.contact_open_ticket", args=[obj.uuid])
                     )
@@ -750,7 +753,7 @@ class ContactCRUDL(SmartCRUDL):
             )
             note = forms.CharField(
                 label=_("Note"),
-                widget=InputWidget(attrs={"textarea": True, "placeholder": _("Optional")}),
+                widget=InputWidget(attrs={"textarea": True}),
                 required=False,
             )
 
@@ -912,8 +915,7 @@ class ContactFieldForm(UniqueNameMixin, forms.ModelForm):
             "agent_access": _("Agent Access"),
         }
         help_texts = {
-            "value_type": _("Type of the values that will be stored in this field."),
-            "agent_access": _("Type of access that agent users have for this field."),
+            "agent_access": _("Whether agents can see or edit this field."),
         }
         widgets = {
             "name": InputWidget(attrs={"widget_only": False}),

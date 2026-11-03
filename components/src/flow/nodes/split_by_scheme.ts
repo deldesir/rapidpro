@@ -31,12 +31,11 @@ export const split_by_scheme: NodeConfig = {
       type: 'select',
       label: 'Channel Types',
       helpText:
-        "The contact's URN is the address they used to reach you such as their phone number or a Facebook ID. Select which URN types to split by.",
+        'Routes contacts by the type of address they used, e.g. a phone number or Facebook ID.',
       required: true,
       options: getSchemeOptions(),
       multi: true,
-      searchable: true,
-      placeholder: 'Select the channels to split by...'
+      searchable: true
     },
     result_name: resultNameField
   },

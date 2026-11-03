@@ -216,9 +216,14 @@ class Ticket(models.Model):
     A ticket represents a period of human interaction with a contact.
     """
 
+    STATUS_PENDING = "P"
     STATUS_OPEN = "O"
     STATUS_CLOSED = "C"
-    STATUS_CHOICES = ((STATUS_OPEN, _("Open")), (STATUS_CLOSED, _("Closed")))
+    STATUS_CHOICES = ((STATUS_PENDING, _("Pending")), (STATUS_OPEN, _("Open")), (STATUS_CLOSED, _("Closed")))
+
+    OUTCOME_RESOLVED = "R"
+    OUTCOME_IDLE = "I"
+    OUTCOME_CHOICES = ((OUTCOME_RESOLVED, _("Resolved")), (OUTCOME_IDLE, _("Idle")))
 
     MAX_NOTE_LENGTH = 10_000
 
@@ -243,6 +248,9 @@ class Ticket(models.Model):
     replied_on = models.DateTimeField(null=True)
     closed_on = models.DateTimeField(null=True)
     modified_on = models.DateTimeField(default=timezone.now)
+
+    # how this ticket was closed - unset on tickets closed before this was recorded
+    outcome = models.CharField(max_length=1, choices=OUTCOME_CHOICES, null=True)
 
     # when this ticket last had activity which includes messages being sent and received, and is used for ordering
     last_activity_on = models.DateTimeField(default=timezone.now)
@@ -352,13 +360,23 @@ class Ticket(models.Model):
                 name="tickets_org_assign_status_desc",
                 fields=["org", "assignee", "-status", "-last_activity_on", "-id"],
             ),
-            # used by engine to load a contact with its open tickets
-            models.Index(name="tickets_contact_open", fields=["contact", "opened_on"], condition=Q(status="O")),
-            # used by engine to find open tickets that have been inactive
-            models.Index(name="tickets_open_last_activity", fields=["last_activity_on"], condition=Q(status="O")),
             # used by API tickets endpoint hence the ordering, and general fetching by org or contact
             models.Index(name="tickets_api_by_org", fields=["org", "-modified_on", "-id"]),
             models.Index(name="tickets_api_by_contact", fields=["contact", "-modified_on", "-id"]),
+        ]
+        constraints = [
+            # a contact can only have one ticket that isn't closed
+            models.UniqueConstraint(
+                name="tickets_contact_single_active", fields=("contact",), condition=Q(status__in=("P", "O"))
+            ),
+            # closed tickets have a close time and outcome, and tickets that aren't closed don't
+            models.CheckConstraint(
+                name="tickets_closed_fields",
+                condition=(
+                    Q(status="C", closed_on__isnull=False, outcome__isnull=False)
+                    | Q(status__in=("P", "O"), closed_on__isnull=True, outcome__isnull=True)
+                ),
+            ),
         ]
 
 
