@@ -492,8 +492,18 @@ class Attachment:
     @classmethod
     def bulk_delete(cls, attachments):
         for att in attachments:
-            parsed = urlparse(att.url)
-            default_storage.delete(unquote(parsed.path))
+            default_storage.delete(cls._storage_name(att.url))
+
+    @staticmethod
+    def _storage_name(url: str) -> str:
+        """The storage name of an attachment's file. Local storage serves files under a site path
+        (STORAGE_URL without a scheme, e.g. /rp/media), which is not part of the file's name: the
+        filesystem storage refuses a name that starts with it. Object storage keeps its URL path."""
+        path = unquote(urlparse(url).path)
+        base = settings.STORAGE_URL.rstrip("/")
+        if base and not urlparse(base).scheme and path.startswith(base + "/"):
+            return path[len(base) + 1 :]
+        return path
 
     def as_json(self) -> dict:
         return {"content_type": self.content_type, "url": self.url}
