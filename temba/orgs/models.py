@@ -3,7 +3,7 @@ import logging
 import os
 from abc import ABCMeta
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -24,7 +24,7 @@ from django.contrib.staticfiles import finders
 from django.core.files import File
 from django.core.files.storage import FileSystemStorage, default_storage, storages
 from django.core.validators import MaxValueValidator
-from django.db import models, transaction
+from django.db import DEFAULT_DB_ALIAS, connection, connections, models, transaction
 from django.db.models import Count, Exists, Prefetch, Q
 from django.utils import timezone
 from django.utils.encoding import force_str
@@ -254,6 +254,7 @@ class Org(LegacyIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     FEATURE_AGENTS = "agents"  # can create AI agents to handle contact conversations
     FEATURE_UNRESTRICTED_WEBHOOKS = "unrestricted_webhooks"  # can call webhooks to otherwise blocked domains
     FEATURE_TICKET_TRIGGERS = "ticket_triggers"  # triggers still fire for contacts with open tickets
+    FEATURE_SHARED_EMAIL = "shared_email"  # flows can send email using the shared email service
     FEATURES_CHOICES = (
         (FEATURE_USERS, _("Users")),
         (FEATURE_NEW_ORGS, _("New Orgs")),
@@ -264,6 +265,7 @@ class Org(LegacyIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
         (FEATURE_AGENTS, _("Agents")),
         (FEATURE_UNRESTRICTED_WEBHOOKS, _("Unrestricted Webhooks")),
         (FEATURE_TICKET_TRIGGERS, _("Ticket Triggers")),
+        (FEATURE_SHARED_EMAIL, _("Shared Email")),
     )
 
     LIMIT_CHANNELS = "channels"
@@ -345,6 +347,7 @@ class Org(LegacyIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     )
     is_flagged = models.BooleanField(default=False, help_text=_("Whether this organization is currently flagged."))
     is_suspended = models.BooleanField(default=False, help_text=_("Whether this organization is currently suspended."))
+    is_internal = models.BooleanField(default=False)
 
     suspended_on = models.DateTimeField(null=True)
     released_on = models.DateTimeField(null=True)
@@ -429,6 +432,15 @@ class Org(LegacyIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
     @property
     def is_child(self) -> bool:
         return bool(self.parent_id)
+
+    @property
+    def has_flow_email(self) -> bool:
+        """
+        Whether flows can send email at all: with SMTP settings of our own or our parent's, or the shared email service
+        """
+        return bool(
+            self.flow_smtp or (self.is_child and self.parent.flow_smtp) or Org.FEATURE_SHARED_EMAIL in self.features
+        )
 
     @property
     def is_verified(self):
@@ -668,15 +680,27 @@ class Org(LegacyIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
         """
         Estimates the time it will take to send the given number of messages
         """
-        channels = self.channels.filter(is_active=True)
+        from temba.channels.models import Channel, ChannelTally
+
+        channels = list(self.channels.filter(is_active=True))
         channel_counts = {}
-        month_ago = timezone.now() - timedelta(days=30)
+        today = timezone.now().date()
         total_count = 0
 
+        daily_totals = ChannelTally.get_daily_totals_by_channel(
+            channels,
+            [Channel.TALLY_TEXT_IN, Channel.TALLY_TEXT_OUT],
+            today - timedelta(days=30),
+            today + timedelta(days=1),
+        )
+        counts_by_channel = defaultdict(int)
+        for (channel_id, _day, _scope), count in daily_totals.items():
+            counts_by_channel[channel_id] += count
+
         for channel in channels:
-            channel_count = channel.get_msg_count(since=month_ago)
+            channel_count = counts_by_channel[channel.id]
             total_count += channel_count
-            channel_counts[channel.uuid] = {"count": channel_count, "tps": channel.tps or 10}
+            channel_counts[channel.uuid] = {"count": channel_count, "tps": channel.tps}
 
         # balance all channels equally if we have nothing to go on
         if not total_count:
@@ -1267,9 +1291,7 @@ class Org(LegacyIDMixin, CreatedByMixin, ModifiedByMixin, SoftDeleteMixin):
         delete_in_batches(self.counts.all())
         delete_in_batches(self.daily_counts.all())
 
-        # clear buffered tallies first so that nothing is flushed after their rows are deleted
-        Tally.clear_buffered(self)
-        delete_in_batches(self.tallies.all())
+        delete_in_batches(self.org_tallies.all(), pk="pk")
 
         # now that contacts are no longer in the database, we can start de-indexing them from search
         mailroom.get_client().org_deindex(self)
@@ -1780,70 +1802,206 @@ class DailyCount(BaseDailyCount):
         ]
 
 
-class Tally(models.Model):
+class BaseTally(models.Model):
     """
-    Org-level totals of things which only go up. Writers increment a per-org hash in Valkey which mailroom flushes into
-    these rows, so a total is the sum of both. Reads aren't atomic with flushes so a total can be briefly off while one
-    is in progress. Key layout must match mailroom's tallies package.
+    Base for totals keyed by an owner and a scope. Writers increment a global hash in Valkey which mailroom flushes into
+    these rows in batches, so a total is the sum of both. Key layout, and how to read both consistently, must match
+    gocommon's tallies package. Mailroom drops rows whose total reaches zero, so a missing row means zero.
 
-    Daily totals end their scope with the UTC date, e.g. "emails/shared/2026-11-02", and are given an expiry by mailroom
-    when first flushed. Rows without one are kept forever.
+    Daily totals end their scope with @ and the date, e.g. "emails/shared@2026-11-02", and may be given an expiry by
+    mailroom when first flushed. Rows without one are kept forever.
+
+    Scopes use the C collation so that the primary key can serve exact, prefix and range lookups with plain operators.
     """
 
-    PENDING_KEY = "tallies:pending"
-    GENERATION = "_gen"  # reserved hash field and scope which mailroom uses to make flushes exactly-once
+    KEY_BASE = "tallies"
+    LIVE_KEY = "{tallies}:live"
+    FLUSHING_KEY = "{tallies}:flushing"
+    BATCH_KEY = "{tallies}:batch"
+    BATCH_ID_KEY = "{tallies}:batch_id"
 
-    id = models.BigAutoField(primary_key=True)
-    org = models.ForeignKey(Org, on_delete=models.PROTECT, related_name="tallies", db_index=False)  # indexed below
-    scope = models.CharField(max_length=255)
+    READ_ATTEMPTS = 3
+
+    owner_field: str  # the foreign key leading the primary key
+    field_prefixes: tuple[str, ...]  # prefixes of the owner id in Valkey hash fields, all of which are read
+
+    scope = models.CharField(max_length=255, db_collation="C")
     count = models.BigIntegerField()
     expires_on = models.DateField(null=True)
 
     @classmethod
-    def get_keys(cls, org) -> tuple[str, str]:
-        """
-        Gets the live and flushing hash keys for the given org.
-        """
-        key = f"tallies:{org.id}"
-        return key, f"{key}:flushing"
+    def _get_totals(cls, owner_ids: list[int], scopes: list[str]) -> dict[tuple[int, str], int]:
+        owner_ids = list(dict.fromkeys(owner_ids))
+        scopes = list(dict.fromkeys(scopes))
+        if not owner_ids or not scopes:
+            return {}
+
+        for _attempt in range(cls.READ_ATTEMPTS):
+            totals, consistent = cls._read_totals(owner_ids, scopes)
+            if consistent:
+                return totals
+
+        logger.warning(
+            "tally totals may be overcounted after retries",
+            extra={"table": cls._meta.db_table, "owner_ids": owner_ids, "scopes": scopes},
+        )
+        return totals
 
     @classmethod
-    def get_totals(cls, org, prefix: str) -> dict[str, int]:
+    def _read_totals(cls, owner_ids: list[int], scopes: list[str]) -> tuple[dict[tuple[int, str], int], bool]:
         """
-        Gets totals by scope for scopes with the given prefix.
+        Reads totals from Valkey and then the database, returning them and whether they're consistent, which they aren't
+        if a batch was flushed in between, as it may have moved counts we read from Valkey into the rows we read.
         """
+        # one loop so that each field stays aligned with the key it counts towards
+        pairs = [((o, s), f"{p}{o}|{s}") for o in owner_ids for s in scopes for p in cls.field_prefixes]
+        keys, fields = [k for k, _ in pairs], [f for _, f in pairs]
+
+        r = get_valkey_connection()
+        with r.pipeline(transaction=True) as pipe:
+            for key in (cls.LIVE_KEY, cls.FLUSHING_KEY, cls.BATCH_KEY):
+                pipe.hmget(key, fields)
+            pipe.exists(cls.BATCH_KEY)
+            pipe.get(cls.BATCH_ID_KEY)
+            live, flushing, batch, batch_exists, batch_id = pipe.execute()
+
+        # one statement so that the counts and the last batch come from the same snapshot
+        owner_col = f"{cls.owner_field}_id"
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT f.last_batch, t.{owner_col}, t.scope, t.count
+                  FROM (SELECT (SELECT last_batch FROM orgs_tallyflush WHERE name = %s) AS last_batch) f
+             LEFT JOIN {cls._meta.db_table} t ON t.{owner_col} = ANY(%s) AND t.scope = ANY(%s)
+                """,
+                (cls.KEY_BASE, owner_ids, scopes),
+            )
+            rows = cursor.fetchall()
+
+        last_batch = rows[0][0] or 0
+        batch_id = int(batch_id or 0)
+        include_batch = bool(batch_exists) and last_batch < batch_id
+        consistent = last_batch <= batch_id
+
         totals = defaultdict(int)
-        rows = org.tallies.filter(scope__startswith=prefix).exclude(scope=cls.GENERATION)
+        for _last_batch, owner_id, scope, count in rows:
+            if scope is not None:
+                totals[(owner_id, scope)] += count
 
-        for scope, count in rows.values_list("scope", "count"):
-            totals[scope] += count
+        for values in (live, flushing, batch if include_batch else []):
+            for key, count in zip(keys, values):
+                if count is not None:
+                    totals[key] += int(count)
 
-        r = get_valkey_connection()
-        with r.pipeline(transaction=False) as pipe:
-            for key in cls.get_keys(org):
-                pipe.hgetall(key)
-            hashes = pipe.execute()
-
-        for field, count in itertools.chain(*[h.items() for h in hashes]):
-            scope = field.decode()
-            if scope != cls.GENERATION and scope.startswith(prefix):
-                totals[scope] += int(count)
-
-        return dict(totals)
+        # totals which can go down may be buffered back to zero
+        return {k: v for k, v in totals.items() if v != 0}, consistent
 
     @classmethod
-    def clear_buffered(cls, org):
-        r = get_valkey_connection()
-        with r.pipeline() as pipe:
-            pipe.delete(*cls.get_keys(org))
-            pipe.srem(cls.PENDING_KEY, org.id)
-            pipe.execute()
+    def _get_daily_totals(
+        cls, owner_ids: list[int], scopes: list[str], since: date, until: date, using: str = DEFAULT_DB_ALIAS
+    ) -> dict[tuple[int, date, str], int]:
+        """
+        Gets totals by owner id, day and scope for the given undated scopes of each of the given owners over days from
+        since up to until, omitting those with no total. Only today's are read from Valkey too, as earlier days have
+        been flushed.
+
+        Earlier days are read from the database named by using, e.g. a read replica. Today's always come from the
+        default database, as they must be read at the same moment as Valkey, which a lagging replica isn't, so it could
+        be missing a batch which has just been flushed out of Valkey.
+        """
+        owner_ids = list(dict.fromkeys(owner_ids))
+        scopes = list(dict.fromkeys(scopes))
+        if not owner_ids or not scopes:
+            return {}
+
+        today = timezone.now().date()
+        totals = {}
+
+        # each scope's dated rows are a range of the primary key, as dates are fixed width
+        if since < (before := min(until, today)):
+            conds = " OR ".join(["(scope >= %s AND scope < %s)"] * len(scopes))
+            bounds = [f"{s}@{d.isoformat()}" for s in scopes for d in (since, before)]
+
+            with connections[using].cursor() as cursor:
+                cursor.execute(
+                    f"SELECT {cls.owner_field}_id, scope, count FROM {cls._meta.db_table} "
+                    f"WHERE {cls.owner_field}_id = ANY(%s) AND ({conds})",
+                    [owner_ids, *bounds],
+                )
+
+                for owner_id, scope, count in cursor.fetchall():
+                    undated, day = scope.rsplit("@", 1)
+                    totals[(owner_id, date.fromisoformat(day), undated)] = count
+
+        if since <= today < until:
+            suffix = f"@{today.isoformat()}"
+            for (owner_id, scope), count in cls._get_totals(owner_ids, [s + suffix for s in scopes]).items():
+                totals[(owner_id, today, scope.removesuffix(suffix))] = count
+
+        return totals
+
+    class Meta:
+        abstract = True
+
+
+class OrgTally(BaseTally):
+    """
+    Org-level totals of things which only go up.
+    """
+
+    owner_field = "org"
+    field_prefixes = ("O", "")  # older writers may still be writing the org unprefixed
+
+    pk = models.CompositePrimaryKey("org", "scope")
+    org = models.ForeignKey(Org, on_delete=models.PROTECT, related_name="org_tallies", db_index=False)  # leads the key
+
+    @classmethod
+    def get_totals(cls, org, scopes: list[str]) -> dict[str, int]:
+        """
+        Gets totals by scope for the given scopes, omitting those with no total.
+        """
+        return {scope: count for (_, scope), count in cls.get_totals_by_org([org], scopes).items()}
+
+    @classmethod
+    def get_totals_by_org(cls, orgs, scopes: list[str]) -> dict[tuple[int, str], int]:
+        """
+        Gets totals by org id and scope for the given scopes in each of the given orgs, omitting those with no total.
+        """
+        return cls._get_totals([o.id for o in orgs], scopes)
+
+    @classmethod
+    def get_daily_totals(
+        cls, org, scopes: list[str], since: date, until: date, using: str = DEFAULT_DB_ALIAS
+    ) -> dict[tuple[date, str], int]:
+        """
+        Gets totals by day and scope for the given undated scopes over days from since up to until, omitting those with
+        no total. See BaseTally._get_daily_totals for using.
+        """
+        totals = cls.get_daily_totals_by_org([org], scopes, since, until, using=using)
+        return {(day, scope): count for (_, day, scope), count in totals.items()}
+
+    @classmethod
+    def get_daily_totals_by_org(
+        cls, orgs, scopes: list[str], since: date, until: date, using: str = DEFAULT_DB_ALIAS
+    ) -> dict[tuple[int, date, str], int]:
+        """
+        Gets totals by org id, day and scope for the given undated scopes in each of the given orgs over days from since
+        up to until, omitting those with no total.
+        """
+        return cls._get_daily_totals([o.id for o in orgs], scopes, since, until, using=using)
 
     class Meta:
         indexes = [
             # for trimming
-            models.Index(name="orgtally_expires_on", fields=("expires_on",), condition=Q(expires_on__isnull=False))
+            models.Index(name="orgorgtally_expires_on", fields=("expires_on",), condition=Q(expires_on__isnull=False))
         ]
-        constraints = [
-            models.UniqueConstraint("org", OpClass("scope", name="varchar_pattern_ops"), name="orgtally_org_scope")
-        ]
+
+
+class TallyFlush(models.Model):
+    """
+    The last batch of tallies committed by mailroom's flush, by key base. Mailroom updates it in the same transaction as
+    the counts so that flushes are exactly-once, and readers use it to tell whether a batch in Valkey is already here.
+    """
+
+    name = models.CharField(max_length=64, primary_key=True)
+    last_batch = models.BigIntegerField()

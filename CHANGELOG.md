@@ -1,3 +1,107 @@
+## v26.3.196 (2026-11-13)
+ * Backfill call tallies and show them on channel activity
+
+## v26.3.195 (2026-11-12)
+ * Backfill daily tallies of new contacts and failed messages
+ * Make Channel.tps a non-null positive integer with a default of 10
+ * Show workspace limit defaults as placeholders on the staff form
+ * Have sheets only take posting forms, hand them the next step rather than a redirect, and post the current CSRF token
+ * Open a channel type's own actions, e.g. reconnecting, in a sheet over the read page
+
+## v26.3.194 (2026-11-12)
+ * Post the current CSRF cookie's token from the channel picker, as a sign-in popup may have replaced it
+ * Clear the test cookie after each test
+
+## v26.3.193 (2026-11-12)
+ * Add Org.is_internal for staff to mark internal or testing workspaces
+ * Stop reading channel tallies from legacy org tallies
+ * Wait for the channel picker's form to load rather than a fixed time
+
+## v26.3.192 (2026-11-12)
+ * Rework the channel read page as a dashboard
+ * New channel claim modal pipeline
+
+## v26.3.191 (2026-11-11)
+ * Fold legacy channel tallies out of org tallies into channel tallies
+
+## v26.3.190 (2026-11-11)
+ * Add ChannelTally for channel-level tallies, reading legacy channel org tallies too
+ * Look up flow segment tallies from the definition and drop old format scope reading
+
+## v26.3.189 (2026-11-11)
+ * Fold old format segment tallies into compact scopes
+
+## v26.3.188 (2026-11-11)
+ * Read flow segment tallies in both old and compact scope formats
+
+## v26.3.187 (2026-11-11)
+ * Remove the Mblox channel type
+ * Stop writing msgsin counts to flow activity counts
+
+## v26.3.186 (2026-11-10)
+ * Allow OrgTally daily totals for past days to be read from another database
+ * Roll the flow responses chart up into weekly buckets, leaving out the partial first week
+
+## v26.3.185 (2026-11-10)
+ * Read flow segment and msgsin counts from flow tallies
+ * Clamp the flow engagement timeline to the last year of daily tallies
+ * Remove SMSCentral, Novo, Messangi, DMark and Hub9 channel types
+ * Warn in the flow editor when an action needs an email or channel the workspace lacks
+
+## v26.3.184 (2026-11-10)
+ * Add data migration to backfill flow segment and msgsin tallies from activity counts
+
+## v26.3.183 (2026-11-10)
+ * Add shared_email workspace feature for using the shared flow email service
+
+## v26.3.182 (2026-11-09)
+ * Don't send notification emails to released users
+
+## v26.3.181 (2026-11-09)
+ * Add FlowTally model for flow-level tallies
+ * Read O-prefixed tally fields and include the until day in channel charts
+
+## v26.3.180 (2026-11-09)
+ * Drop orgs.Tally in favor of orgs.OrgTally
+ * Drop ChannelCount and the unused statistics endpoint
+
+## v26.3.179 (2026-11-05)
+ * Read tally totals from OrgTally instead of Tally
+
+## v26.3.178 (2026-11-05)
+ * Add data migration to backfill org tallies from tallies, locking source tallies while it runs
+ * Stop writing channel counts from the msg insert trigger
+ * Test expiry of existing org tallies
+
+## v26.3.177 (2026-11-05)
+ * Add OrgTally model keyed by org and scope
+ * Show the channel's country code on the channel read page and drop the activated date
+ * Show the channel's sending status on its read page as a coloured pill, with Ready, Paused (when courier has paused sending) and Disabled states
+ * Use the new page header on every page, pinned above the scrolling content, with the flow editor header pinned at the top, a shared shortcut list for the tickets and knowledge pages, and the unused search query context dropped
+ * Test the default page header for pages with and without a content menu
+
+## v26.3.176 (2026-11-05)
+ * Read channel and workspace message counts from tallies, batching reads across workspaces for the dashboard and across channels for send estimates
+ * Fix Kannel config page stanza being reflowed into a single block, with padding and a test of its line structure
+
+## v26.3.175 (2026-11-04)
+ * Backfill channel and workspace message tallies from channel counts for days before today
+ * Show 13 months in channel read page monthly counts table
+
+## v26.3.174 (2026-11-04)
+ * Keep barely tinted dialog colors from deepening into vivid focus colors
+ * Return 404 when updating a deleted trigger
+ * Make themed dialogs work with light colors and label the note button Add Note
+ * Stop the review workflow adding Claude Code attribution
+ * Limit channel read page charts and monthly counts to the last year
+ * Give field and card icons one shared muted color
+ * Delete a channel's tallies when deleting the channel
+ * Add a shared card title style and soften destructive buttons to a red-tinted ring
+
+## v26.3.173 (2026-11-04)
+ * Add TallyFlush and read tallies from the global Valkey layout using the current key layout and daily scope format
+ * Drop LLMCount now that mailroom tallies LLM usage
+
 ## v26.3.172 (2026-11-03)
  * Require closed tickets to have closed_on and outcome, and other tickets neither
  * Update dependencies, including dnspython to 2.9.0

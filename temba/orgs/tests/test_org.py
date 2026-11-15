@@ -5,8 +5,6 @@ from pathlib import Path
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from django_valkey import get_valkey_connection
-
 from django.conf import settings
 from django.db.models import F, Model
 from django.test.utils import override_settings
@@ -160,6 +158,23 @@ class OrgTest(TembaTest):
         invalid_date = datetime(1, 1, 1, 0, 0, tzinfo=tzone(timedelta(days=-1, seconds=62640), "-06:36"))
 
         self.assertEqual(self.org.format_datetime(invalid_date), "")
+
+    def test_get_estimated_send_time(self):
+        channel2 = self.create_channel("TG", "Telegram", "1234")
+        channel2.tps = 100
+        channel2.save(update_fields=("tps",))
+
+        # with no recent counts, messages are balanced equally across channels
+        self.assertEqual(timedelta(seconds=50), self.org.get_estimated_send_time(1000))
+
+        today = timezone.now().date()
+        self.create_channel_tally(self.channel, "text:out", today - timedelta(days=1), 90)
+        self.create_channel_tally(channel2, "text:in", today, 10)
+        self.create_channel_tally(channel2, "text:out", today - timedelta(days=31), 1000)  # too old
+        self.create_channel_tally(channel2, "voice:out", today, 1000)  # not text
+
+        # otherwise by their share of recent messages, so 900 messages at 10/s is the longest
+        self.assertEqual(timedelta(seconds=90), self.org.get_estimated_send_time(1000))
 
     def test_get_unique_slug(self):
         self.org.slug = "allo"
@@ -654,6 +669,7 @@ class OrgDeleteTest(TembaTest):
 
         start1 = add(FlowStart.objects.create(org=org, flow=flow1))
         add(FlowStartCount.objects.create(start=start1, count=1))
+        add(flow1.tallies.create(scope="segment:foo", count=1))
 
         add(
             Trigger.create(
@@ -911,16 +927,11 @@ class OrgDeleteTest(TembaTest):
         Archive.storage().save(f"{org.id}/extra_file.json", io.StringIO("[]"))
 
     def _create_tally_content(self, org, add):
-        add(org.tallies.create(scope="foo", count=1))
-        add(org.tallies.create(scope="foo/2026-11-02", count=1, expires_on=date(2027, 11, 2)))
-
-        r = get_valkey_connection()
-        r.hset(f"tallies:{org.id}", "foo", 1)
-        r.hset(f"tallies:{org.id}:flushing", "foo/2026-11-02", 1)
-        r.sadd("tallies:pending", org.id)
+        add(org.org_tallies.create(scope="foo", count=1))
+        add(org.org_tallies.create(scope="foo@2026-11-02", count=1, expires_on=date(2027, 11, 2)))
 
     def _exists(self, obj) -> bool:
-        return obj._meta.model.objects.filter(id=obj.id).exists()
+        return obj._meta.model.objects.filter(pk=obj.pk).exists()
 
     def assertOrgActive(self, org, org_content=()):
         org.refresh_from_db()
@@ -1030,13 +1041,6 @@ class OrgDeleteTest(TembaTest):
 
         self.assertTrue(Archive.storage().exists(f"{self.org2.id}/extra_file.json"))
         self.assertFalse(Archive.storage().exists(f"{self.org.id}/extra_file.json"))
-
-        # buffered tallies are cleared too
-        r = get_valkey_connection()
-        self.assertFalse(r.exists(f"tallies:{self.org.id}", f"tallies:{self.org.id}:flushing"))
-        self.assertEqual(2, r.exists(f"tallies:{self.org2.id}", f"tallies:{self.org2.id}:flushing"))
-        self.assertFalse(r.sismember("tallies:pending", self.org.id))
-        self.assertTrue(r.sismember("tallies:pending", self.org2.id))
 
         # check we've initiated search de-indexing for all deleted orgs
         self.assertEqual({org1_child1, org1_child2, self.org}, {c.args[0] for c in mr_mocks.calls["org_deindex"]})

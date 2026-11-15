@@ -293,20 +293,6 @@ END;
 $$ LANGUAGE plpgsql;
 
 ----------------------------------------------------------------------
--- Determines the channel count scope for a message
-----------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION temba_msg_channel_countscope(_msg msgs_msg) RETURNS TEXT STABLE AS $$
-BEGIN
-  IF _msg.direction = 'I' THEN
-    IF _msg.msg_type = 'V' THEN RETURN 'voice:in'; ELSE RETURN 'text:in'; END IF;
-  ELSE
-    IF _msg.msg_type = 'V' THEN RETURN 'voice:out'; ELSE RETURN 'text:out'; END IF;
-  END IF;
-  RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
-----------------------------------------------------------------------
 -- Determines the item count scope for a msg record
 ----------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION temba_msg_countscope(_msg msgs_msg) RETURNS TEXT STABLE AS $$
@@ -402,11 +388,6 @@ BEGIN
     WHERE temba_msg_countscope(newtab) IS NOT NULL
     GROUP BY 1, 2;
 
-    -- add channel counts for all messages with a channel
-    INSERT INTO channels_channelcount("channel_id", "scope", "day", "count", "is_squashed")
-    SELECT channel_id, temba_msg_channel_countscope(newtab), created_on::date, count(*), FALSE FROM newtab
-    WHERE channel_id IS NOT NULL GROUP BY channel_id, temba_msg_channel_countscope(newtab), created_on::date;
-
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
@@ -429,18 +410,6 @@ BEGIN
     INNER JOIN oldtab o ON o.id = n.id
     WHERE temba_msg_countscope(o) IS DISTINCT FROM temba_msg_countscope(n) AND temba_msg_countscope(n) IS NOT NULL
     GROUP BY 1, 2;
-
-    -- add new flow activity counts for incoming messages now marked as handled by a flow
-    INSERT INTO flows_flowactivitycount("flow_id", "scope", "count", "is_squashed")
-    SELECT s.flow_id, unnest(ARRAY[
-            format('msgsin:hour:%s', extract(hour FROM NOW())),
-            format('msgsin:date:%s', NOW()::date)
-        ]), s.msgs, FALSE
-    FROM (
-        SELECT n.flow_id, count(*) AS msgs FROM newtab n INNER JOIN oldtab o ON o.id = n.id
-        WHERE n.direction = 'I' AND o.flow_id IS NULL AND n.flow_id IS NOT NULL
-        GROUP BY 1
-    ) s;
 
     RETURN NULL;
 END;
