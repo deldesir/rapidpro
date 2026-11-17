@@ -1,7 +1,7 @@
 import json
 import logging
 from datetime import date, datetime, timedelta
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
 from smartmin.views import SmartFormView, SmartModelActionView, SmartModelFormView
 
@@ -134,12 +134,13 @@ class ContextMenuMixin:
         def add_link(self, label: str, url: str, as_button: bool = False):
             self.groups[-1].append({"type": "link", "label": label, "url": url, "as_button": as_button})
 
-        def add_js(self, id: str, label: str, as_button: bool = False):
+        def add_js(self, id: str, label: str, *, primary: bool = False, as_button: bool = False):
             self.groups[-1].append(
                 {
                     "id": id,
                     "type": "js",
                     "label": label,
+                    "primary": primary,
                     "as_button": as_button,
                 }
             )
@@ -193,10 +194,6 @@ class ContextMenuMixin:
 
         # does the page have a content menu?
         context["has_context_menu"] = self.has_context_menu()
-
-        # does the page have a search query?
-        if "search" in self.request.GET:
-            context["has_search_query"] = urlencode({"search": self.request.GET["search"]})
 
         return context
 
@@ -314,6 +311,12 @@ class SpaMixin:
     def is_content_only(self):
         return "HTTP_X_TEMBA_SPA" in self.request.META
 
+    def is_sheet(self) -> bool:
+        """
+        Whether this is being shown in a sheet, a large modal over a page, which gives it its title
+        """
+        return "HTTP_X_TEMBA_SHEET" in self.request.META
+
     def get_template_names(self):
         templates = super().get_template_names()
         spa_templates = []
@@ -334,13 +337,16 @@ class SpaMixin:
         if self.request.org:
             context["active_org"] = self.request.org
 
-        if self.is_content_only():
+        if self.is_sheet():
+            context["base_template"] = "sheet.html"
+        elif self.is_content_only():
             context["base_template"] = "spa.html"
         else:
             context["base_template"] = "frame.html"
 
         context["is_spa"] = True
         context["is_content_only"] = self.is_content_only()
+        context["is_sheet"] = self.is_sheet()
         context["temba_path"] = self.spa_path
         context["temba_referer"] = self.spa_referrer_path
         context[TEMBA_MENU_SELECTION] = self.derive_menu_path()

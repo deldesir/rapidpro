@@ -1,5 +1,7 @@
 from unittest.mock import call, patch
 
+from django_valkey import get_valkey_connection
+
 from django.urls import reverse
 
 from temba.campaigns.models import Campaign, CampaignEvent
@@ -10,12 +12,13 @@ from temba.flows.models import (
     FlowRun,
     FlowStart,
     FlowStartCount,
+    FlowTally,
     FlowUserConflictException,
     FlowVersionConflictException,
 )
 from temba.flows.tasks import squash_flow_counts
 from temba.globals.models import Global
-from temba.tests import CRUDLTestMixin, TembaTest, matchers, mock_mailroom
+from temba.tests import CRUDLTestMixin, TembaTest, cleanup, matchers, mock_mailroom
 from temba.tests.engine import MockSessionWriter
 from temba.triggers.models import Trigger
 
@@ -164,6 +167,7 @@ class FlowTest(TembaTest, CRUDLTestMixin):
         global1 = Global.get_or_create(self.org, self.admin, "api_key", "API Key", "234325")
         flow = self.create_flow("Test")
         flow.global_dependencies.add(global1)
+        flow.tallies.create(scope="segment:a:b", count=1)
 
         flow.release(self.admin)
 
@@ -174,6 +178,7 @@ class FlowTest(TembaTest, CRUDLTestMixin):
         self.assertFalse(flow.is_archived)
         self.assertFalse(flow.is_active)
         self.assertEqual(0, flow.global_dependencies.count())
+        self.assertEqual(0, flow.tallies.count())
 
     def test_get_definition(self):
         favorites = self.get_flow("favorites_v13")
@@ -464,40 +469,74 @@ class FlowTest(TembaTest, CRUDLTestMixin):
         copy2 = flow2.clone(self.admin)
         self.assertEqual("Copy of abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabc", copy2.name)
 
+    @cleanup(valkey=True)
     def test_get_activity(self):
-        flow1 = self.create_flow("Test 1")
+        # node 1 exits to node 2 and nowhere, node 2 exits back to node 1
+        nodes = [
+            {
+                "uuid": "01c175da-d23d-40a4-a845-c4a9bb4b481a",
+                "actions": [],
+                "exits": [
+                    {
+                        "uuid": "1fff74f4-c81f-4f4c-a03d-58d113c17da1",
+                        "destination_uuid": "400d6b5e-c963-42a1-a06c-50bb9b1e38b1",
+                    },
+                    {"uuid": "6f607948-f3f0-4a6a-94b8-7fdd877895ca"},
+                ],
+            },
+            {
+                "uuid": "400d6b5e-c963-42a1-a06c-50bb9b1e38b1",
+                "actions": [],
+                "exits": [
+                    {
+                        "uuid": "a4fe3ada-b062-47e4-be58-bcbe1bca31b4",
+                        "destination_uuid": "01c175da-d23d-40a4-a845-c4a9bb4b481a",
+                    }
+                ],
+            },
+        ]
+        flow1 = self.create_flow("Test 1", nodes=nodes)
         flow2 = self.create_flow("Test 2")
+
+        seg1 = FlowTally.segment_scope("1fff74f4-c81f-4f4c-a03d-58d113c17da1", "01c175da-d23d-40a4-a845-c4a9bb4b481a")
+        seg2 = FlowTally.segment_scope("1fff74f4-c81f-4f4c-a03d-58d113c17da1", "400d6b5e-c963-42a1-a06c-50bb9b1e38b1")
+        seg3 = FlowTally.segment_scope("a4fe3ada-b062-47e4-be58-bcbe1bca31b4", "01c175da-d23d-40a4-a845-c4a9bb4b481a")
 
         flow1.counts.create(scope="node:01c175da-d23d-40a4-a845-c4a9bb4b481a", count=3)
         flow1.counts.create(scope="node:01c175da-d23d-40a4-a845-c4a9bb4b481a", count=1)
         flow1.counts.create(scope="node:400d6b5e-c963-42a1-a06c-50bb9b1e38b1", count=5)
 
-        flow1.counts.create(
-            scope="segment:1fff74f4-c81f-4f4c-a03d-58d113c17da1:01c175da-d23d-40a4-a845-c4a9bb4b481a", count=3
-        )
-        flow1.counts.create(
-            scope="segment:1fff74f4-c81f-4f4c-a03d-58d113c17da1:01c175da-d23d-40a4-a845-c4a9bb4b481a", count=4
-        )
-        flow1.counts.create(
-            scope="segment:6f607948-f3f0-4a6a-94b8-7fdd877895ca:400d6b5e-c963-42a1-a06c-50bb9b1e38b1", count=5
-        )
-        flow2.counts.create(
-            scope="segment:a4fe3ada-b062-47e4-be58-bcbe1bca31b4:74a53ff4-fe63-4d89-875e-cae3caca177c", count=6
-        )
+        # a segment no longer in the definition is ignored, a flushed one has its buffered amount added, and one only
+        # buffered in Valkey is still counted
+        flow1.tallies.create(scope=seg1, count=9)
+        flow1.tallies.create(scope=seg2, count=3)
+        r = get_valkey_connection()
+        r.hset("{tallies}:live", mapping={f"F{flow1.id}|{seg2}": 4, f"F{flow1.id}|{seg3}": 2})
+        flow2.tallies.create(scope=seg3, count=6)
 
         self.assertEqual(
             (
                 {"01c175da-d23d-40a4-a845-c4a9bb4b481a": 4, "400d6b5e-c963-42a1-a06c-50bb9b1e38b1": 5},
                 {
-                    "1fff74f4-c81f-4f4c-a03d-58d113c17da1:01c175da-d23d-40a4-a845-c4a9bb4b481a": 7,
-                    "6f607948-f3f0-4a6a-94b8-7fdd877895ca:400d6b5e-c963-42a1-a06c-50bb9b1e38b1": 5,
+                    "1fff74f4-c81f-4f4c-a03d-58d113c17da1:400d6b5e-c963-42a1-a06c-50bb9b1e38b1": 7,
+                    "a4fe3ada-b062-47e4-be58-bcbe1bca31b4:01c175da-d23d-40a4-a845-c4a9bb4b481a": 2,
                 },
             ),
             flow1.get_activity(),
         )
+
+        # a segment whose total is buffered back to zero is omitted
+        r.hset("{tallies}:live", f"F{flow1.id}|{seg3}", 0)
         self.assertEqual(
-            ({}, {"a4fe3ada-b062-47e4-be58-bcbe1bca31b4:74a53ff4-fe63-4d89-875e-cae3caca177c": 6}), flow2.get_activity()
+            {"1fff74f4-c81f-4f4c-a03d-58d113c17da1:400d6b5e-c963-42a1-a06c-50bb9b1e38b1": 7}, flow1.get_activity()[1]
         )
+
+        # flow 2 has no segments in its definition
+        self.assertEqual(({}, {}), flow2.get_activity())
+
+        # nor does a flow with no revisions
+        flow3 = Flow.create(self.org, self.admin, "No Revisions")
+        self.assertEqual(({}, {}), flow3.get_activity())
 
     def test_get_category_counts(self):
         flow = self.create_flow("Favorites")

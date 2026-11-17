@@ -1,3 +1,4 @@
+import base64
 import itertools
 import logging
 from array import array
@@ -7,7 +8,6 @@ from datetime import date, datetime, timedelta, timezone as tzone
 from uuid import UUID
 
 import iso8601
-from dateutil.relativedelta import relativedelta
 from django_valkey import get_valkey_connection
 from packaging.version import Version
 
@@ -26,7 +26,7 @@ from temba.channels.models import Channel
 from temba.contacts.models import Contact, ContactField, ContactGroup
 from temba.globals.models import Global
 from temba.msgs.models import Label
-from temba.orgs.models import DependencyMixin, Export, ExportType, Org
+from temba.orgs.models import BaseTally, DependencyMixin, Export, ExportType, Org
 from temba.orgs.realtime import PublishedAssetMixin
 from temba.templates.models import Template
 from temba.tickets.models import Topic
@@ -115,6 +115,10 @@ class Flow(PublishedAssetMixin, LegacyIDMixin, OrgAsset, DependencyMixin):
 
     # how many days of daily incoming-message counts make up the list view's activity sparkline
     ACTIVITY_SERIES_DAYS = 14
+
+    # how many days of daily incoming-message counts make up the results engagement timeline, which can't be more than
+    # the days mailroom keeps them for
+    ENGAGEMENT_TIMELINE_DAYS = 365
 
     FINAL_LEGACY_VERSION = legacy.VERSIONS[-1]
     INITIAL_GOFLOW_VERSION = "13.0.0"  # initial version of flow spec to use new engine
@@ -436,8 +440,18 @@ class Flow(PublishedAssetMixin, LegacyIDMixin, OrgAsset, DependencyMixin):
         counts = self.counts.prefix("node:").scope_totals()
         by_node = {scope[5:]: count for scope, count in counts.items() if count}
 
-        counts = self.counts.prefix("segment:").scope_totals()
-        by_segment = {scope[8:]: count for scope, count in counts.items() if count}
+        # segments are looked up from the definition, rather than found among flushed tallies, so that ones still only
+        # buffered in Valkey are counted, and the number looked up is bounded by the flow's size, not its history
+        rev = self.get_current_revision()
+        nodes = rev.definition.get(Flow.DEFINITION_NODES, []) if rev else []
+        keys_by_scope = {
+            FlowTally.segment_scope(e["uuid"], e["destination_uuid"]): f"{e['uuid']}:{e['destination_uuid']}"
+            for n in nodes
+            for e in n.get("exits", [])
+            if e.get("destination_uuid")
+        }
+        totals = FlowTally.get_totals(self, list(keys_by_scope))
+        by_segment = {keys_by_scope[scope]: count for scope, count in totals.items()}
 
         return by_node, by_segment
 
@@ -566,15 +580,23 @@ class Flow(PublishedAssetMixin, LegacyIDMixin, OrgAsset, DependencyMixin):
         return defaultdict(int, {scope[7:]: count for scope, count in counts.items()})
 
     @classmethod
-    def prefetch_activity_series(cls, flows, *, using="default"):
+    def _activity_series_scopes(cls) -> list[str]:
+        today = timezone.now().date()
+        return [f"msgsin:date:{today - timedelta(days=d)}" for d in range(cls.ACTIVITY_SERIES_DAYS - 1, -1, -1)]
+
+    @classmethod
+    def prefetch_activity_series(cls, flows):
         """
         Prefetches the counts required by get_activity_series
         """
 
-        since = timezone.now().date() - timedelta(days=cls.ACTIVITY_SERIES_DAYS - 1)
-        FlowActivityCount.prefetch_by_scope(
-            flows, prefix="msgsin:date:", to_attr="_msgsin_by_date", using=using, scope_gte=f"msgsin:date:{since}"
-        )
+        totals = FlowTally.get_totals_by_flow(flows, cls._activity_series_scopes())
+        by_flow = defaultdict(dict)
+        for (flow_id, scope), count in totals.items():
+            by_flow[flow_id][scope] = count
+
+        for flow in flows:
+            flow._msgsin_by_date = by_flow[flow.id]
 
     def get_activity_series(self) -> list[int]:
         """
@@ -582,18 +604,14 @@ class Flow(PublishedAssetMixin, LegacyIDMixin, OrgAsset, DependencyMixin):
         view sparkline. Empty if there's been no engagement in the window.
         """
 
-        today = timezone.now().date()
+        scopes = self._activity_series_scopes()
 
         if hasattr(self, "_msgsin_by_date"):
             counts = self._msgsin_by_date
         else:
-            since = today - timedelta(days=self.ACTIVITY_SERIES_DAYS - 1)
-            counts = self.counts.prefix("msgsin:date:").filter(scope__gte=f"msgsin:date:{since}").scope_totals()
+            counts = FlowTally.get_totals(self, scopes)
 
-        series = [
-            counts.get(f"msgsin:date:{today - timedelta(days=offset)}", 0)
-            for offset in range(self.ACTIVITY_SERIES_DAYS - 1, -1, -1)
-        ]
+        series = [counts.get(scope, 0) for scope in scopes]
         return series if any(series) else []
 
     def as_json(self, context=None) -> dict:
@@ -918,43 +936,26 @@ class Flow(PublishedAssetMixin, LegacyIDMixin, OrgAsset, DependencyMixin):
         dependents["trigger"] = self.triggers.filter(is_active=True)
         return dependents
 
-    def get_engagement_start(self) -> date:
+    def get_engagement_timeline(self) -> dict:
         """
-        Gets earliest date of recorded engagement (i.e. messages in) for this flow.
+        Gets engagement counts (i.e. messages in) for the last ENGAGEMENT_TIMELINE_DAYS days, rolled up into weeks
+        starting on Mondays so that a year of them is still readable as a bar chart.
         """
-        first = self.counts.prefix("msgsin:date:").order_by("scope").first()
+        since = timezone.now().date() - timedelta(days=self.ENGAGEMENT_TIMELINE_DAYS - 1)
+        since += timedelta(days=-since.weekday() % 7)  # drop any partial first week as older days may be trimmed
 
-        utc_timezone = tzone.utc
-
-        return datetime.fromisoformat(first.scope[12:]).replace(tzinfo=utc_timezone).date() if first else None
-
-    def get_engagement_timeline(self, since, until) -> dict:
-        rollup_by = "day"
-
-        # bucket dates into months or weeks depending on the range
-        if since < until - relativedelta(years=3):
-            rollup_by = "month"
-        elif since < until - relativedelta(years=1):
-            rollup_by = "week"
-
-        dates = (
-            self.counts.prefix("msgsin:date:")
-            .extra({"date": f"date_trunc('{rollup_by}', split_part(scope, ':', 3)::date)"})
-            .values("date")
-            .annotate(count=Sum("count"))
-            .order_by("date")
+        daily = (
+            self.tallies.filter(scope__startswith="msgsin:date:", scope__gte=f"msgsin:date:{since}")
+            .order_by("scope")
+            .values_list("scope", "count")
         )
 
-        since = dates[0]["date"].date() if len(dates) > 0 else since
+        weekly = defaultdict(int)
+        for scope, count in daily:
+            day = date.fromisoformat(scope[12:])
+            weekly[day - timedelta(days=day.weekday())] += count
 
-        all_dates = []
-        counts = []
-
-        for d in dates:
-            all_dates.append(d["date"].date())
-            counts.append(d["count"])
-
-        return {"dates": all_dates, "counts": counts, "rollup_by": rollup_by}
+        return {"dates": list(weekly.keys()), "counts": list(weekly.values())}
 
     def get_engagement_by_weekday(self) -> dict[int, int]:
         """
@@ -962,7 +963,7 @@ class Flow(PublishedAssetMixin, LegacyIDMixin, OrgAsset, DependencyMixin):
         """
 
         counts = (
-            self.counts.prefix("msgsin:date:")
+            self.tallies.filter(scope__startswith="msgsin:date:")
             .extra({"dow": "extract(dow FROM split_part(scope, ':', 3)::date)::int"})
             .values("dow")
             .annotate(count=Sum("count"))
@@ -982,7 +983,7 @@ class Flow(PublishedAssetMixin, LegacyIDMixin, OrgAsset, DependencyMixin):
             """
             return (int(scope[12:]) + offset) % 24
 
-        counts = self.counts.prefix("msgsin:hour:").scope_totals()
+        counts = FlowTally.get_totals(self, [f"msgsin:hour:{h}" for h in range(24)])
         return {parse(scope): count for scope, count in counts.items()}
 
     def release(self, user, *, interrupt_sessions: bool = True):
@@ -1019,6 +1020,7 @@ class Flow(PublishedAssetMixin, LegacyIDMixin, OrgAsset, DependencyMixin):
         self.user_dependencies.clear()
 
         self.counts.all().delete()
+        self.tallies.all().delete()
 
         # call mailroom to interrupt sessions where contact is currently in this flow
         if interrupt_sessions:
@@ -1043,6 +1045,7 @@ class Flow(PublishedAssetMixin, LegacyIDMixin, OrgAsset, DependencyMixin):
 
         delete_in_batches(self.counts.all())
         delete_in_batches(self.result_counts.all())
+        delete_in_batches(self.tallies.all(), pk="pk")
 
         super().delete()
 
@@ -1365,11 +1368,14 @@ class FlowActivityCount(BaseScopedCount):
     flow = models.ForeignKey(Flow, on_delete=models.PROTECT, related_name="counts", db_index=False)  # indexed below
 
     @classmethod
-    def prefetch_by_scope(cls, flows, *, prefix: str, to_attr: str, using: str, scope_gte: str = None):
-        counts = cls.objects.using(using).filter(flow__in=flows).prefix(prefix)
-        if scope_gte:
-            counts = counts.filter(scope__gte=scope_gte)
-        counts = counts.values_list("flow_id", "scope").annotate(total=Sum("count"))
+    def prefetch_by_scope(cls, flows, *, prefix: str, to_attr: str, using: str):
+        counts = (
+            cls.objects.using(using)
+            .filter(flow__in=flows)
+            .prefix(prefix)
+            .values_list("flow_id", "scope")
+            .annotate(total=Sum("count"))
+        )
         by_flow = defaultdict(dict)
         for count in counts:
             by_flow[count[0]][count[1]] = count[2]
@@ -1414,6 +1420,55 @@ class FlowResultCount(BaseSquashableCount):
             models.UniqueConstraint(
                 name="flowresultcount_squashed", fields=("flow", "result", "category"), condition=Q(is_squashed=True)
             )
+        ]
+
+
+class FlowTally(BaseTally):
+    """
+    Flow-level totals, e.g. of segment or result category counts, which unlike org tallies can go down.
+    """
+
+    owner_field = "flow"
+    field_prefixes = ("F",)
+
+    pk = models.CompositePrimaryKey("flow", "scope")
+    flow = models.ForeignKey(Flow, on_delete=models.PROTECT, related_name="tallies", db_index=False)  # leads the key
+
+    @classmethod
+    def get_totals(cls, flow, scopes: list[str]) -> dict[str, int]:
+        """
+        Gets totals by scope for the given scopes, omitting those with no total.
+        """
+        return {scope: count for (_, scope), count in cls.get_totals_by_flow([flow], scopes).items()}
+
+    @classmethod
+    def get_totals_by_flow(cls, flows, scopes: list[str]) -> dict[tuple[int, str], int]:
+        """
+        Gets totals by flow id and scope for the given scopes in each of the given flows, omitting those with no total.
+        """
+        return cls._get_totals([f.id for f in flows], scopes)
+
+    @staticmethod
+    def segment_scope(exit_uuid: str, node_uuid: str) -> str:
+        """
+        Gets the scope of the segment from the given exit to the given node, which is base64url (no padding) of the two
+        UUIDs' raw bytes concatenated.
+        """
+        raw = UUID(exit_uuid).bytes + UUID(node_uuid).bytes
+        return "segment:" + base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+    @staticmethod
+    def parse_segment_scope(scope: str) -> str:
+        """
+        Parses a segment scope into the "<exit_uuid>:<node_uuid>" key the editor uses.
+        """
+        raw = base64.urlsafe_b64decode(scope.removeprefix("segment:") + "=")
+        return f"{UUID(bytes=raw[:16])}:{UUID(bytes=raw[16:])}"
+
+    class Meta:
+        indexes = [
+            # for trimming
+            models.Index(name="flowtally_expires_on", fields=("expires_on",), condition=Q(expires_on__isnull=False))
         ]
 
 

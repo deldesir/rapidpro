@@ -507,29 +507,17 @@ class OrgCRUDL(SmartCRUDL):
                 if self.has_org_perm("orgs.orgimport_create"):
                     menu.append(self.create_menu_item(name=_("Import"), icon="import", href="orgs.orgimport_create"))
 
-                if self.has_org_perm("channels.channel_read"):
-                    from temba.channels.views import get_channel_read_url
-
-                    items = []
-
-                    if self.has_org_perm("channels.channel_claim"):
-                        items.append(
-                            self.create_menu_item(name=_("New Channel"), href="channels.channel_claim", icon="add")
+                if self.has_org_perm("channels.channel_list"):
+                    menu.append(self.create_divider())
+                    menu.append(
+                        self.create_menu_item(
+                            menu_id="channels",
+                            name=_("Channels"),
+                            icon="channel",
+                            href="channels.channel_list",
+                            count=org.channels.filter(is_active=True).count(),
                         )
-
-                    channels = org.channels.filter(is_active=True).order_by("-is_enabled", Lower("name"))
-                    for channel in channels:
-                        items.append(
-                            self.create_menu_item(
-                                menu_id=str(channel.uuid),
-                                name=channel.name,
-                                href=get_channel_read_url(channel),
-                                icon=channel.type.icon if channel.is_enabled else "slash-circle-01",
-                            )
-                        )
-
-                    if len(items):
-                        menu.append(self.create_menu_item(name=_("Channels"), items=items, inline=True))
+                    )
 
                 if self.has_org_perm("archives.archive_message"):
                     items = [
@@ -900,14 +888,19 @@ class OrgCRUDL(SmartCRUDL):
             def extract_from(smtp_url: str) -> str:
                 return parse_smtp_url(smtp_url)[4]
 
-            from_email_default = settings.FLOW_FROM_EMAIL
+            # without SMTP settings of its own, an org sends with its parent's, or the shared email service if it has
+            # been granted that, or not at all
+            from_email_default = None
             if org.is_child and org.parent.flow_smtp:
                 from_email_default = extract_from(org.parent.flow_smtp)
+            elif Org.FEATURE_SHARED_EMAIL in org.features:
+                from_email_default = settings.FLOW_FROM_EMAIL
 
             from_email_custom = extract_from(org.flow_smtp) if org.flow_smtp else None
 
             context["from_email_default"] = from_email_default
             context["from_email_custom"] = from_email_custom
+            context["has_children"] = bool(from_email_custom) and org.children.filter(is_active=True).exists()
             return context
 
     class Update(ModalFormMixin, OrgObjPermsMixin, SmartUpdateView):

@@ -18,15 +18,16 @@ from temba.flows.models import (
     FlowRevision,
     FlowRun,
     FlowStart,
+    FlowTally,
     FlowUserConflictException,
     FlowVersionConflictException,
     ResultsExport,
 )
 from temba.mailroom.client.types import Exclusions
 from temba.orgs.integrations.dtone.type import DTOneType
-from temba.orgs.models import Export
+from temba.orgs.models import Export, Org
 from temba.templates.models import TemplateTranslation
-from temba.tests import CRUDLTestMixin, MockResponse, TembaTest, matchers, mock_mailroom
+from temba.tests import CRUDLTestMixin, MockResponse, TembaTest, cleanup, matchers, mock_mailroom
 from temba.tests.base import get_contact_search, override_brand
 from temba.tests.requests import MockJsonResponse
 from temba.triggers.models import Trigger
@@ -1352,30 +1353,66 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
             response = self.client.get(reverse("flows.flow_editor", args=[flow.uuid]))
             self.assertEqual(features, set(json.loads(response.context["feature_filters"])))
 
-        # auto_translate is always available
-        assert_features({"auto_translate"})
+        # auto_translate is always available, and we have a channel that can send
+        assert_features({"auto_translate", "messaging"})
 
         # add a resthook
         Resthook.objects.create(org=flow.org, created_by=self.admin, modified_by=self.admin)
-        assert_features({"auto_translate", "resthook"})
+        assert_features({"auto_translate", "messaging", "resthook"})
 
         # add a DT One integration
         DTOneType().connect(flow.org, self.admin, "login", "token")
-        assert_features({"auto_translate", "airtime", "resthook"})
+        assert_features({"auto_translate", "messaging", "airtime", "resthook"})
 
         # change our channel to use a whatsapp scheme
         self.channel.schemes = [URN.WHATSAPP_SCHEME]
         self.channel.save()
-        assert_features({"auto_translate", "whatsapp", "airtime", "resthook"})
+        assert_features({"auto_translate", "messaging", "whatsapp", "airtime", "resthook"})
 
         # change our channel to use a facebook scheme
         self.channel.schemes = [URN.FACEBOOK_SCHEME]
         self.channel.save()
-        assert_features({"auto_translate", "airtime", "resthook"})
+        assert_features({"auto_translate", "messaging", "airtime", "resthook"})
 
         self.setUpLocations()
 
+        assert_features({"auto_translate", "messaging", "airtime", "resthook", "locations"})
+
+        # make our channel one that can also make and answer calls
+        self.channel.schemes = [URN.TEL_SCHEME]
+        self.channel.role = "SRCA"
+        self.channel.save()
+        assert_features({"auto_translate", "messaging", "ivr", "airtime", "resthook", "locations"})
+
+        # or make it receive only
+        self.channel.role = "R"
+        self.channel.save()
         assert_features({"auto_translate", "airtime", "resthook", "locations"})
+
+        # configure SMTP for flow emails
+        self.org.flow_smtp = "smtp://bob:secret@example.com/?from=bob%40example.com"
+        self.org.save(update_fields=("flow_smtp",))
+        assert_features({"auto_translate", "email", "airtime", "resthook", "locations"})
+
+        # which child workspaces inherit
+        self.org.flow_smtp = None
+        self.org.parent = self.org2
+        self.org.save(update_fields=("flow_smtp", "parent"))
+        assert_features({"auto_translate", "airtime", "resthook", "locations"})
+
+        self.org2.flow_smtp = "smtp://bob:secret@example.com/?from=bob%40example.com"
+        self.org2.save(update_fields=("flow_smtp",))
+        assert_features({"auto_translate", "email", "airtime", "resthook", "locations"})
+
+        # but they don't inherit the shared email service
+        self.org2.flow_smtp = None
+        self.org2.features = [Org.FEATURE_SHARED_EMAIL]
+        self.org2.save(update_fields=("flow_smtp", "features"))
+        assert_features({"auto_translate", "airtime", "resthook", "locations"})
+
+        self.org.features = [Org.FEATURE_SHARED_EMAIL]
+        self.org.save(update_fields=("features",))
+        assert_features({"auto_translate", "email", "airtime", "resthook", "locations"})
 
     @mock_mailroom
     def test_template_warnings(self, mr_mocks):
@@ -1881,7 +1918,6 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
 
     @patch("django.utils.timezone.now")
     def test_engagement_timeline(self, mock_now):
-        """Test timeline rollup modes for different date ranges"""
         mock_now.return_value = datetime(2024, 11, 25, 12, 5, 0, tzinfo=tzone.utc)
 
         flow1 = self.create_flow("Test 1")
@@ -1892,33 +1928,28 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
 
         # empty timeline
         response = self.requestView(timeline_url, self.admin).json()
+        self.assertEqual({"labels": [], "datasets": [{"label": "Messages", "data": []}]}, response["data"])
 
-        # should be empty
-        self.assertEqual(response["rollup_by"], "day")
-        self.assertEqual(len(response["data"]["labels"]), 0)
-        self.assertEqual(response["data"]["datasets"][0]["data"], [])
+        # days are rolled up into weeks starting on Mondays, and only the last year of days is included, even if older
+        # ones haven't been trimmed yet
+        flow1.tallies.create(scope="msgsin:date:2023-11-26", count=5)  # 1 day too old
+        flow1.tallies.create(scope="msgsin:date:2023-11-27", count=50)  # Monday
+        flow1.tallies.create(scope="msgsin:date:2023-11-29", count=4)
+        flow1.tallies.create(scope="msgsin:date:2024-11-20", count=2)
+        flow1.tallies.create(scope="msgsin:date:2024-11-24", count=1)  # Sunday
+        flow1.tallies.create(scope="msgsin:date:2024-11-25", count=8)
+        flow1.tallies.create(scope="msgsin:hour:9", count=3)
 
-        # test week rollup mode (1-3 years ago)
-        flow1.counts.create(scope="msgsin:date:2022-11-25", count=5)
-        flow1.counts.create(scope="msgsin:date:2022-11-29", count=50)
-        flow1.counts.create(scope="msgsin:date:2022-12-1", count=8)
         response = self.requestView(timeline_url, self.admin).json()
+        self.assertEqual(["2023-11-27", "2024-11-18", "2024-11-25"], response["data"]["labels"])
+        self.assertEqual([54, 3, 8], response["data"]["datasets"][0]["data"])
 
-        self.assertEqual("week", response["rollup_by"])
-        self.assertEqual(["2022-11-21", "2022-11-28"], response["data"]["labels"][0:2])
-        self.assertEqual(5, response["data"]["datasets"][0]["data"][0])
-        self.assertEqual(58, response["data"]["datasets"][0]["data"][1])
-        flow1.counts.all().delete()
+        # when the year starts mid-week, that partial first week is left out
+        mock_now.return_value = datetime(2024, 11, 27, 12, 5, 0, tzinfo=tzone.utc)
 
-        # test month rollup mode (>3 years ago)
-        flow1.counts.create(scope="msgsin:date:2020-11-25", count=10)
-        flow1.counts.create(scope="msgsin:date:2020-12-26", count=5)
-        flow1.counts.create(scope="msgsin:date:2020-12-27", count=6)
         response = self.requestView(timeline_url, self.admin).json()
-        self.assertEqual("month", response["rollup_by"])
-        self.assertEqual(["2020-11-01", "2020-12-01"], response["data"]["labels"][0:2])
-        self.assertEqual(10, response["data"]["datasets"][0]["data"][0])
-        self.assertEqual(11, response["data"]["datasets"][0]["data"][1])
+        self.assertEqual(["2024-11-18", "2024-11-25"], response["data"]["labels"])
+        self.assertEqual([3, 8], response["data"]["datasets"][0]["data"])
 
     @patch("django.utils.timezone.now")
     def test_engagement_progress(self, mock_now):
@@ -1980,10 +2011,10 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual([0, 0, 0, 0, 0, 0, 0], resp_data["datasets"][0]["data"])
 
         # with daily counts, summed by weekday
-        flow1.counts.create(scope="msgsin:date:2026-10-18", count=4)  # Sunday
-        flow1.counts.create(scope="msgsin:date:2026-10-25", count=3)  # Sunday
-        flow1.counts.create(scope="msgsin:date:2026-10-19", count=2)  # Monday
-        flow1.counts.create(scope="msgsin:date:2026-10-24", count=1)  # Saturday
+        flow1.tallies.create(scope="msgsin:date:2026-10-18", count=4)  # Sunday
+        flow1.tallies.create(scope="msgsin:date:2026-10-25", count=3)  # Sunday
+        flow1.tallies.create(scope="msgsin:date:2026-10-19", count=2)  # Monday
+        flow1.tallies.create(scope="msgsin:date:2026-10-24", count=1)  # Saturday
 
         response = self.requestView(dow_url, self.admin)
         resp_data = response.json()["data"]
@@ -2025,8 +2056,8 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
 
         # hod data is stored in UTC, so we need to adjust for the timezone
         kigali_offset = 2
-        flow1.counts.create(scope=f"msgsin:hour:{9 - kigali_offset}", count=5)  # 9a in Kigali
-        flow1.counts.create(scope=f"msgsin:hour:{12 - kigali_offset}", count=3)  # 12p in Kigali
+        flow1.tallies.create(scope=f"msgsin:hour:{9 - kigali_offset}", count=5)  # 9a in Kigali
+        flow1.tallies.create(scope=f"msgsin:hour:{12 - kigali_offset}", count=3)  # 12p in Kigali
 
         response = self.requestView(hod_url, self.admin)
         resp_data = response.json()["data"]
@@ -2050,25 +2081,46 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
         self.assertEqual("12:00", labels[12])
         self.assertEqual("23:00", labels[23])
 
+    @cleanup(valkey=True)
     def test_activity(self):
-        flow1 = self.create_flow("Test 1")
+        # node 1 exits to node 2 and nowhere, node 2 exits back to node 1
+        nodes = [
+            {
+                "uuid": "01c175da-d23d-40a4-a845-c4a9bb4b481a",
+                "actions": [],
+                "exits": [
+                    {
+                        "uuid": "1fff74f4-c81f-4f4c-a03d-58d113c17da1",
+                        "destination_uuid": "400d6b5e-c963-42a1-a06c-50bb9b1e38b1",
+                    },
+                    {"uuid": "6f607948-f3f0-4a6a-94b8-7fdd877895ca"},
+                ],
+            },
+            {
+                "uuid": "400d6b5e-c963-42a1-a06c-50bb9b1e38b1",
+                "actions": [],
+                "exits": [
+                    {
+                        "uuid": "a4fe3ada-b062-47e4-be58-bcbe1bca31b4",
+                        "destination_uuid": "01c175da-d23d-40a4-a845-c4a9bb4b481a",
+                    }
+                ],
+            },
+        ]
+        flow1 = self.create_flow("Test 1", nodes=nodes)
         flow2 = self.create_flow("Test 2")
+
+        seg1 = FlowTally.segment_scope("1fff74f4-c81f-4f4c-a03d-58d113c17da1", "01c175da-d23d-40a4-a845-c4a9bb4b481a")
+        seg2 = FlowTally.segment_scope("1fff74f4-c81f-4f4c-a03d-58d113c17da1", "400d6b5e-c963-42a1-a06c-50bb9b1e38b1")
+        seg3 = FlowTally.segment_scope("a4fe3ada-b062-47e4-be58-bcbe1bca31b4", "01c175da-d23d-40a4-a845-c4a9bb4b481a")
 
         flow1.counts.create(scope="node:01c175da-d23d-40a4-a845-c4a9bb4b481a", count=4)
         flow1.counts.create(scope="node:400d6b5e-c963-42a1-a06c-50bb9b1e38b1", count=5)
 
-        flow1.counts.create(
-            scope="segment:1fff74f4-c81f-4f4c-a03d-58d113c17da1:01c175da-d23d-40a4-a845-c4a9bb4b481a", count=3
-        )
-        flow1.counts.create(
-            scope="segment:1fff74f4-c81f-4f4c-a03d-58d113c17da1:01c175da-d23d-40a4-a845-c4a9bb4b481a", count=4
-        )
-        flow1.counts.create(
-            scope="segment:6f607948-f3f0-4a6a-94b8-7fdd877895ca:400d6b5e-c963-42a1-a06c-50bb9b1e38b1", count=5
-        )
-        flow2.counts.create(
-            scope="segment:a4fe3ada-b062-47e4-be58-bcbe1bca31b4:74a53ff4-fe63-4d89-875e-cae3caca177c", count=6
-        )
+        flow1.tallies.create(scope=seg1, count=9)
+        flow1.tallies.create(scope=seg2, count=3)
+        get_valkey_connection().hset("{tallies}:live", mapping={f"F{flow1.id}|{seg2}": 4, f"F{flow1.id}|{seg3}": 2})
+        flow2.tallies.create(scope=seg2, count=6)
 
         activity_url = reverse("flows.flow_activity", args=[flow1.uuid])
 
@@ -2079,8 +2131,8 @@ class FlowCRUDLTest(TembaTest, CRUDLTestMixin):
             {
                 "nodes": {"01c175da-d23d-40a4-a845-c4a9bb4b481a": 4, "400d6b5e-c963-42a1-a06c-50bb9b1e38b1": 5},
                 "segments": {
-                    "1fff74f4-c81f-4f4c-a03d-58d113c17da1:01c175da-d23d-40a4-a845-c4a9bb4b481a": 7,
-                    "6f607948-f3f0-4a6a-94b8-7fdd877895ca:400d6b5e-c963-42a1-a06c-50bb9b1e38b1": 5,
+                    "1fff74f4-c81f-4f4c-a03d-58d113c17da1:400d6b5e-c963-42a1-a06c-50bb9b1e38b1": 7,
+                    "a4fe3ada-b062-47e4-be58-bcbe1bca31b4:01c175da-d23d-40a4-a845-c4a9bb4b481a": 2,
                 },
             },
             response.json(),
